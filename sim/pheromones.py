@@ -1,81 +1,40 @@
-"""Pheromone grid.
+"""Pheromone grid — JohnBuffer-inspired scalar marker system.
 
-Two vector layers over the chamber grid, one per scent type:
-  - home_scent: deposited by outbound ants. Each cell stores a
-    magnitude plus a weighted-average flow direction vector. Ants
-    could eventually follow home_scent backward to reach the nest
-    (wired up in Stage 3 of the vector-field upgrade; for now only
-    the magnitude is read, via the scalar home() accessor).
-  - food_scent: deposited by returning ants carrying cargo. Same
-    vector structure — outbound ants will follow the direction
-    forward to reach known food sources once _step_by_score is
-    converted to dot-product steering (Stage 2).
+Two scalar layers:
+  - to_home: deposited by ants walking AWAY from the colony (TO_FOOD
+    state). Intensity decreases with distance from colony via
+    exponential step-decay in the deposit function. Returning ants
+    follow this gradient to find their way home.
+  - to_food: deposited by ants carrying food BACK to the colony
+    (TO_HOME state). Intensity decreases with distance from food.
+    Outbound ants follow this gradient to find known food sources.
 
-Each layer stores three parallel flat lists:
-  _<layer>_mag — float, strength of scent at this cell, capped at
-                 PHEROMONE_MAX and decayed each tick.
-  _<layer>_dx  — float in [-1, 1], x-component of flow direction.
-  _<layer>_dy  — float in [-1, 1], y-component of flow direction.
+Each cell stores a single float per layer. No direction vectors —
+the gradient IS the direction. Decay is a uniform multiplicative
+factor per tick (true exponential, matching JohnBuffer's v2 fix).
 
-Deposit writes a weighted average of the depositing ant's heading
-into the direction components:
-
-    blend = amount / (old_mag + amount)
-    new_dx = old_dx * (1 - blend) + ant_dx * blend
-    new_dy = old_dy * (1 - blend) + ant_dy * blend
-    new_mag = min(old_mag + amount, PHEROMONE_MAX)
-
-A cell with one-way traffic converges toward the depositing ant's
-heading. A cell with opposite-direction traffic averages toward
-zero, which correctly reads as "busy corridor, no dominant flow".
-Consumers should check the direction magnitude (sqrt(dx² + dy²))
-before trusting the direction for navigation.
-
-Decay applies to magnitude only. Direction components persist as
-long as the cell has any scent. When magnitude falls below
-SENSE_FLOOR the cell is fully zeroed so stale directions can't
-leak into future deposits.
-
-Backing storage is flat Python lists so this stays pure-Python
-portable to MicroPython on the ESP32 later — no numpy.
-
-Memory footprint per chamber (Phase 2, 60x40 grid, 2 layers, 3
-floats per cell at ~28 bytes): ~40 KB. On the eventual ESP32/C
-port the direction components can be packed as two int8s (-1/0/1)
-alongside a uint16 magnitude — 4 bytes per cell per layer, ~19 KB
-for both layers. Don't optimise that in the Python sim; just be
-aware the storage layout is designed to pack down cleanly.
+Backing storage is flat Python lists — pure-Python portable to
+MicroPython on the ESP32 later. Memory footprint per chamber
+(60x40 grid, 2 layers, 1 float per cell): ~19 KB.
 """
 
 import config as C
 
 
-# Below this value, a cell is treated as zero when sensing — avoids
-# chasing numerical dust after decay drives values toward zero. Also
-# used as the minimum threshold for the renderer overlay and as the
-# trigger to wipe stale direction components during decay.
+# Below this value a cell reads as zero — avoids chasing numerical
+# dust after decay drives values toward epsilon.
 SENSE_FLOOR = 0.02
 
 
 class PheromoneMap:
-    __slots__ = (
-        'width', 'height',
-        '_home_mag', '_home_dx', '_home_dy',
-        '_food_mag', '_food_dx', '_food_dy',
-    )
+    __slots__ = ('width', 'height', '_home', '_food')
 
     def __init__(self, width, height):
         self.width  = width
         self.height = height
         size = width * height
-        self._home_mag = [0.0] * size
-        self._home_dx  = [0.0] * size
-        self._home_dy  = [0.0] * size
-        self._food_mag = [0.0] * size
-        self._food_dx  = [0.0] * size
-        self._food_dy  = [0.0] * size
-
-    # ---- indexing ----
+        self._home = [0.0] * size
+        self._food = [0.0] * size
 
     def _idx(self, x, y):
         return y * self.width + x
@@ -83,153 +42,82 @@ class PheromoneMap:
     def _in(self, x, y):
         return 0 <= x < self.width and 0 <= y < self.height
 
-    # ---- scalar reads (bounds-safe, return 0 outside the grid) ----
-    # Backwards-compatible with the pre-vector API: callers that only
-    # need "how much scent is here" keep working unchanged.
+    # ---- reads (bounds-safe, return 0 outside the grid) ----
 
     def home(self, x, y):
         if not self._in(x, y):
             return 0.0
-        v = self._home_mag[self._idx(x, y)]
+        v = self._home[self._idx(x, y)]
         return v if v > SENSE_FLOOR else 0.0
 
     def food(self, x, y):
         if not self._in(x, y):
             return 0.0
-        v = self._food_mag[self._idx(x, y)]
+        v = self._food[self._idx(x, y)]
         return v if v > SENSE_FLOOR else 0.0
 
     def raw_home(self, x, y):
-        """Un-floored magnitude read — used by the renderer so weak
-        trails still fade instead of popping off instantly."""
+        """Un-floored read — renderer uses this so weak trails fade
+        visually instead of popping off."""
         if not self._in(x, y):
             return 0.0
-        return self._home_mag[self._idx(x, y)]
+        return self._home[self._idx(x, y)]
 
     def raw_food(self, x, y):
         if not self._in(x, y):
             return 0.0
-        return self._food_mag[self._idx(x, y)]
+        return self._food[self._idx(x, y)]
 
-    # ---- vector reads ----
-
+    # Compatibility stubs — direction overlay reads these but we no
+    # longer store direction vectors. Return (mag, 0, 0) so the
+    # overlay filter (direction length > 0.5) skips every cell.
     def vector_home(self, x, y):
-        """Return (mag, dx, dy) for the home layer. Magnitude is
-        floored at SENSE_FLOOR (same behaviour as the scalar home()
-        accessor). Out-of-bounds returns (0, 0, 0)."""
-        if not self._in(x, y):
-            return (0.0, 0.0, 0.0)
-        i = self._idx(x, y)
-        m = self._home_mag[i]
-        if m <= SENSE_FLOOR:
-            return (0.0, 0.0, 0.0)
-        return (m, self._home_dx[i], self._home_dy[i])
+        return (self.home(x, y), 0.0, 0.0)
 
     def vector_food(self, x, y):
-        """(mag, dx, dy) for the food layer. See vector_home()."""
-        if not self._in(x, y):
-            return (0.0, 0.0, 0.0)
-        i = self._idx(x, y)
-        m = self._food_mag[i]
-        if m <= SENSE_FLOOR:
-            return (0.0, 0.0, 0.0)
-        return (m, self._food_dx[i], self._food_dy[i])
+        return (self.food(x, y), 0.0, 0.0)
 
     # ---- writes ----
 
-    def deposit_home(self, x, y, amount, ant_dx, ant_dy):
-        """Add home_scent at (x, y) with the depositing ant's cardinal
-        heading. Magnitude is additive and capped; direction is a
-        weighted average of the existing direction and the new one."""
+    def deposit_home(self, x, y, amount):
+        """Add to_home scent. Takes the max of existing and new value
+        (JohnBuffer style) so multiple ants reinforce but don't
+        explode the value."""
         if not self._in(x, y):
             return
         i = self._idx(x, y)
-        old_mag = self._home_mag[i]
-        denom = old_mag + amount
-        if denom <= 0.0:
-            return
-        blend = amount / denom
-        inv   = 1.0 - blend
-        self._home_dx[i] = self._home_dx[i] * inv + ant_dx * blend
-        self._home_dy[i] = self._home_dy[i] * inv + ant_dy * blend
-        new_mag = denom
-        if new_mag > C.PHEROMONE_MAX:
-            new_mag = C.PHEROMONE_MAX
-        self._home_mag[i] = new_mag
+        self._home[i] = min(
+            max(self._home[i], amount),
+            C.PHEROMONE_MAX,
+        )
 
-    def deposit_food(self, x, y, amount, ant_dx, ant_dy):
-        """Add food_scent at (x, y) with the depositing ant's cardinal
-        heading. See deposit_home()."""
+    def deposit_food(self, x, y, amount):
+        """Add to_food scent. See deposit_home."""
         if not self._in(x, y):
             return
         i = self._idx(x, y)
-        old_mag = self._food_mag[i]
-        denom = old_mag + amount
-        if denom <= 0.0:
-            return
-        blend = amount / denom
-        inv   = 1.0 - blend
-        self._food_dx[i] = self._food_dx[i] * inv + ant_dx * blend
-        self._food_dy[i] = self._food_dy[i] * inv + ant_dy * blend
-        new_mag = denom
-        if new_mag > C.PHEROMONE_MAX:
-            new_mag = C.PHEROMONE_MAX
-        self._food_mag[i] = new_mag
+        self._food[i] = min(
+            max(self._food[i], amount),
+            C.PHEROMONE_MAX,
+        )
 
     # ---- per-tick decay ----
 
     def decay(self):
-        """Banded decay on magnitude:
-          - strong trails (above HIGH_THRESHOLD) decay very slowly
-          - mid-strength trails decay normally
-          - weak trails (below LOW_THRESHOLD) decay fast
-        Direction components are NOT decayed; they persist at the same
-        orientation as long as the cell retains any scent. When the
-        magnitude drops below SENSE_FLOOR the whole cell is zeroed so
-        stale directions can't contaminate fresh deposits.
-        """
-        hm  = self._home_mag
-        hdx = self._home_dx
-        hdy = self._home_dy
-        fm  = self._food_mag
-        fdx = self._food_dx
-        fdy = self._food_dy
-        n = len(hm)
-        high  = C.PHEROMONE_DECAY_HIGH
-        mid   = C.PHEROMONE_DECAY_MID
-        low   = C.PHEROMONE_DECAY_LOW
-        hi_t  = C.PHEROMONE_HIGH_THRESHOLD
-        lo_t  = C.PHEROMONE_LOW_THRESHOLD
+        """Single multiplicative decay — one tuning knob. Exponential
+        falloff matches JohnBuffer's v2 fix that solved all his path
+        formation issues when he switched from linear decay."""
+        rate  = C.PHEROMONE_GRID_DECAY
         floor = SENSE_FLOOR
-        for i in range(n):
+        hm = self._home
+        fm = self._food
+        for i in range(len(hm)):
             v = hm[i]
-            if v <= 0.0:
-                continue
-            if v > hi_t:
-                v *= high
-            elif v < lo_t:
-                v *= low
-            else:
-                v *= mid
-            if v <= floor:
-                hm[i]  = 0.0
-                hdx[i] = 0.0
-                hdy[i] = 0.0
-            else:
-                hm[i] = v
-        for i in range(n):
+            if v > 0.0:
+                v *= rate
+                hm[i] = v if v > floor else 0.0
+        for i in range(len(fm)):
             v = fm[i]
-            if v <= 0.0:
-                continue
-            if v > hi_t:
-                v *= high
-            elif v < lo_t:
-                v *= low
-            else:
-                v *= mid
-            if v <= floor:
-                fm[i]  = 0.0
-                fdx[i] = 0.0
-                fdy[i] = 0.0
-            else:
-                fm[i] = v
+            if v > 0.0:
+                v *= rate
+                fm[i] = v if v > floor else 0.0

@@ -14,13 +14,12 @@ neighbour on the same tick.
 
 import config as C
 from sim.queen import Queen
-from sim.ant import Ant, OUTBOUND
+from sim.ant import Ant, TO_FOOD
 from sim import brood as brood_mod
 from sim.pheromones import PheromoneMap
 
 
-# Kinds of chamber. Phase 2 first cut only uses 'chamber'; 'outworld'
-# and 'tunnel' will land with foraging.
+# Kinds of chamber.
 KIND_CHAMBER  = 'chamber'
 KIND_OUTWORLD = 'outworld'
 KIND_TUNNEL   = 'tunnel'
@@ -46,26 +45,16 @@ class Chamber:
         self.entries = {face: None for face in C.ENTRY_POINTS}
 
         # face -> neighbour Chamber reference (None = no neighbour).
-        # Mirrors self.entries, but holds the actual Chamber object so
-        # deposit/sense helpers can cross the corridor without going
-        # through the coordinator every call. Populated by the
-        # Coordinator when a new module is attached.
         self.neighbors = {face: None for face in C.ENTRY_POINTS}
 
         # Which face points home-ward (toward the founding chamber).
-        # Set to None for the founding chamber itself; otherwise the
-        # Coordinator runs a BFS from founding after every module
-        # attachment and fills this in. Returning ants walk toward
-        # the entry on this face, not the nearest entry, so multi-hop
-        # topologies don't cause oscillation between intermediate
-        # chambers.
+        # Used as a fallback when no to_home gradient exists yet.
         self.home_face = None
 
-        # Physical food piles — {(x, y): amount}. Populated via the F
-        # debug hotkey or (Phase 3) by outworld food-source spawning.
+        # Physical food piles — {(x, y): amount}.
         self.food_cells = {}
 
-        # Two pheromone layers for the trail-based foraging loop.
+        # Pheromone layers.
         self.pheromones = PheromoneMap(self.width, self.height)
 
     # ---- queries ----
@@ -85,14 +74,11 @@ class Chamber:
     # ---- food piles ----
 
     def add_food(self, x, y, amount):
-        """Spawn (or grow) a food pile on a grid cell."""
         if not self.in_bounds(x, y):
             return
         self.food_cells[(x, y)] = self.food_cells.get((x, y), 0.0) + amount
 
     def take_food(self, x, y, amount):
-        """Remove up to `amount` food from the pile at (x, y). Returns
-        the amount actually taken."""
         pile = self.food_cells.get((x, y), 0.0)
         if pile <= 0.0:
             return 0.0
@@ -104,19 +90,23 @@ class Chamber:
             self.food_cells[(x, y)] = remaining
         return taken
 
-    # ---- pheromone deposits (corridor-aware) ----
+    # ---- pheromone deposits (corridor-mirrored) ----
 
-    def deposit_home(self, x, y, amount, ant_dx, ant_dy):
-        """Deposit home_scent at (x, y) and, if (x, y) is an active
-        entry cell, mirror the deposit to the neighbour chamber's
-        opposite entry cell. Mirroring keeps the two sides of the
-        corridor in lockstep so cross-boundary sensing has signal
-        at the entry cell — without this, ants ray-casting toward
-        a corridor see their own side's deposits and nothing from
-        the neighbour, which creates a dead zone right at the
-        crossing point.
-        """
-        self.pheromones.deposit_home(x, y, amount, ant_dx, ant_dy)
+    def deposit_home(self, x, y, amount):
+        """Deposit to_home scent at (x, y). If on an active entry
+        cell, mirror the deposit to the neighbour's opposite entry
+        so the gradient is continuous across module boundaries."""
+        self.pheromones.deposit_home(x, y, amount)
+        self._mirror_deposit('home', x, y, amount)
+
+    def deposit_food(self, x, y, amount):
+        """Deposit to_food scent at (x, y). See deposit_home."""
+        self.pheromones.deposit_food(x, y, amount)
+        self._mirror_deposit('food', x, y, amount)
+
+    def _mirror_deposit(self, layer, x, y, amount):
+        """If (x, y) is an active entry cell, copy the deposit to
+        the neighbour chamber's opposite entry cell."""
         face = self._entry_face_at(x, y)
         if face is None:
             return
@@ -125,35 +115,19 @@ class Chamber:
             return
         opp = C.FACE_OPPOSITE[face]
         nx, ny = C.ENTRY_POINTS[opp]
-        neighbor.pheromones.deposit_home(nx, ny, amount, ant_dx, ant_dy)
-
-    def deposit_food(self, x, y, amount, ant_dx, ant_dy):
-        """Deposit food_scent locally and, if on an active entry cell,
-        mirror to the neighbour's opposite entry cell. See deposit_home."""
-        self.pheromones.deposit_food(x, y, amount, ant_dx, ant_dy)
-        face = self._entry_face_at(x, y)
-        if face is None:
-            return
-        neighbor = self.neighbors.get(face)
-        if neighbor is None:
-            return
-        opp = C.FACE_OPPOSITE[face]
-        nx, ny = C.ENTRY_POINTS[opp]
-        neighbor.pheromones.deposit_food(nx, ny, amount, ant_dx, ant_dy)
+        if layer == 'home':
+            neighbor.pheromones.deposit_home(nx, ny, amount)
+        else:
+            neighbor.pheromones.deposit_food(nx, ny, amount)
 
     def _entry_face_at(self, x, y):
-        """If (x, y) is the entry cell for one of this chamber's faces,
-        return the face letter. Otherwise None. Used to detect when a
-        deposit should be mirrored across the corridor."""
         for face, entry_pos in C.ENTRY_POINTS.items():
             if entry_pos == (x, y):
                 return face
         return None
 
     def nearest_food_within(self, x, y, radius):
-        """Return (fx, fy) of the closest non-empty food cell within
-        the given Manhattan radius, or None."""
-        best = None
+        best   = None
         best_d = radius + 1
         for (fx, fy), amt in self.food_cells.items():
             if amt <= 0.0:
@@ -161,20 +135,30 @@ class Chamber:
             d = abs(fx - x) + abs(fy - y)
             if d < best_d:
                 best_d = d
-                best = (fx, fy)
+                best   = (fx, fy)
         return best
 
     # ---- per-tick ----
 
     def tick(self, coordinator=None):
-        # Pheromones decay before any fresh deposits are made.
+        # Pheromones decay before any fresh deposits.
         self.pheromones.decay()
+
+        # Queen chamber beacon: always emit a strong to_home signal
+        # at the queen's position. This is the equivalent of
+        # JohnBuffer's "permanent marker" on the colony — ensures
+        # the gradient always has a well-defined source at the nest.
+        if self.queen is not None and self.queen.alive:
+            self.pheromones.deposit_home(
+                self.queen.x, self.queen.y,
+                C.BASE_MARKER_INTENSITY,
+            )
 
         # Queen
         if self.queen is not None:
             self.queen.tick(self)
 
-        # Brood — advance stages; hatch pupae into nanitics.
+        # Brood
         dead_brood = []
         hatched = []
         for b in self.brood:
@@ -192,7 +176,7 @@ class Chamber:
 
         # Workers
         dead_workers = []
-        crossings = []     # ants that landed on an active entry this tick
+        crossings = []
         for w in self.workers:
             w.tick(self)
             if not w.alive:
@@ -205,22 +189,18 @@ class Chamber:
         for w in dead_workers:
             self.workers.remove(w)
 
-        # Hand crossings off to the coordinator (if we have one)
+        # Hand crossings off to the coordinator
         if coordinator is not None and crossings:
             for w, face in crossings:
                 neighbour_id = self.entries.get(face)
                 if neighbour_id is None:
                     continue
-                # Suppress accidental "go home" crossings by empty
-                # outbound ants. If a scout wandered onto the
-                # home-face entry without cargo, that's a navigation
-                # mistake — they were supposed to be scouting AWAY
-                # from home, and bouncing back to the nest empty
-                # just burns a round trip. Refuse the crossing; the
-                # ant stays on the entry cell and their next tick's
-                # _do_outbound will walk them back off it.
+                # Suppress empty TO_FOOD ants bouncing back through
+                # home face — they should be exploring outward, not
+                # retreating empty-handed. Belt-and-braces; the
+                # gradient should prevent this naturally.
                 if (face == self.home_face
-                        and w.state == OUTBOUND
+                        and w.state == TO_FOOD
                         and w.food_carried <= 0):
                     continue
                 if w in self.workers:
@@ -228,8 +208,6 @@ class Chamber:
                 coordinator.handoff(w, self.module_id, neighbour_id, face)
 
     def _check_edge_crossing(self, worker):
-        """Return the face whose entry cell this worker is sitting on,
-        if that face is active. Otherwise None."""
         pos = (worker.x, worker.y)
         for face, entry_pos in C.ENTRY_POINTS.items():
             if pos == entry_pos and self.entries.get(face) is not None:
