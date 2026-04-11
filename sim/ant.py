@@ -165,6 +165,27 @@ class Ant:
                 self.target = None
                 return
 
+        # Scouting probability gate. Temporally spreads the decision
+        # so ants don't all leave on the same tick. If a returning
+        # ant has laid a to_food trail within sense_radius, bump the
+        # probability — this is the recruitment signal.
+        scout_prob = C.SCOUT_PROBABILITY
+        if chamber.queen is not None:
+            r = self.sense_radius
+            food_fn = chamber.pheromones.food
+            if any(
+                food_fn(self.x + dx, self.y + dy) > 0
+                for dy in range(-r, r + 1)
+                for dx in range(-r, r + 1)
+                if abs(dx) + abs(dy) <= r
+            ):
+                scout_prob = 0.80
+
+        if random.random() >= scout_prob:
+            self.state  = IDLE
+            self.target = None
+            return
+
         # Go forage.
         self.state         = TO_FOOD
         self.target        = None
@@ -309,13 +330,19 @@ class Ant:
             oy = random.randint(-r, r)
             if ox == 0 and oy == 0:
                 continue
-            if abs(ox) + abs(oy) > r:
+            dist = abs(ox) + abs(oy)
+            if dist > r:
                 continue
-            # Forward hemisphere: dot product with facing >= 0.
-            if ox * fx + oy * fy < 0:
+            # Forward ~90° cone: dot product with facing has to
+            # account for a meaningful fraction of the distance.
+            # Tighter than the old 180° hemisphere so ants don't
+            # keep veering off toward trails behind their shoulder.
+            if ox * fx + oy * fy <= 0.3 * dist:
                 continue
 
-            val = read_fn(self.x + ox, self.y + oy)
+            # Inverse-distance weighting — a strong signal 2 cells
+            # ahead should beat a weak signal 7 cells to the side.
+            val = read_fn(self.x + ox, self.y + oy) * (1.0 / dist)
             if val > best_val:
                 best_val = val
                 best_ox  = ox
