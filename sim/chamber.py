@@ -93,14 +93,40 @@ class Chamber:
     # ---- pheromone deposits (corridor-mirrored) ----
 
     def deposit_home(self, x, y, amount):
-        """Deposit to_home scent at (x, y). If on an active entry
-        cell, mirror the deposit to the neighbour's opposite entry
-        so the gradient is continuous across module boundaries."""
-        self.pheromones.deposit_home(x, y, amount)
-        self._mirror_deposit('home', x, y, amount)
+        """Deposit to_home scent at (x, y), diffused across the 4
+        cardinal neighbours at half intensity. A 3-cell-wide trail
+        is robust to gradient-step sampling even when ants drift
+        one cell off the original path.
+
+        Every cell written (primary + 4 neighbours) goes through
+        the per-cell helper so border entry cells still get mirrored
+        to the neighbour chamber — otherwise cross-module trail
+        continuity silently breaks for diffused deposits landing
+        on a face entry."""
+        self._deposit_home_cell(x, y, amount)
+        half = amount * 0.5
+        self._deposit_home_cell(x + 1, y, half)
+        self._deposit_home_cell(x - 1, y, half)
+        self._deposit_home_cell(x, y + 1, half)
+        self._deposit_home_cell(x, y - 1, half)
 
     def deposit_food(self, x, y, amount):
         """Deposit to_food scent at (x, y). See deposit_home."""
+        self._deposit_food_cell(x, y, amount)
+        half = amount * 0.5
+        self._deposit_food_cell(x + 1, y, half)
+        self._deposit_food_cell(x - 1, y, half)
+        self._deposit_food_cell(x, y + 1, half)
+        self._deposit_food_cell(x, y - 1, half)
+
+    def _deposit_home_cell(self, x, y, amount):
+        """Single-cell to_home write + border mirror. Off-grid
+        writes are silently ignored by the pheromone map."""
+        self.pheromones.deposit_home(x, y, amount)
+        self._mirror_deposit('home', x, y, amount)
+
+    def _deposit_food_cell(self, x, y, amount):
+        """Single-cell to_food write + border mirror."""
         self.pheromones.deposit_food(x, y, amount)
         self._mirror_deposit('food', x, y, amount)
 

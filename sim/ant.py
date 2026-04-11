@@ -15,12 +15,19 @@ States:
                the queen, drops cargo and switches to IDLE.
 
 Movement engine:
-  Ants sample N random cells in a forward semicircle and step toward
-  the cell with the strongest relevant marker. If no signal exists,
-  a momentum-biased random walk explores new territory. The
-  liberty_coef (per-ant, 0.001–0.01) gives each sample a small
-  chance to stop early, making high-liberty ants natural explorers
-  without needing an explicit explorer flag.
+  Ants read the 4 cardinal-neighbour marker values directly and step
+  toward the strongest. This is the discrete-grid equivalent of
+  JohnBuffer's continuous-space random-cone sampling — cheaper,
+  deterministic, and far more reliable because we can't miss a
+  trail cell the ant is literally adjacent to. If every neighbour
+  reads zero the ant falls through to a momentum-biased random
+  walk (see _persistent_forward_step) so lost ants still explore.
+
+  Trails are diffused at deposit time (Chamber.deposit_home/food
+  writes the primary cell plus its 4 cardinal neighbours at half
+  intensity), so a 1-cell walking path becomes a 3-cell-wide trail
+  and an ant drifting slightly off the centre line still picks it
+  up on the next step.
 
   Distance from source is encoded in deposit intensity via
   BASE_MARKER_INTENSITY * exp(-MARKER_STEP_DECAY * steps_walked).
@@ -56,7 +63,7 @@ class Ant:
         'move_cooldown', 'age', 'alive',
         'caste', 'move_ticks', 'sense_radius', 'carry_amount',
         'facing_dx', 'facing_dy', 'food_carried',
-        'last_dx', 'last_dy', 'liberty_coef',
+        'last_dx', 'last_dy',
         'steps_walked',
     )
 
@@ -82,16 +89,6 @@ class Ant:
         # Steps since last source (colony or food). Used to compute
         # deposit intensity: markers weaken with distance from source.
         self.steps_walked  = 0
-
-        # Liberty coefficient — JohnBuffer's explorer mechanism.
-        # During sampling, each sample has this probability of
-        # stopping early. High-liberty ants naturally explore
-        # suboptimal directions; low-liberty ants faithfully follow
-        # the best trail. Distribution produces ~10% meaningful
-        # explorers without needing an explicit boolean flag.
-        self.liberty_coef  = random.uniform(
-            C.LIBERTY_COEF_MIN, C.LIBERTY_COEF_MAX,
-        )
 
         # Caste-dependent params — baked at spawn time.
         self.caste = caste if caste is not None else C.CASTE_MINOR
@@ -304,67 +301,55 @@ class Ant:
     # ================================================================
 
     def _sample_markers(self, chamber, layer):
-        """Sample random cells in the forward semicircle. Returns
-        (dx, dy) toward the strongest marker, or None if no signal.
+        """Read the 4 cardinal-neighbour marker values on the given
+        layer and return (dx, dy) toward the strongest neighbour,
+        or None if every neighbour reads zero.
 
-        The liberty_coef mechanism: each sample has a small chance
-        (self.liberty_coef) to stop early and go with whatever the
-        best-so-far is. High-liberty ants explore; low-liberty ants
-        reliably follow the strongest trail. This replaces the
-        explicit explorer flag with a smooth per-ant spectrum.
+        This is a direct gradient step, not random sampling. On a
+        discrete grid with four known neighbours, deterministic
+        gradient-following is both cheaper and dramatically more
+        reliable than JohnBuffer-style random cone sampling — which
+        makes sense for his continuous-space sim but is the wrong
+        primitive here.
+
+        Gradient direction is correct by construction:
+          - to_home markers are strongest near the queen (source)
+            and weakest far from it, so "strongest neighbour"
+            always points uphill toward the nest.
+          - to_food markers are strongest near food (source), so
+            "strongest neighbour" points uphill toward food.
+
+        Ties break toward the ant's current facing so committed
+        walkers stay committed; remaining ties break randomly so
+        ants don't all queue into the same cell.
         """
-        best_val = 0.0
-        best_ox  = 0
-        best_oy  = 0
-
         read_fn = (chamber.pheromones.home if layer == 'home'
                    else chamber.pheromones.food)
-        r  = self.sense_radius
-        fx = self.facing_dx
-        fy = self.facing_dy
-        if fx == 0 and fy == 0:
-            fx = 1    # default east if no facing
+        neighbours = (
+            ( 1,  0, read_fn(self.x + 1, self.y)),
+            (-1,  0, read_fn(self.x - 1, self.y)),
+            ( 0,  1, read_fn(self.x, self.y + 1)),
+            ( 0, -1, read_fn(self.x, self.y - 1)),
+        )
 
-        for _ in range(C.MARKER_SAMPLE_COUNT):
-            ox = random.randint(-r, r)
-            oy = random.randint(-r, r)
-            if ox == 0 and oy == 0:
-                continue
-            dist = abs(ox) + abs(oy)
-            if dist > r:
-                continue
-            # Forward ~90° cone: dot product with facing has to
-            # account for a meaningful fraction of the distance.
-            # Tighter than the old 180° hemisphere so ants don't
-            # keep veering off toward trails behind their shoulder.
-            if ox * fx + oy * fy <= 0.3 * dist:
-                continue
-
-            # Inverse-distance weighting — a strong signal 2 cells
-            # ahead should beat a weak signal 7 cells to the side.
-            val = read_fn(self.x + ox, self.y + oy) * (1.0 / dist)
+        best_val = 0.0
+        best_picks = []
+        for dx, dy, val in neighbours:
             if val > best_val:
                 best_val = val
-                best_ox  = ox
-                best_oy  = oy
-
-            # Liberty check — explorers stop early.
-            if random.random() < self.liberty_coef:
-                break
+                best_picks = [(dx, dy)]
+            elif val == best_val and val > 0:
+                best_picks.append((dx, dy))
 
         if best_val <= 0:
             return None
+        if len(best_picks) == 1:
+            return best_picks[0]
 
-        # Cardinal step toward the best cell.
-        dx = 1 if best_ox > 0 else (-1 if best_ox < 0 else 0)
-        dy = 1 if best_oy > 0 else (-1 if best_oy < 0 else 0)
-        # Resolve diagonal to one cardinal axis.
-        if dx != 0 and dy != 0:
-            if random.random() < 0.5:
-                dy = 0
-            else:
-                dx = 0
-        return (dx, dy)
+        facing = (self.facing_dx, self.facing_dy)
+        if facing in best_picks:
+            return facing
+        return random.choice(best_picks)
 
     # ================================================================
     #  Domestic tasks (unchanged from original)
