@@ -132,19 +132,6 @@ PHEROMONE_GRID_DECAY   = 0.997   # per-tick multiplicative decay
                                   #   trails fade within ~1-2 minutes
 PHEROMONE_MAX          = 20.0    # cap so busy corridors don't blow up
 
-# Marker sampling — number of random cells to sample in the forward
-# semicircle when following a gradient. More samples = more reliable
-# gradient detection but more computation. 16 is a good balance for
-# a 60x40 grid with sense_radius 8.
-MARKER_SAMPLE_COUNT    = 16
-
-# Liberty coefficient — JohnBuffer's explorer mechanism. Each ant
-# gets a random value in [MIN, MAX]. During sampling, each sample
-# has this probability of stopping early. The distribution naturally
-# produces ~10% meaningful explorers without a boolean flag.
-LIBERTY_COEF_MIN       = 0.001   # most ants — faithful followers
-LIBERTY_COEF_MAX       = 0.01    # rare ants — natural explorers
-
 # ---------- Foraging ----------
 SCOUT_PROBABILITY        = 0.30
 SCOUT_PATIENCE_TICKS     = 3000
