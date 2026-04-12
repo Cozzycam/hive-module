@@ -1,5 +1,6 @@
-"""Warm dark nest palette. 16-ish colours — comfortable on the ESP32
-display and small enough to bake into firmware later as a lookup table.
+"""Deep forest nest palette. Mossy greens on dark loam — same 16-ish
+colour budget as the warm variant, same structural roles per slot so
+the renderer doesn't need to know which theme is loaded.
 
 All values are (R, G, B) tuples in the 0..255 range.
 """
@@ -8,50 +9,51 @@ All values are (R, G, B) tuples in the 0..255 range.
 # see-through pixel.
 TRANSPARENT = (255, 0, 255)
 
-# Background / chamber
-SOIL_DARK    = (24, 18, 14)     # deepest nest interior
-SOIL_MID     = (48, 34, 24)     # chamber floor
-SOIL_LIGHT   = (74, 54, 38)     # near-entry soil, brood-warm
-WALL         = (14, 10, 8)      # chamber border
+# Background / chamber — dark loam and moss
+SOIL_DARK    = (10, 20, 12)     # deepest nest interior
+SOIL_MID     = (22, 42, 26)     # chamber floor
+SOIL_LIGHT   = (38, 66, 42)     # near-entry soil, brood-warm
+WALL         = (6, 12, 8)       # chamber border
 
-# Warm highlights (candle / body-heat feel)
-GLOW_WARM    = (120, 74, 40)
-GLOW_AMBER   = (180, 110, 52)
+# Cool highlights (moss / lichen glow)
+GLOW_WARM    = (60, 120, 70)
+GLOW_AMBER   = (110, 180, 90)
 
-# Queen
-QUEEN_BODY   = (92, 40, 28)
-QUEEN_HEAD   = (132, 60, 38)
-QUEEN_EYE    = (12, 8, 6)
+# Queen — deep emerald
+QUEEN_BODY   = (28, 80, 44)
+QUEEN_HEAD   = (44, 112, 60)
+QUEEN_EYE    = (8, 14, 10)
 
-# Workers
-ANT_BODY     = (48, 30, 22)
-ANT_LIMB     = (30, 20, 14)
+# Workers — olive
+ANT_BODY     = (32, 52, 28)
+ANT_LIMB     = (20, 34, 18)
 
-# Major workers (Pheidole/Messor soldiers) — distinct reddish-brown
-# head capsule to read clearly against minor workers.
-MAJOR_HEAD   = (104, 52, 30)
-MAJOR_BODY   = (60, 36, 24)
+# Major workers (Pheidole/Messor soldiers) — lighter olive head capsule
+# to read clearly against minor workers.
+MAJOR_HEAD   = (66, 104, 48)
+MAJOR_BODY   = (36, 60, 30)
 
-# Brood
-EGG_COLOUR   = (238, 228, 200)
-LARVA_COLOUR = (232, 210, 168)
-PUPA_COLOUR  = (200, 170, 120)
+# Brood — pale mint cream
+EGG_COLOUR   = (220, 238, 210)
+LARVA_COLOUR = (214, 232, 184)
+PUPA_COLOUR  = (176, 200, 130)
 
 # UI
-UI_TEXT      = (220, 210, 188)
-UI_DIM       = (132, 118, 98)
-UI_ALERT     = (220, 96, 60)
+UI_TEXT      = (200, 230, 200)
+UI_DIM       = (108, 132, 108)
+UI_ALERT     = (220, 96, 60)    # warning colour kept warm for contrast
 
 # Entry indicators (edge markers)
-ENTRY_IDLE   = (70, 52, 38)
-ENTRY_ACTIVE = (200, 140, 60)
+ENTRY_IDLE   = (42, 70, 44)
+ENTRY_ACTIVE = (100, 200, 80)
 
 # Food piles (seeds / husks)
-FOOD_LIGHT   = (212, 168, 88)
-FOOD_DARK    = (150, 100, 44)
+FOOD_LIGHT   = (200, 218, 100)
+FOOD_DARK    = (110, 150, 50)
 
 # Pheromone overlay — semi-transparent tints painted over cells with
-# scent above a threshold. Home trail is a cool blue (ants remembering
-# the way back); food trail is a warm amber (ants recruiting foragers).
-HOME_SCENT   = (80, 140, 200)
-FOOD_SCENT   = (230, 170, 70)
+# scent above a threshold. Home trail is a cool cyan-teal (ants
+# remembering the way back); food trail is a warm yellow-gold
+# (ants recruiting foragers).
+HOME_SCENT   = (100, 200, 220)
+FOOD_SCENT   = (240, 220, 100)
