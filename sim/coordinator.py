@@ -10,8 +10,11 @@ boundaries. The ant continues its mission in the new chamber — the
 marker gradient guides it without needing a state reset.
 """
 
+import math
+
 from sim.colony import Colony
 from sim.chamber import Chamber, KIND_CHAMBER
+from sim.ant import TO_FOOD, TO_HOME
 from sim import protocol
 import config as C
 
@@ -129,6 +132,18 @@ class Coordinator:
           - target: cleared (it was a cell in the old chamber).
           - last_dx/last_dy: set to match new facing so momentum
             walk doesn't try to walk back the way it came.
+
+        Handoff-time deposit: the ant is placed one cell inside
+        the destination (to prevent instant re-crossing), which
+        normally means the placement cell never receives a primary
+        pheromone deposit — its only signal is half-strength
+        diffusion from the NEXT cell the ant visits. That creates
+        a local-minimum valley in the gradient exactly at the
+        border, and gradient-walking ants get trapped oscillating
+        one cell west of it. We fix this by laying a deposit
+        equivalent to what the ant would have dropped had it
+        walked onto the placement cell naturally — matching the
+        layer and intensity formula used by _do_to_food/_do_to_home.
         """
         if to_id not in self.chambers:
             return False
@@ -158,6 +173,26 @@ class Coordinator:
 
         # State, food_carried, steps_walked are PRESERVED.
         # The ant continues its mission in the new chamber.
+
+        # Fill the handoff gap so the gradient is continuous.
+        # Goes through dest.deposit_home/food (not pheromones.*
+        # directly) so the diffused cross-shape is written and
+        # mirroring still fires for the adjacent entry cell.
+        #
+        # Intensity uses steps_walked - 1 rather than steps_walked.
+        # The subtraction compensates for the move_cooldown-length
+        # gap between this deposit and the next in-chamber deposit:
+        # without the -1 bias, the handoff cell sits a few ticks
+        # older than its neighbour inward, and decay alone is
+        # enough to turn it back into a local-minimum valley.
+        effective_steps = max(0, ant.steps_walked - 1)
+        intensity = C.BASE_MARKER_INTENSITY * math.exp(
+            -C.MARKER_STEP_DECAY * effective_steps
+        )
+        if ant.state == TO_HOME and ant.food_carried > 0:
+            dest.deposit_food(ant.x, ant.y, intensity)
+        elif ant.state == TO_FOOD:
+            dest.deposit_home(ant.x, ant.y, intensity)
 
         dest.workers.append(ant)
         return True
