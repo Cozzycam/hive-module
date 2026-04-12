@@ -64,7 +64,7 @@ class Ant:
         'caste', 'move_ticks', 'sense_radius', 'carry_amount',
         'facing_dx', 'facing_dy', 'food_carried',
         'last_dx', 'last_dy',
-        'steps_walked',
+        'steps_walked', 'ticks_away',
     )
 
     def __init__(self, x, y, caste=None):
@@ -90,6 +90,11 @@ class Ant:
         # deposit intensity: markers weaken with distance from source.
         self.steps_walked  = 0
 
+        # Ticks spent outside the queen chamber. When this exceeds
+        # RETURN_HOME_TICKS the ant is forced into TO_HOME so it
+        # doesn't get permanently stuck in a non-queen module.
+        self.ticks_away    = 0
+
         # Caste-dependent params — baked at spawn time.
         self.caste = caste if caste is not None else C.CASTE_MINOR
         params = C.CASTE_PARAMS[self.caste]
@@ -106,6 +111,22 @@ class Ant:
             return
 
         self.age += 1
+
+        # Track time away from the queen chamber.
+        if chamber.queen is not None:
+            self.ticks_away = 0
+        else:
+            self.ticks_away += 1
+
+        # Return-home timer — after too long in a non-queen chamber,
+        # interrupt whatever the ant is doing and head home.
+        if (self.ticks_away >= C.RETURN_HOME_TICKS
+                and self.state != TO_HOME):
+            self.state        = TO_HOME
+            self.target       = None
+            self.steps_walked = 0
+            self.facing_dx    = -self.facing_dx
+            self.facing_dy    = -self.facing_dy
 
         if self.state == IDLE or not self._target_still_valid(chamber):
             self._pick_task(chamber)
@@ -132,6 +153,15 @@ class Ant:
         if self.food_carried > 0:
             self.state  = TO_HOME
             self.target = None
+            return
+
+        # Non-queen chamber — no domestic tasks possible, and IDLE
+        # ants have no homeward pull here. Always head home so ants
+        # don't get stuck random-walking in a foreign module.
+        if chamber.queen is None:
+            self.state        = TO_HOME
+            self.target       = None
+            self.steps_walked = 0
             return
 
         # Domestic: feed queen

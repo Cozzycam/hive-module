@@ -139,6 +139,10 @@ FORAGE_FOOD_PICKUP       = 10.0
 MIN_BROOD_FEED_RESERVE   = 40.0
 FORAGE_DEBUG_PILE_SIZE   = 200.0
 HOME_WORKER_RESERVE      = 0.60
+RETURN_HOME_TICKS        = 960    # ~120 sec at 8 tps; ants forced TO_HOME
+                                  # after this many ticks outside the queen
+                                  # chamber. Prevents ants getting permanently
+                                  # stuck in non-queen modules.
 
 # Legacy aliases — these are no longer used by the new pheromone
 # system but may be referenced by older code paths. Safe to remove
