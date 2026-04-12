@@ -64,7 +64,7 @@ class Ant:
         'caste', 'move_ticks', 'sense_radius', 'carry_amount',
         'facing_dx', 'facing_dy', 'food_carried',
         'last_dx', 'last_dy',
-        'steps_walked', 'ticks_away',
+        'steps_walked', 'ticks_away', 'stall_ticks',
     )
 
     def __init__(self, x, y, caste=None):
@@ -94,6 +94,12 @@ class Ant:
         # RETURN_HOME_TICKS the ant is forced into TO_HOME so it
         # doesn't get permanently stuck in a non-queen module.
         self.ticks_away    = 0
+
+        # Consecutive movement ticks where the ant didn't change
+        # position (stalled at the peak of an exhausted-food
+        # gradient). After STALL_THRESHOLD_TICKS the ant ignores
+        # the gradient and explores randomly.
+        self.stall_ticks   = 0
 
         # Caste-dependent params — baked at spawn time.
         self.caste = caste if caste is not None else C.CASTE_MINOR
@@ -252,22 +258,36 @@ class Ant:
                 self.facing_dy = -self.facing_dy
                 return
 
+        # Stall detection — if the ant hasn't changed position for
+        # too many movement ticks it's stuck at the peak of an
+        # exhausted-food gradient. Ignore the gradient and explore.
+        old_x, old_y = self.x, self.y
+
         # Movement decision (in priority order):
         # 1. Walk toward a visible food pile within sense radius.
-        # 2. Follow to_food gradient (trails laid by returning ants).
+        # 2. Follow to_food gradient (unless stalled — trail is
+        #    a dead end, skip straight to random walk).
         # 3. Momentum-biased random walk (exploration).
         visible_pile = chamber.nearest_food_within(
             self.x, self.y, self.sense_radius,
         )
         if visible_pile is not None:
             self._step_toward_cell(visible_pile, chamber)
-        else:
+        elif self.stall_ticks < C.STALL_THRESHOLD_TICKS:
             step = self._sample_markers(chamber, 'food')
             if step is not None:
                 dx, dy = step
                 self._try_move(dx, dy, chamber)
             else:
                 self._persistent_forward_step(chamber)
+        else:
+            self._persistent_forward_step(chamber)
+
+        # Update stall counter.
+        if self.x == old_x and self.y == old_y:
+            self.stall_ticks += 1
+        else:
+            self.stall_ticks = 0
 
         # Deposit to_home marker at new position. Intensity decays
         # with steps walked — cells near the colony are strong, far
