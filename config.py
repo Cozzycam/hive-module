@@ -143,6 +143,10 @@ RETURN_HOME_TICKS        = 960    # ~120 sec at 8 tps; ants forced TO_HOME
                                   # after this many ticks outside the queen
                                   # chamber. Prevents ants getting permanently
                                   # stuck in non-queen modules.
+IDLE_RECONSIDER_MIN      = 40     # ticks before an IDLE ant re-rolls the
+IDLE_RECONSIDER_MAX      = 120    # scouting decision. Random per ant so
+                                  # departures stagger over ~5–15 sec at
+                                  # 8 tps instead of bursting in a wave.
 STALL_THRESHOLD_TICKS    = 12     # if a TO_FOOD ant hasn't moved for this
                                   # many movement ticks, the trail led to
                                   # exhausted food — ignore gradient, explore.

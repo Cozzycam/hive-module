@@ -65,6 +65,7 @@ class Ant:
         'facing_dx', 'facing_dy', 'food_carried',
         'last_dx', 'last_dy',
         'steps_walked', 'ticks_away', 'stall_ticks',
+        'idle_cooldown',
     )
 
     def __init__(self, x, y, caste=None):
@@ -101,6 +102,11 @@ class Ant:
         # the gradient and explores randomly.
         self.stall_ticks   = 0
 
+        # Cooldown before an IDLE ant re-rolls the scouting
+        # decision. Prevents the wave-departure problem where
+        # every ant re-rolls every tick and all leave at once.
+        self.idle_cooldown = 0
+
         # Caste-dependent params — baked at spawn time.
         self.caste = caste if caste is not None else C.CASTE_MINOR
         params = C.CASTE_PARAMS[self.caste]
@@ -134,7 +140,14 @@ class Ant:
             self.facing_dx    = -self.facing_dx
             self.facing_dy    = -self.facing_dy
 
-        if self.state == IDLE or not self._target_still_valid(chamber):
+        # IDLE ants only reconsider after their cooldown expires,
+        # so departures stagger naturally instead of wave-bursting.
+        if self.state == IDLE:
+            if self.idle_cooldown > 0:
+                self.idle_cooldown -= 1
+            else:
+                self._pick_task(chamber)
+        elif not self._target_still_valid(chamber):
             self._pick_task(chamber)
 
         if self.state == TEND_BROOD:
@@ -194,8 +207,11 @@ class Ant:
             total_pop = chamber.colony.population
             here_pop  = len(chamber.workers)
             if total_pop > 0 and here_pop / total_pop < C.HOME_WORKER_RESERVE:
-                self.state  = IDLE
-                self.target = None
+                self.state         = IDLE
+                self.target        = None
+                self.idle_cooldown = random.randint(
+                    C.IDLE_RECONSIDER_MIN, C.IDLE_RECONSIDER_MAX,
+                )
                 return
 
         # Scouting probability gate. Temporally spreads the decision
@@ -215,8 +231,11 @@ class Ant:
                 scout_prob = 0.80
 
         if random.random() >= scout_prob:
-            self.state  = IDLE
-            self.target = None
+            self.state         = IDLE
+            self.target        = None
+            self.idle_cooldown = random.randint(
+                C.IDLE_RECONSIDER_MIN, C.IDLE_RECONSIDER_MAX,
+            )
             return
 
         # Go forage.
