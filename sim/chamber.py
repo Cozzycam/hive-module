@@ -59,6 +59,11 @@ class Chamber:
         # Brood cannibalism cooldown (ticks until next allowed).
         self.cannibalism_cooldown = 0
 
+        # Food delivery signal — set when a forager deposits food.
+        # Idle ants check this for recruitment (not pheromone, which
+        # lingers and causes false triggers from stored food).
+        self.food_delivery_signal = 0
+
         # Pheromone layers.
         self.pheromones = PheromoneMap(self.width, self.height)
 
@@ -248,9 +253,11 @@ class Chamber:
             for b in famine_dead:
                 self.brood.remove(b)
 
-        # Cannibalism cooldown tick.
+        # Cooldown ticks.
         if self.cannibalism_cooldown > 0:
             self.cannibalism_cooldown -= 1
+        if self.food_delivery_signal > 0:
+            self.food_delivery_signal -= 1
 
         # Workers — shuffled so metabolism draws from food_store
         # in random order each tick (no first-in-list survival bias).

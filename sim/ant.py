@@ -404,6 +404,8 @@ class Ant:
             if abs(qx - self.x) + abs(qy - self.y) <= 1:
                 chamber.colony.food_store += self.food_carried
                 self.food_carried  = 0.0
+                # Signal nestmates — a forager just delivered food.
+                chamber.food_delivery_signal = 200
                 self.state         = IDLE
                 self.target        = None
                 self.steps_walked  = 0
@@ -427,10 +429,10 @@ class Ant:
                 else:
                     self._persistent_forward_step(chamber)
 
-        # Deposit to_food marker in non-queen chambers only — the
-        # trail guides outbound ants through corridors to the food
-        # source. No pheromone inside the nest.
-        if self.food_carried > 0 and chamber.queen is None:
+        # Deposit to_food marker everywhere the forager walks — the
+        # trail must extend through the nest so outbound ants can
+        # follow it from the queen all the way to the food source.
+        if self.food_carried > 0:
             intensity = C.BASE_MARKER_INTENSITY * math.exp(
                 -C.MARKER_STEP_DECAY * self.steps_walked
             )
@@ -655,16 +657,10 @@ class Ant:
         return best
 
     def _detects_food_trail(self, chamber):
-        """True if to_food pheromone exists at or adjacent to the
-        ant. Cheap 5-cell check — triggers recruitment when a
-        returning forager has laid a trail through the nest."""
-        food_fn = chamber.pheromones.food
-        if food_fn(self.x, self.y) > 0:
-            return True
-        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-            if food_fn(self.x + dx, self.y + dy) > 0:
-                return True
-        return False
+        """True if a forager recently delivered food to this chamber.
+        Uses a delivery signal (not pheromone) so residual to_food
+        scent from old deliveries doesn't cause false recruitment."""
+        return chamber.food_delivery_signal > 0
 
     def _within_sense(self, tx, ty):
         return abs(tx - self.x) + abs(ty - self.y) <= self.sense_radius
