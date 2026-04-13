@@ -57,11 +57,11 @@ CLAUSTRAL_PERIOD_DAYS = 56
 FOOD_STORE_START      = 550.0      # was 500, +10%
 
 # ---------- Queen ----------
-QUEEN_METABOLISM        = 0.0117    # was 0.013, -10%
+QUEEN_METABOLISM        = 0.0094    # -28% from original 0.013
 QUEEN_LAY_INTERVAL_FOUNDING = days(0.5)   # fast burst during claustral phase
 QUEEN_LAY_INTERVAL_NORMAL  = days(2)     # steady-state post-founding
 QUEEN_LAY_INTERVAL         = QUEEN_LAY_INTERVAL_FOUNDING  # initial value
-QUEEN_EGG_FOOD_COST     = 1.35     # was 1.5, -10%; per egg (batch of 6 = 8.1)
+QUEEN_EGG_FOOD_COST     = 1.08     # -28% from original 1.5
 QUEEN_LAY_FOOD_FLOOR    = 50.0
 QUEEN_FOUNDING_EGG_CAP  = 12
 QUEEN_HUNGER_RATE       = 0.02
@@ -72,8 +72,8 @@ EGG_DURATION          = days(10)
 LARVA_DURATION        = days(20)
 LARVA_HUNGER_RATE     = 0.001
 LARVA_STARVE          = 12.0
-LARVA_FEED_AMOUNT     = 1.8       # was 2.0, -10%
-LARVA_MIN_FED_TOTAL   = 14.4     # was 16.0, -10%
+LARVA_FEED_AMOUNT     = 1.44      # -28% from original 2.0
+LARVA_MIN_FED_TOTAL   = 11.5     # -28% from original 16.0
 PUPA_DURATION         = days(20)
 
 # ---------- Worker castes ----------
@@ -82,8 +82,8 @@ CASTE_MAJOR = 'major'
 
 # Worker metabolism — passive per-tick drain from food_store.
 # Minor ~1/10 the queen's rate, matching biological mass ratio.
-WORKER_METABOLISM_MINOR  = 0.00117   # was 0.0013, -10%
-WORKER_METABOLISM_MAJOR  = 0.0018    # was 0.002, -10%
+WORKER_METABOLISM_MINOR  = 0.00094   # -28% from original 0.0013
+WORKER_METABOLISM_MAJOR  = 0.00144   # -28% from original 0.002
 WORKER_HUNGER_RATE       = 0.015     # per tick when food_store can't cover
 WORKER_STARVE_THRESHOLD  = 30.0      # hunger at which worker dies
 
@@ -101,16 +101,16 @@ CASTE_PARAMS = {
         'metabolism':        WORKER_METABOLISM_MINOR,
         'lifespan':          WORKER_LIFESPAN_MINOR,
         'larva_duration':    days(20),
-        'larva_food_needed': 14.4,   # -10%
+        'larva_food_needed': 11.5,   # -28% from original
     },
     CASTE_MAJOR: {
         'move_ticks':        6,
         'sense_radius':      6,
-        'carry_amount':      16.5,   # was 15.0, +10%
+        'carry_amount':      16.5,   # +10% from original 15.0
         'metabolism':        WORKER_METABOLISM_MAJOR,
         'lifespan':          WORKER_LIFESPAN_MAJOR,
         'larva_duration':    days(28),
-        'larva_food_needed': 28.8,   # was 32.0, -10%
+        'larva_food_needed': 23.0,   # -28% from original 32.0
     },
 }
 
