@@ -143,12 +143,13 @@ class Ant:
             self.alive = False
             return
 
-        # Metabolism — passive drain from colony food store.
-        # Matches the queen's pattern: eat if available, else
-        # accumulate hunger until starvation threshold.
-        colony = chamber.colony
-        if colony.food_store >= self.metabolism:
-            colony.food_store -= self.metabolism
+        # Metabolism — consume from nearest physical food pile.
+        # Workers that can't find a pile within sense_radius go
+        # hungry even if food exists elsewhere in the colony.
+        consumed = chamber.consume_food(
+            self.x, self.y, self.metabolism, self.sense_radius,
+        )
+        if consumed > 0:
             if self.hunger > 0:
                 self.hunger = max(0.0, self.hunger - self.metabolism)
         else:
@@ -216,21 +217,24 @@ class Ant:
             self.steps_walked = 0
             return
 
-        # Domestic: feed queen
+        # Domestic: feed queen — requires a physical food pile in
+        # reach so the worker can pick it up and carry it over.
         queen = chamber.queen
+        has_local_food = bool(chamber.food_cells)
         if (queen is not None
                 and queen.needs_feeding()
-                and chamber.colony.food_store >= self.carry_amount
+                and has_local_food
                 and self._within_sense(queen.x, queen.y)):
             self.state  = TEND_QUEEN
             self.target = (queen.x, queen.y)
             return
 
-        # Domestic: feed larvae
+        # Domestic: feed larvae — same physical-food requirement.
         larva = self._nearest_hungry_larva(chamber)
         if (larva is not None
+                and has_local_food
                 and chamber.colony.food_store
-                    >= self.carry_amount + C.MIN_BROOD_FEED_RESERVE):
+                    >= C.MIN_BROOD_FEED_RESERVE):
             self.state  = TEND_BROOD
             self.target = (larva.x, larva.y)
             return
@@ -360,22 +364,33 @@ class Ant:
             return
         self.move_cooldown = self.move_ticks
 
-        # In queen chamber — walk to queen, dump cargo on arrival.
         if chamber.queen is not None:
-            qx, qy = chamber.queen.x, chamber.queen.y
-            if abs(qx - self.x) + abs(qy - self.y) <= 1:
-                chamber.colony.food_store += self.food_carried
-                self.food_carried  = 0.0
-                self.state         = IDLE
-                self.target        = None
-                self.steps_walked  = 0
-                # Foraging wear — completed trips age the worker.
-                self.age += random.randint(*C.FORAGING_TRIP_WEAR)
-                # Flip facing — ready to head back out.
-                self.facing_dx = -self.facing_dx
-                self.facing_dy = -self.facing_dy
+            # In the queen chamber.
+            if self.food_carried <= 0:
+                # Empty returner (scout timeout) — just go idle.
+                self.state        = IDLE
+                self.target       = None
+                self.steps_walked = 0
+                self.facing_dx    = -self.facing_dx
+                self.facing_dy    = -self.facing_dy
                 return
-            self._step_toward_cell((qx, qy), chamber)
+
+            # Carrying food — deposit as a physical pile.
+            # Prefer adding to an existing nearby pile (clustering).
+            pile = chamber.nearest_food_within(
+                self.x, self.y, C.FOOD_DEPOSIT_RADIUS,
+            )
+            if pile is not None:
+                px, py = pile
+                if abs(px - self.x) + abs(py - self.y) <= 1:
+                    self._deposit_to_pile(chamber, px, py)
+                    return
+                # Walk toward the pile.
+                self._step_toward_cell(pile, chamber)
+            else:
+                # No nearby pile — drop at current position.
+                self._deposit_to_pile(chamber, self.x, self.y)
+                return
         else:
             # Not in the queen chamber — follow to_home gradient.
             step = self._sample_markers(chamber, 'home')
@@ -399,6 +414,26 @@ class Ant:
             )
             chamber.deposit_food(self.x, self.y, intensity)
         self.steps_walked += 1
+
+    def _deposit_to_pile(self, chamber, px, py):
+        """Drop carried food as a physical pile, respecting the cap."""
+        current = chamber.food_cells.get((px, py), 0.0)
+        space   = max(0.0, C.FOOD_PILE_CAP - current)
+        deposit = min(self.food_carried, space)
+        if deposit > 0:
+            chamber.add_food(px, py, deposit)
+            self.food_carried -= deposit
+        # If pile was full, drop remainder at ant's position.
+        if self.food_carried > 0:
+            chamber.add_food(self.x, self.y, self.food_carried)
+        self.food_carried  = 0.0
+        self.state         = IDLE
+        self.target        = None
+        self.steps_walked  = 0
+        # Foraging wear — completed trips age the worker.
+        self.age += random.randint(*C.FORAGING_TRIP_WEAR)
+        self.facing_dx = -self.facing_dx
+        self.facing_dy = -self.facing_dy
 
     # ================================================================
     #  Marker sampling — the core engine (JohnBuffer-style)
@@ -456,35 +491,103 @@ class Ant:
         return random.choice(best_picks)
 
     # ================================================================
-    #  Domestic tasks (unchanged from original)
+    #  Domestic tasks — two-phase: pick up food, then deliver
     # ================================================================
 
     def _do_tend_brood(self, chamber):
+        """Phase 1 (food_carried == 0): walk to nearest food pile,
+        pick up carry_amount.  Phase 2 (food_carried > 0): walk to
+        target larva and feed it. Creates visible nurse shuttle."""
+        if self.move_cooldown > 0:
+            self.move_cooldown -= 1
+            return
+        self.move_cooldown = self.move_ticks
+
+        if self.food_carried <= 0:
+            # Phase 1 — acquire food from a pile.
+            pile = chamber.nearest_food_within(
+                self.x, self.y, self.sense_radius,
+            )
+            if pile is None:
+                # No food in reach — give up.
+                self.state  = IDLE
+                self.target = None
+                return
+            px, py = pile
+            if abs(px - self.x) + abs(py - self.y) <= 1:
+                taken = chamber.take_food(px, py, self.carry_amount)
+                if taken > 0:
+                    self.food_carried = taken
+                else:
+                    self.state  = IDLE
+                    self.target = None
+                return
+            self._step_toward_cell(pile, chamber)
+            return
+
+        # Phase 2 — deliver food to the target larva.
         tx, ty = self.target
         if abs(tx - self.x) + abs(ty - self.y) <= 1:
-            if chamber.colony.food_store >= self.carry_amount:
-                for b in chamber.brood:
-                    if (b.x, b.y) == (tx, ty) and b.stage == brood_mod.LARVA:
-                        chamber.colony.food_store -= self.carry_amount
-                        b.feed(self.carry_amount)
-                        break
+            fed = False
+            for b in chamber.brood:
+                if (b.x, b.y) == (tx, ty) and b.stage == brood_mod.LARVA:
+                    b.feed(self.food_carried)
+                    self.food_carried = 0.0
+                    fed = True
+                    break
+            if not fed:
+                # Larva gone — drop food as pile so it isn't lost.
+                chamber.add_food(self.x, self.y, self.food_carried)
+                self.food_carried = 0.0
             self.state  = IDLE
             self.target = None
             return
-        self._step_toward(tx, ty, chamber)
+        self._step_toward_cell((tx, ty), chamber)
 
     def _do_tend_queen(self, chamber):
+        """Two-phase like tend_brood: pick up food from pile, then
+        walk to the queen and feed her."""
+        if self.move_cooldown > 0:
+            self.move_cooldown -= 1
+            return
+        self.move_cooldown = self.move_ticks
+
+        if self.food_carried <= 0:
+            # Phase 1 — acquire food from a pile.
+            pile = chamber.nearest_food_within(
+                self.x, self.y, self.sense_radius,
+            )
+            if pile is None:
+                self.state  = IDLE
+                self.target = None
+                return
+            px, py = pile
+            if abs(px - self.x) + abs(py - self.y) <= 1:
+                taken = chamber.take_food(px, py, self.carry_amount)
+                if taken > 0:
+                    self.food_carried = taken
+                else:
+                    self.state  = IDLE
+                    self.target = None
+                return
+            self._step_toward_cell(pile, chamber)
+            return
+
+        # Phase 2 — deliver food to queen.
         tx, ty = self.target
         if abs(tx - self.x) + abs(ty - self.y) <= 1:
-            if chamber.colony.food_store >= self.carry_amount:
-                chamber.colony.food_store -= self.carry_amount
+            if chamber.queen is not None:
                 chamber.queen.hunger = max(
-                    0.0, chamber.queen.hunger - self.carry_amount
+                    0.0, chamber.queen.hunger - self.food_carried,
                 )
+            else:
+                # Queen gone — drop food.
+                chamber.add_food(self.x, self.y, self.food_carried)
+            self.food_carried = 0.0
             self.state  = IDLE
             self.target = None
             return
-        self._step_toward(tx, ty, chamber)
+        self._step_toward_cell((tx, ty), chamber)
 
     def _do_idle(self, chamber):
         """Random walk with a gentle pull toward the queen."""

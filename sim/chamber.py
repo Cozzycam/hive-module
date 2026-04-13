@@ -92,6 +92,30 @@ class Chamber:
             self.food_cells[(x, y)] = remaining
         return taken
 
+    def consume_food(self, x, y, amount, radius=None):
+        """Consume up to `amount` from the nearest food pile to (x, y).
+        If radius is given, only considers piles within that Manhattan
+        distance. Returns actual amount consumed (may be less than
+        requested). Empty piles are removed automatically."""
+        if radius is None:
+            radius = self.width + self.height
+        best = None
+        best_d = radius + 1
+        for (fx, fy) in list(self.food_cells):
+            if self.food_cells[(fx, fy)] <= 0.0:
+                continue
+            d = abs(fx - x) + abs(fy - y)
+            if d < best_d:
+                best_d = d
+                best   = (fx, fy)
+        if best is None:
+            return 0.0
+        return self.take_food(best[0], best[1], amount)
+
+    def total_food(self):
+        """Sum of all food piles in this chamber."""
+        return sum(self.food_cells.values())
+
     # ---- pheromone deposits (corridor-mirrored) ----
 
     def deposit_home(self, x, y, amount):

@@ -11,7 +11,10 @@ import config as C
 
 class Colony:
     def __init__(self):
-        self.food_store = C.FOOD_STORE_START
+        # Derived total — sum of all physical food piles across all
+        # chambers. Recomputed by Coordinator.tick() each tick.
+        # Starting food is placed as a physical pile, not here.
+        self.food_store = 0.0
         # Mirror of per-chamber state for quick reads by ants / UI.
         # Updated by Coordinator.tick().
         self.population = 0

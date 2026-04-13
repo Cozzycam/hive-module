@@ -1,8 +1,10 @@
 """Founding queen. Stationary. Lays eggs on a cooldown as long as the
-colony food store is above a floor. Pre-nanitic she survives off the
-shared food store (which starts topped up from her wing-muscle reserves);
-post-nanitic workers must keep that store filled by trophallaxis or
-(Phase 2) foraging.
+colony has enough food. Pre-nanitic she survives off her founding
+food pile (wing-muscle reserves placed at her spawn position);
+post-nanitic workers must keep food piles stocked by foraging.
+
+All food interactions are physical — the queen consumes from the
+nearest food pile within reach, not from an abstract counter.
 """
 
 import random
@@ -26,13 +28,11 @@ class Queen:
         if not self.alive:
             return
 
-        # Metabolism — drawn from the shared food store. This represents
-        # her continuous consumption. If the store is empty she starts
-        # accruing hunger and will eventually starve.
-        if chamber.colony.food_store >= C.QUEEN_METABOLISM:
-            chamber.colony.food_store -= C.QUEEN_METABOLISM
-            # Any feeding by workers on a recent tick has already topped
-            # up the store, so reduce latent hunger a touch.
+        # Metabolism — consume from the nearest physical food pile.
+        # If no pile is within reach she accrues hunger and will
+        # eventually starve.
+        consumed = chamber.consume_food(self.x, self.y, C.QUEEN_METABOLISM)
+        if consumed > 0:
             if self.hunger > 0:
                 self.hunger = max(0.0, self.hunger - C.QUEEN_METABOLISM)
         else:
@@ -57,13 +57,10 @@ class Queen:
             self.lay_cooldown = C.QUEEN_LAY_INTERVAL
 
     def _tend_founding_brood(self, chamber):
-        """Feed one hungry under-fed larva per tick from the shared
-        store. Skip larvae that have already met their pupation food
-        threshold — they're done growing and any extra feeding is
-        wasted reserve."""
+        """Feed one hungry under-fed larva per tick from the nearest
+        physical food pile. Skip larvae that have already met their
+        pupation food threshold."""
         from sim.brood import LARVA
-        if chamber.colony.food_store < C.LARVA_FEED_AMOUNT:
-            return
         for b in chamber.brood:
             if b.stage != LARVA or not b.alive:
                 continue
@@ -73,8 +70,11 @@ class Queen:
                 continue
             # small queen radius — she can only reach brood next to her
             if abs(b.x - self.x) + abs(b.y - self.y) <= 3:
-                chamber.colony.food_store -= C.LARVA_FEED_AMOUNT
-                b.feed(C.LARVA_FEED_AMOUNT)
+                consumed = chamber.consume_food(
+                    self.x, self.y, C.LARVA_FEED_AMOUNT,
+                )
+                if consumed > 0:
+                    b.feed(consumed)
                 return
 
     # ---- internals ----
@@ -89,7 +89,14 @@ class Queen:
         return True
 
     def _lay(self, chamber):
-        chamber.colony.food_store -= C.QUEEN_EGG_FOOD_COST
+        consumed = chamber.consume_food(
+            self.x, self.y, C.QUEEN_EGG_FOOD_COST,
+        )
+        if consumed < C.QUEEN_EGG_FOOD_COST:
+            # Not enough in any nearby pile — put back partial, skip.
+            if consumed > 0:
+                chamber.add_food(self.x, self.y, consumed)
+            return
         # Phase 1 founding: only minors. Phase 2 will promote some
         # larvae to majors once the colony passes a population gate.
         caste = C.DEFAULT_BROOD_CASTE

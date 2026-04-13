@@ -34,6 +34,11 @@ class Coordinator:
         self.chambers[FOUNDING_ID] = founding
         self.topology[FOUNDING_ID] = {}
 
+        # Starting food as a physical pile at the queen's position.
+        qx, qy = C.QUEEN_SPAWN
+        founding.add_food(qx, qy, C.FOOD_STORE_START)
+        self.colony.food_store = C.FOOD_STORE_START
+
     # ---- per-tick ----
 
     def tick(self):
@@ -48,13 +53,16 @@ class Coordinator:
             ch.tick(self)
 
         pop = 0
+        total_food = 0.0
         totals = {'egg': 0, 'larva': 0, 'pupa': 0}
         for ch in self.chambers.values():
             pop += len(ch.workers)
+            total_food += ch.total_food()
             cb = ch.count_brood()
             for k in totals:
                 totals[k] += cb[k]
         self.colony.population   = pop
+        self.colony.food_store   = total_food
         self.colony.brood_counts = totals
 
     # ---- multi-module attachment ----

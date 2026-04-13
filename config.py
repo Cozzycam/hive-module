@@ -155,6 +155,8 @@ SCOUT_PATIENCE_TICKS     = 3000
 FORAGE_FOOD_PICKUP       = 10.0
 MIN_BROOD_FEED_RESERVE   = 40.0
 FORAGE_DEBUG_PILE_SIZE   = 200.0
+FOOD_PILE_CAP            = 50.0    # max per pile; forces spatial spread
+FOOD_DEPOSIT_RADIUS      = 5      # foragers look this far for a pile to add to
 HOME_WORKER_RESERVE      = 0.60
 RETURN_HOME_TICKS        = 960    # ~120 sec at 8 tps; ants forced TO_HOME
                                   # after this many ticks outside the queen
