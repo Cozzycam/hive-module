@@ -66,7 +66,7 @@ class Ant:
         'facing_dx', 'facing_dy', 'food_carried',
         'last_dx', 'last_dy',
         'steps_walked', 'ticks_away', 'stall_ticks',
-        'idle_cooldown',
+        'idle_cooldown', 'chamber_steps',
         'hunger', 'max_age', 'metabolism',
     )
 
@@ -108,6 +108,12 @@ class Ant:
         # decision. Prevents the wave-departure problem where
         # every ant re-rolls every tick and all leave at once.
         self.idle_cooldown = 0
+
+        # Steps taken in the CURRENT chamber. Resets on chamber
+        # crossing so the ant explores each new chamber before
+        # seeking exits. Separate from steps_walked which drives
+        # pheromone deposit intensity.
+        self.chamber_steps = 0
 
         # Hunger — accumulates when food_store can't cover
         # metabolism. Worker dies at WORKER_STARVE_THRESHOLD.
@@ -325,7 +331,9 @@ class Ant:
         # 1. Walk toward a visible food pile within sense radius.
         # 2. Follow to_food gradient (unless stalled — trail is
         #    a dead end, skip straight to random walk).
-        # 3. Momentum-biased random walk (exploration).
+        # 3. If near an active entry, sometimes steer toward it
+        #    so scouts discover passages between chambers.
+        # 4. Momentum-biased random walk (exploration).
         visible_pile = chamber.nearest_food_within(
             self.x, self.y, self.sense_radius,
         )
@@ -337,9 +345,9 @@ class Ant:
                 dx, dy = step
                 self._try_move(dx, dy, chamber)
             else:
-                self._persistent_forward_step(chamber)
+                self._explore_or_wander(chamber)
         else:
-            self._persistent_forward_step(chamber)
+            self._explore_or_wander(chamber)
 
         # Update stall counter.
         if self.x == old_x and self.y == old_y:
@@ -355,6 +363,7 @@ class Ant:
         )
         chamber.deposit_home(self.x, self.y, intensity)
         self.steps_walked += 1
+        self.chamber_steps += 1
 
     # ================================================================
     #  Foraging: TO_HOME (returning with food)
@@ -666,8 +675,11 @@ class Ant:
 
     def _move_delay(self, chamber):
         """Movement cooldown, doubled under severe food stress
-        (starvation cascade stage 2 — conserve energy)."""
-        if chamber.colony.food_pressure() > C.FAMINE_SLOWDOWN_PRESSURE:
+        (starvation cascade stage 2 — conserve energy). Foragers
+        are exempt — they need full speed to find food and save
+        the colony."""
+        if (chamber.colony.food_pressure() > C.FAMINE_SLOWDOWN_PRESSURE
+                and self.state not in (TO_FOOD, TO_HOME)):
             return self.move_ticks * 2
         return self.move_ticks
 
@@ -716,6 +728,61 @@ class Ant:
             if key in chamber.food_cells and chamber.food_cells[key] > 0:
                 return key
         return None
+
+    def _nearest_active_entry(self, chamber, max_dist=None,
+                              exclude_face=None):
+        """Return the closest active entry point within max_dist,
+        or None. Only considers faces with a connected neighbour.
+        exclude_face skips that face (e.g. home_face so foragers
+        explore outward, not back toward the nest)."""
+        if max_dist is None:
+            max_dist = C.ENTRY_ATTRACT_RADIUS
+        best = None
+        best_d = max_dist + 1
+        for face, pos in C.ENTRY_POINTS.items():
+            if chamber.entries.get(face) is None:
+                continue
+            if face == exclude_face:
+                continue
+            d = abs(pos[0] - self.x) + abs(pos[1] - self.y)
+            if d < best_d:
+                best_d = d
+                best   = pos
+        return best
+
+    def _explore_or_wander(self, chamber):
+        """Exploration with three phases:
+        Push (< 30 steps in non-home chamber): walk straight in the
+        facing direction. After handoff, facing points inward, so
+        this drives the ant deep into the new chamber.
+        Explore (< CHAMBER_EXPLORE_STEPS): random walk, 30% chance
+        of steering toward a non-home active entry.
+        Exit (>= CHAMBER_EXPLORE_STEPS): deterministic walk to the
+        nearest exit — this chamber has nothing, try the next one."""
+        if self.chamber_steps >= C.CHAMBER_EXPLORE_STEPS:
+            entry = self._nearest_active_entry(chamber, max_dist=200)
+            if entry is not None:
+                self._step_toward_cell(entry, chamber)
+                return
+        elif (self.chamber_steps < 30
+              and chamber.home_face is not None):
+            # Just entered a non-home chamber — push inward using
+            # the facing direction set by handoff. Ensures the ant
+            # surveys the bulk of the chamber, not just the entrance.
+            dx, dy = self.facing_dx, self.facing_dy
+            if dx == 0 and dy == 0:
+                dx, dy = 1, 0
+            if not self._try_move(dx, dy, chamber):
+                self._persistent_forward_step(chamber)
+            return
+        elif random.random() < 0.3:
+            entry = self._nearest_active_entry(
+                chamber, exclude_face=chamber.home_face,
+            )
+            if entry is not None:
+                self._step_toward_cell(entry, chamber)
+                return
+        self._persistent_forward_step(chamber)
 
     # ---- movement ----
 

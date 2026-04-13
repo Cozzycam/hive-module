@@ -193,6 +193,9 @@ class Coordinator:
 
         # State, food_carried, steps_walked are PRESERVED.
         # The ant continues its mission in the new chamber.
+        # chamber_steps resets so the ant explores the new chamber
+        # before seeking exits.
+        ant.chamber_steps = 0
 
         # Fill the handoff gap so the gradient is continuous.
         # Goes through dest.deposit_home/food (not pheromones.*

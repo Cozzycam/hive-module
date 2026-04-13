@@ -58,7 +58,9 @@ FOOD_STORE_START      = 500.0
 
 # ---------- Queen ----------
 QUEEN_METABOLISM        = 0.013
-QUEEN_LAY_INTERVAL      = days(0.5)
+QUEEN_LAY_INTERVAL_FOUNDING = days(0.5)   # fast burst during claustral phase
+QUEEN_LAY_INTERVAL_NORMAL  = days(2)     # steady-state post-founding
+QUEEN_LAY_INTERVAL         = QUEEN_LAY_INTERVAL_FOUNDING  # initial value
 QUEEN_EGG_FOOD_COST     = 1.5      # per individual egg (batch of 6 = 9.0)
 QUEEN_LAY_FOOD_FLOOR    = 50.0
 QUEEN_FOUNDING_EGG_CAP  = 12
@@ -165,6 +167,13 @@ IDLE_RECONSIDER_MAX      = 120    # scouting decision. Random per ant so
 STALL_THRESHOLD_TICKS    = 12     # if a TO_FOOD ant hasn't moved for this
                                   # many movement ticks, the trail led to
                                   # exhausted food — ignore gradient, explore.
+ENTRY_ATTRACT_RADIUS     = 8      # TO_FOOD ants within this distance of an
+                                  # active entry are drawn toward it (~30%
+                                  # chance per move tick, so scouts naturally
+                                  # discover passages between chambers).
+CHAMBER_EXPLORE_STEPS    = 150    # after this many steps in TO_FOOD without
+                                  # finding food, deterministically walk to
+                                  # the nearest exit to search adjacent chambers.
 
 # ---------- Metabolic scaling (¾-power law) ----------
 # Larger colonies are more efficient per capita. A colony 10× larger

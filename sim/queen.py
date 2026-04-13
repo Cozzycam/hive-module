@@ -59,18 +59,22 @@ class Queen:
         if chamber.colony.population == 0:
             self._tend_founding_brood(chamber)
 
-        # Egg laying — rate scales with food pressure.
+        # Egg laying — rate and batch size scale with colony state.
         if self.lay_cooldown > 0:
             self.lay_cooldown -= 1
             return
 
+        founding = chamber.colony.population == 0
         if self._can_lay(chamber):
             self._lay(chamber)
-            pressure = chamber.colony.food_pressure()
-            if pressure > 0.4:
-                self.lay_cooldown = C.QUEEN_LAY_INTERVAL * 2
+            # Founding: fast burst interval. Post-founding: slower,
+            # doubled again under food pressure > 0.4.
+            if founding:
+                self.lay_cooldown = C.QUEEN_LAY_INTERVAL_FOUNDING
             else:
-                self.lay_cooldown = C.QUEEN_LAY_INTERVAL
+                pressure = chamber.colony.food_pressure()
+                base = C.QUEEN_LAY_INTERVAL_NORMAL
+                self.lay_cooldown = base * 2 if pressure > 0.4 else base
 
     def _consume(self, chamber, amount):
         """Draw from reserves first, then physical piles. Returns
@@ -115,20 +119,32 @@ class Queen:
         available = self.reserves + chamber.colony.food_store
         if available < C.QUEEN_LAY_FOOD_FLOOR:
             return False
-        # Founding cap — prevents over-investing in brood before
-        # any workers exist. Post-founding, no cap; growth is
-        # naturally limited by food pressure.
-        founding = chamber.colony.population == 0
+        colony = chamber.colony
+        founding = colony.population == 0
         if founding and self.eggs_laid >= C.QUEEN_FOUNDING_EGG_CAP:
             return False
+        # Post-founding: don't lay if pending brood (eggs + larvae)
+        # already matches or exceeds worker count. Queens regulate
+        # oviposition based on colony feeding capacity.
+        if not founding:
+            bc = colony.brood_counts
+            pending = bc.get('egg', 0) + bc.get('larva', 0)
+            if pending >= colony.population:
+                return False
         return True
 
     def _lay(self, chamber):
-        """Lay a batch of up to 6 eggs around the queen, each
-        costing QUEEN_EGG_FOOD_COST. Stops early if food runs out
-        or no valid position is found."""
+        """Lay a batch of eggs around the queen, each costing
+        QUEEN_EGG_FOOD_COST. Batch size scales with worker count
+        post-founding (workers // 5, clamped 1–6). Stops early if
+        food runs out or no valid position is found."""
+        colony = chamber.colony
+        if colony.population == 0:
+            max_batch = 6
+        else:
+            max_batch = max(1, min(6, colony.population // 5))
         caste = C.DEFAULT_BROOD_CASTE
-        for _ in range(6):
+        for _ in range(max_batch):
             consumed = self._consume(chamber, C.QUEEN_EGG_FOOD_COST)
             if consumed < C.QUEEN_EGG_FOOD_COST:
                 if consumed > 0:
