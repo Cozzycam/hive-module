@@ -152,12 +152,12 @@ class Ant:
 
         # Metabolism — consume from nearest physical food pile, or
         # nibble from own cargo if nothing else is available. A
-        # worker shouldn't starve while carrying food.
+        # worker shouldn't starve while carrying food. Workers
+        # know where all food stores are in their chamber (no
+        # sense_radius limit for eating).
         scale = C.metabolic_scale_factor(chamber.colony.population)
         drain = self.metabolism * scale
-        consumed = chamber.consume_food(
-            self.x, self.y, drain, self.sense_radius,
-        )
+        consumed = chamber.consume_food(self.x, self.y, drain)
         if consumed <= 0 and self.food_carried >= drain:
             # No pile in reach — eat from own cargo.
             self.food_carried -= drain
@@ -391,22 +391,30 @@ class Ant:
                 self.facing_dy    = -self.facing_dy
                 return
 
-            # Carrying food — deposit as a physical pile.
-            # Prefer adding to an existing nearby pile (clustering).
-            pile = chamber.nearest_food_within(
-                self.x, self.y, C.FOOD_DEPOSIT_RADIUS,
-            )
-            if pile is not None:
-                px, py = pile
-                if abs(px - self.x) + abs(py - self.y) <= 1:
-                    self._deposit_to_pile(chamber, px, py)
-                    return
-                # Walk toward the pile.
-                self._step_toward_cell(pile, chamber)
-            else:
-                # No nearby pile — drop at current position.
-                self._deposit_to_pile(chamber, self.x, self.y)
+            # Carrying food — walk to the queen first, then deposit
+            # nearby. Ensures food ends up centrally in the nest
+            # (not at the entrance edge) and the to_food pheromone
+            # trail extends deep inside so other workers can follow.
+            qx, qy = chamber.queen.x, chamber.queen.y
+            near_queen = (abs(qx - self.x) + abs(qy - self.y)
+                          <= C.FOOD_DEPOSIT_RADIUS)
+            if near_queen:
+                # Close enough — cluster with an existing pile, or
+                # drop here if no pile nearby.
+                pile = chamber.nearest_food_within(
+                    self.x, self.y, C.FOOD_DEPOSIT_RADIUS,
+                )
+                if pile is not None:
+                    px, py = pile
+                    if abs(px - self.x) + abs(py - self.y) <= 1:
+                        self._deposit_to_pile(chamber, px, py)
+                        return
+                    self._step_toward_cell(pile, chamber)
+                else:
+                    self._deposit_to_pile(chamber, self.x, self.y)
                 return
+            # Not near queen yet — walk toward her.
+            self._step_toward_cell((qx, qy), chamber)
         else:
             # Not in the queen chamber — follow to_home gradient.
             step = self._sample_markers(chamber, 'home')
