@@ -56,6 +56,9 @@ class Chamber:
         # Physical food piles — {(x, y): amount}.
         self.food_cells = {}
 
+        # Brood cannibalism cooldown (ticks until next allowed).
+        self.cannibalism_cooldown = 0
+
         # Pheromone layers.
         self.pheromones = PheromoneMap(self.width, self.height)
 
@@ -230,6 +233,24 @@ class Chamber:
             self.brood.remove(b)
         for b in dead_brood:
             self.brood.remove(b)
+
+        # Starvation cascade stage 1 — cull hungry larvae under
+        # high food pressure. Larvae unfed for ~500+ ticks are the
+        # first biological casualties.
+        pressure = self.colony.food_pressure()
+        if pressure > C.FAMINE_BROOD_CULL_PRESSURE:
+            famine_dead = [
+                b for b in self.brood
+                if (b.stage == brood_mod.LARVA
+                    and b.alive
+                    and b.hunger > C.FAMINE_BROOD_CULL_HUNGER)
+            ]
+            for b in famine_dead:
+                self.brood.remove(b)
+
+        # Cannibalism cooldown tick.
+        if self.cannibalism_cooldown > 0:
+            self.cannibalism_cooldown -= 1
 
         # Workers — shuffled so metabolism draws from food_store
         # in random order each tick (no first-in-list survival bias).

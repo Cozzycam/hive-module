@@ -50,6 +50,7 @@ TEND_QUEEN  = 'tend_queen'
 TEND_BROOD  = 'tend_brood'
 TO_FOOD     = 'to_food'
 TO_HOME     = 'to_home'
+CANNIBALIZE = 'cannibalize'
 
 # Legacy aliases — renderer and module_panel reference these.
 OUTBOUND    = TO_FOOD
@@ -144,14 +145,15 @@ class Ant:
             return
 
         # Metabolism — consume from nearest physical food pile.
-        # Workers that can't find a pile within sense_radius go
-        # hungry even if food exists elsewhere in the colony.
+        # ¾-power scaling: larger colonies are more efficient per capita.
+        scale = C.metabolic_scale_factor(chamber.colony.population)
+        drain = self.metabolism * scale
         consumed = chamber.consume_food(
-            self.x, self.y, self.metabolism, self.sense_radius,
+            self.x, self.y, drain, self.sense_radius,
         )
         if consumed > 0:
             if self.hunger > 0:
-                self.hunger = max(0.0, self.hunger - self.metabolism)
+                self.hunger = max(0.0, self.hunger - drain)
         else:
             self.hunger += C.WORKER_HUNGER_RATE
             if self.hunger >= C.WORKER_STARVE_THRESHOLD:
@@ -188,6 +190,8 @@ class Ant:
             self._do_tend_brood(chamber)
         elif self.state == TEND_QUEEN:
             self._do_tend_queen(chamber)
+        elif self.state == CANNIBALIZE:
+            self._do_cannibalize(chamber)
         elif self.state == TO_FOOD:
             self._do_to_food(chamber)
         elif self.state == TO_HOME:
@@ -200,7 +204,7 @@ class Ant:
     # ================================================================
 
     def _pick_task(self, chamber):
-        """Priority: cargo delivery > domestic > scout."""
+        """Priority: cargo delivery > queen (famine) > domestic > forage."""
 
         # Food in crop must be delivered first.
         if self.food_carried > 0:
@@ -208,19 +212,30 @@ class Ant:
             self.target = None
             return
 
-        # Non-queen chamber — no domestic tasks possible, and IDLE
-        # ants have no homeward pull here. Always head home so ants
-        # don't get stuck random-walking in a foreign module.
+        # Non-queen chamber — head home.
         if chamber.queen is None:
             self.state        = TO_HOME
             self.target       = None
             self.steps_walked = 0
             return
 
-        # Domestic: feed queen — requires a physical food pile in
-        # reach so the worker can pick it up and carry it over.
-        queen = chamber.queen
+        colony   = chamber.colony
+        pressure = colony.food_pressure()
+        queen    = chamber.queen
         has_local_food = bool(chamber.food_cells)
+
+        # Stage 2 override — under severe famine, workers feed the
+        # queen first if her hunger is critical, before anything else.
+        if (pressure > C.FAMINE_SLOWDOWN_PRESSURE
+                and queen is not None
+                and queen.hunger > C.QUEEN_PRIORITY_HUNGER
+                and has_local_food
+                and self._within_sense(queen.x, queen.y)):
+            self.state  = TEND_QUEEN
+            self.target = (queen.x, queen.y)
+            return
+
+        # Domestic: feed queen (normal priority).
         if (queen is not None
                 and queen.needs_feeding()
                 and has_local_food
@@ -229,25 +244,32 @@ class Ant:
             self.target = (queen.x, queen.y)
             return
 
-        # Domestic: feed larvae — same physical-food requirement.
-        larva = self._nearest_hungry_larva(chamber)
-        if larva is not None and has_local_food:
-            self.state  = TEND_BROOD
-            self.target = (larva.x, larva.y)
-            return
+        # Stage 2 — under severe famine, workers stop tending brood
+        # (self-preservation). Also trigger brood cannibalism.
+        if pressure > C.FAMINE_SLOWDOWN_PRESSURE:
+            # Brood cannibalism: convert doomed larvae back to food.
+            if (pressure >= C.BROOD_CANNIBALISM_PRESSURE
+                    and not has_local_food
+                    and chamber.cannibalism_cooldown <= 0):
+                victim = self._least_invested_larva(chamber)
+                if victim is not None:
+                    self.state  = CANNIBALIZE
+                    self.target = (victim.x, victim.y)
+                    chamber.cannibalism_cooldown = C.BROOD_CANNIBALISM_COOLDOWN
+                    return
+        else:
+            # Normal domestic: feed larvae.
+            larva = self._nearest_hungry_larva(chamber)
+            if larva is not None and has_local_food:
+                self.state  = TEND_BROOD
+                self.target = (larva.x, larva.y)
+                return
 
-        # Dynamic forager regulation — food_pressure drives the
-        # fraction of the colony that forages. Replaces the old
-        # static HOME_WORKER_RESERVE and scout probability gate.
-        colony = chamber.colony
-        pressure = colony.food_pressure()
-        target_frac = (C.MIN_FORAGER_FRACTION
-                       + (C.MAX_FORAGER_FRACTION
-                          - C.MIN_FORAGER_FRACTION)
-                       * pressure)
+        # Dynamic forager regulation — uses recovery bounce override
+        # when applicable.
+        target_frac = colony.target_forager_fraction()
         total_pop = colony.population
         if total_pop > 0 and colony.forager_count / total_pop >= target_frac:
-            # Colony has enough foragers — stay home.
             self.state         = IDLE
             self.target        = None
             self.idle_cooldown = random.randint(
@@ -268,7 +290,7 @@ class Ant:
         if self.move_cooldown > 0:
             self.move_cooldown -= 1
             return
-        self.move_cooldown = self.move_ticks
+        self.move_cooldown = self._move_delay(chamber)
 
         # Scout patience — give up and head home after too long.
         if self.steps_walked > C.SCOUT_PATIENCE_TICKS:
@@ -342,7 +364,7 @@ class Ant:
         if self.move_cooldown > 0:
             self.move_cooldown -= 1
             return
-        self.move_cooldown = self.move_ticks
+        self.move_cooldown = self._move_delay(chamber)
 
         if chamber.queen is not None:
             # In the queen chamber.
@@ -481,7 +503,7 @@ class Ant:
         if self.move_cooldown > 0:
             self.move_cooldown -= 1
             return
-        self.move_cooldown = self.move_ticks
+        self.move_cooldown = self._move_delay(chamber)
 
         if self.food_carried <= 0:
             # Phase 1 — acquire food from a pile.
@@ -530,7 +552,7 @@ class Ant:
         if self.move_cooldown > 0:
             self.move_cooldown -= 1
             return
-        self.move_cooldown = self.move_ticks
+        self.move_cooldown = self._move_delay(chamber)
 
         if self.food_carried <= 0:
             # Phase 1 — acquire food from a pile.
@@ -574,7 +596,7 @@ class Ant:
         if self.move_cooldown > 0:
             self.move_cooldown -= 1
             return
-        self.move_cooldown = self.move_ticks
+        self.move_cooldown = self._move_delay(chamber)
 
         q = chamber.queen
         if q is not None and random.random() < 0.3:
@@ -592,7 +614,7 @@ class Ant:
     def _target_still_valid(self, chamber):
         if self.state == IDLE:
             return True
-        if self.state in (TO_FOOD, TO_HOME):
+        if self.state in (TO_FOOD, TO_HOME, CANNIBALIZE):
             return True
         if self.target is None:
             return False
@@ -609,8 +631,45 @@ class Ant:
         return True
 
     # ================================================================
+    #  Cannibalism — last resort under extreme famine
+    # ================================================================
+
+    def _do_cannibalize(self, chamber):
+        """Walk to target larva and consume it, creating a small
+        food pile from recovered energy."""
+        if self.move_cooldown > 0:
+            self.move_cooldown -= 1
+            return
+        self.move_cooldown = self._move_delay(chamber)
+
+        tx, ty = self.target
+        if abs(tx - self.x) + abs(ty - self.y) <= 1:
+            for b in list(chamber.brood):
+                if ((b.x, b.y) == (tx, ty)
+                        and b.stage == brood_mod.LARVA
+                        and b.alive):
+                    recovered = max(
+                        C.BROOD_CANNIBALISM_MIN_PILE,
+                        b.fed_total * C.BROOD_CANNIBALISM_RECOVERY,
+                    )
+                    chamber.brood.remove(b)
+                    chamber.add_food(tx, ty, recovered)
+                    break
+            self.state  = IDLE
+            self.target = None
+            return
+        self._step_toward_cell((tx, ty), chamber)
+
+    # ================================================================
     #  Helpers
     # ================================================================
+
+    def _move_delay(self, chamber):
+        """Movement cooldown, doubled under severe food stress
+        (starvation cascade stage 2 — conserve energy)."""
+        if chamber.colony.food_pressure() > C.FAMINE_SLOWDOWN_PRESSURE:
+            return self.move_ticks * 2
+        return self.move_ticks
 
     def _brood_present(self, chamber):
         for b in chamber.brood:
@@ -630,6 +689,19 @@ class Ant:
             if d <= self.sense_radius and d < best_d:
                 best   = b
                 best_d = d
+        return best
+
+    def _least_invested_larva(self, chamber):
+        """Return the larva with the lowest fed_total (least wasteful
+        to sacrifice for cannibalism)."""
+        best = None
+        best_fed = 1_000_000.0
+        for b in chamber.brood:
+            if b.stage != brood_mod.LARVA or not b.alive:
+                continue
+            if b.fed_total < best_fed:
+                best = b
+                best_fed = b.fed_total
         return best
 
     def _within_sense(self, tx, ty):
@@ -691,7 +763,7 @@ class Ant:
         if self.move_cooldown > 0:
             self.move_cooldown -= 1
             return
-        self.move_cooldown = self.move_ticks
+        self.move_cooldown = self._move_delay(chamber)
 
         dx = 1 if tx > self.x else (-1 if tx < self.x else 0)
         dy = 1 if ty > self.y else (-1 if ty < self.y else 0)

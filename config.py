@@ -166,12 +166,47 @@ STALL_THRESHOLD_TICKS    = 12     # if a TO_FOOD ant hasn't moved for this
                                   # many movement ticks, the trail led to
                                   # exhausted food — ignore gradient, explore.
 
+# ---------- Metabolic scaling (¾-power law) ----------
+# Larger colonies are more efficient per capita. A colony 10× larger
+# needs ~5.6× the food, not 10×. Small founding colonies pay full price.
+METABOLIC_SCALE_FLOOR     = 0.7    # minimum multiplier at large colony sizes
+METABOLIC_SCALE_ONSET     = 10     # population below which no scaling applies
+
+
+def metabolic_scale_factor(population):
+    """Per-capita metabolism multiplier (0.7–1.0).
+    Pop ≤ 10: 1.0.  Pop ~50: ~0.85.  Pop ~200: ~0.75.  Pop 500+: 0.70.
+    Exponent -0.10 fitted to match ¾-power law target values;
+    the raw N^(-0.25) from Kleiber's law is too aggressive for our
+    population range."""
+    if population <= METABOLIC_SCALE_ONSET:
+        return 1.0
+    factor = (population / METABOLIC_SCALE_ONSET) ** (-0.10)
+    return max(METABOLIC_SCALE_FLOOR, min(1.0, factor))
+
+
 # ---------- Food pressure (colony-level foraging regulation) ----------
 # Colony targets a buffer of this many sim-days of food. Below that,
 # food_pressure rises toward 1.0 and more workers deploy to forage.
 FOOD_PRESSURE_TARGET_DAYS = 7.0
 MIN_FORAGER_FRACTION      = 0.05   # foraging floor when overstocked
 MAX_FORAGER_FRACTION      = 0.50   # foraging ceiling when desperate
+
+# ---------- Starvation cascade ----------
+FAMINE_SLOWDOWN_PRESSURE  = 0.9    # pressure above which workers halve speed
+FAMINE_BROOD_CULL_PRESSURE = 0.8   # pressure above which hungry larvae die
+FAMINE_BROOD_CULL_HUNGER  = 0.5    # larva hunger threshold for culling (~500 ticks unfed)
+QUEEN_PRIORITY_HUNGER     = 20.0   # queen hunger above which workers feed her first
+
+# ---------- Brood cannibalism ----------
+BROOD_CANNIBALISM_PRESSURE  = 0.95   # food_pressure threshold to trigger
+BROOD_CANNIBALISM_RECOVERY  = 0.4    # fraction of fed_total recovered as food
+BROOD_CANNIBALISM_MIN_PILE  = 2.0    # minimum food pile created
+BROOD_CANNIBALISM_COOLDOWN  = 100    # ticks between events per chamber
+
+# ---------- Recovery bounce ----------
+RECOVERY_BOOST_DURATION     = 400    # ticks of boosted foraging after famine
+RECOVERY_BOOST_THRESHOLD    = 0.8    # pressure must have exceeded this
 
 # Legacy aliases — these are no longer used by the new pheromone
 # system but may be referenced by older code paths. Safe to remove

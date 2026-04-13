@@ -71,6 +71,7 @@ class Coordinator:
         self.colony.forager_count = foragers
         self.colony.food_store    = total_food
         self.colony.brood_counts  = totals
+        self.colony.update_recovery_boost()
 
     # ---- multi-module attachment ----
 
