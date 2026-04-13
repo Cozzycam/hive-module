@@ -57,10 +57,14 @@ class Coordinator:
         totals = {'egg': 0, 'larva': 0, 'pupa': 0}
         for ch in self.chambers.values():
             pop += len(ch.workers)
-            total_food += ch.total_food()
-            # Include queen's internal reserves (wing muscle/fat).
-            if ch.queen is not None and ch.queen.alive:
-                total_food += ch.queen.reserves
+            # Only count food in the queen chamber as colony
+            # reserves. Food sitting in outworld/non-queen chambers
+            # is raw — it doesn't count until workers forage it
+            # home and deposit it in the nest.
+            if ch.queen is not None:
+                total_food += ch.total_food()
+                if ch.queen.alive:
+                    total_food += ch.queen.reserves
             for w in ch.workers:
                 if w.state in (TO_FOOD, TO_HOME):
                     foragers += 1
