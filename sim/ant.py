@@ -150,13 +150,18 @@ class Ant:
             self.alive = False
             return
 
-        # Metabolism — consume from nearest physical food pile.
-        # ¾-power scaling: larger colonies are more efficient per capita.
+        # Metabolism — consume from nearest physical food pile, or
+        # nibble from own cargo if nothing else is available. A
+        # worker shouldn't starve while carrying food.
         scale = C.metabolic_scale_factor(chamber.colony.population)
         drain = self.metabolism * scale
         consumed = chamber.consume_food(
             self.x, self.y, drain, self.sense_radius,
         )
+        if consumed <= 0 and self.food_carried >= drain:
+            # No pile in reach — eat from own cargo.
+            self.food_carried -= drain
+            consumed = drain
         if consumed > 0:
             if self.hunger > 0:
                 self.hunger = max(0.0, self.hunger - drain)
