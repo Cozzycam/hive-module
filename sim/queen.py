@@ -1,10 +1,10 @@
 """Founding queen. Stationary. Lays eggs on a cooldown as long as the
-colony has enough food. Pre-nanitic she survives off her founding
-food pile (wing-muscle reserves placed at her spawn position);
+colony has enough food. Pre-nanitic she survives off her internal
+reserves (metabolised wing muscle and stored fat — no physical pile);
 post-nanitic workers must keep food piles stocked by foraging.
 
-All food interactions are physical — the queen consumes from the
-nearest food pile within reach, not from an abstract counter.
+All post-founding food interactions are physical. During founding,
+the queen draws from self.reserves which is invisible on the grid.
 """
 
 import random
@@ -22,24 +22,36 @@ class Queen:
         self.hunger       = 0.0
         self.alive        = True
 
+        # Internal body reserves — metabolised wing muscle and fat.
+        # This is not a physical food pile; it exists inside the queen
+        # and cannot be accessed by workers. Depleted during founding,
+        # after which the queen depends on worker-deposited food piles.
+        self.reserves     = C.FOOD_STORE_START
+
     # ---- per-tick ----
 
     def tick(self, chamber):
         if not self.alive:
             return
 
-        # Metabolism — consume from the nearest physical food pile.
-        # If no pile is within reach she accrues hunger and will
-        # eventually starve.
-        consumed = chamber.consume_food(self.x, self.y, C.QUEEN_METABOLISM)
-        if consumed > 0:
+        # Metabolism — draw from internal reserves first (founding),
+        # then from the nearest physical food pile (post-founding).
+        if self.reserves >= C.QUEEN_METABOLISM:
+            self.reserves -= C.QUEEN_METABOLISM
             if self.hunger > 0:
                 self.hunger = max(0.0, self.hunger - C.QUEEN_METABOLISM)
         else:
-            self.hunger += C.QUEEN_HUNGER_RATE
-            if self.hunger >= C.QUEEN_STARVE_THRESHOLD:
-                self.alive = False
-                return
+            consumed = chamber.consume_food(
+                self.x, self.y, C.QUEEN_METABOLISM,
+            )
+            if consumed > 0:
+                if self.hunger > 0:
+                    self.hunger = max(0.0, self.hunger - C.QUEEN_METABOLISM)
+            else:
+                self.hunger += C.QUEEN_HUNGER_RATE
+                if self.hunger >= C.QUEEN_STARVE_THRESHOLD:
+                    self.alive = False
+                    return
 
         # Founding brood care: with no workers around, the queen herself
         # tends her first batch of larvae (real Lasius niger queens do
@@ -56,9 +68,23 @@ class Queen:
             self._lay(chamber)
             self.lay_cooldown = C.QUEEN_LAY_INTERVAL
 
+    def _consume(self, chamber, amount):
+        """Draw from reserves first, then physical piles. Returns
+        the actual amount consumed (may be less than requested)."""
+        if self.reserves >= amount:
+            self.reserves -= amount
+            return amount
+        # Reserves depleted or insufficient — use what's left,
+        # then try physical piles for the remainder.
+        from_reserves = self.reserves
+        self.reserves = 0.0
+        remainder = amount - from_reserves
+        from_pile = chamber.consume_food(self.x, self.y, remainder)
+        return from_reserves + from_pile
+
     def _tend_founding_brood(self, chamber):
-        """Feed one hungry under-fed larva per tick from the nearest
-        physical food pile. Skip larvae that have already met their
+        """Feed one hungry under-fed larva per tick from the queen's
+        internal reserves. Skip larvae that have already met their
         pupation food threshold."""
         from sim.brood import LARVA
         for b in chamber.brood:
@@ -70,9 +96,7 @@ class Queen:
                 continue
             # small queen radius — she can only reach brood next to her
             if abs(b.x - self.x) + abs(b.y - self.y) <= 3:
-                consumed = chamber.consume_food(
-                    self.x, self.y, C.LARVA_FEED_AMOUNT,
-                )
+                consumed = self._consume(chamber, C.LARVA_FEED_AMOUNT)
                 if consumed > 0:
                     b.feed(consumed)
                 return
@@ -80,7 +104,8 @@ class Queen:
     # ---- internals ----
 
     def _can_lay(self, chamber):
-        if chamber.colony.food_store < C.QUEEN_LAY_FOOD_FLOOR:
+        available = self.reserves + chamber.colony.food_store
+        if available < C.QUEEN_LAY_FOOD_FLOOR:
             return False
         # Soft cap during founding phase until the first nanitic emerges.
         founding = chamber.colony.population == 0
@@ -89,13 +114,11 @@ class Queen:
         return True
 
     def _lay(self, chamber):
-        consumed = chamber.consume_food(
-            self.x, self.y, C.QUEEN_EGG_FOOD_COST,
-        )
+        consumed = self._consume(chamber, C.QUEEN_EGG_FOOD_COST)
         if consumed < C.QUEEN_EGG_FOOD_COST:
-            # Not enough in any nearby pile — put back partial, skip.
+            # Not enough — put back partial amount.
             if consumed > 0:
-                chamber.add_food(self.x, self.y, consumed)
+                self.reserves += consumed
             return
         # Phase 1 founding: only minors. Phase 2 will promote some
         # larvae to majors once the colony passes a population gate.

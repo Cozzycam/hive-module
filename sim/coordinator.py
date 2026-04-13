@@ -34,9 +34,8 @@ class Coordinator:
         self.chambers[FOUNDING_ID] = founding
         self.topology[FOUNDING_ID] = {}
 
-        # Starting food as a physical pile at the queen's position.
-        qx, qy = C.QUEEN_SPAWN
-        founding.add_food(qx, qy, C.FOOD_STORE_START)
+        # Starting food is the queen's internal reserves (wing
+        # muscle / fat), not a physical pile. See queen.reserves.
         self.colony.food_store = C.FOOD_STORE_START
 
     # ---- per-tick ----
@@ -58,6 +57,9 @@ class Coordinator:
         for ch in self.chambers.values():
             pop += len(ch.workers)
             total_food += ch.total_food()
+            # Include queen's internal reserves (wing muscle/fat).
+            if ch.queen is not None and ch.queen.alive:
+                total_food += ch.queen.reserves
             cb = ch.count_brood()
             for k in totals:
                 totals[k] += cb[k]
