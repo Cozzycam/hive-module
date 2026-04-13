@@ -199,7 +199,7 @@ def metabolic_scale_factor(population):
 # food_pressure rises toward 1.0 and more workers deploy to forage.
 FOOD_PRESSURE_TARGET_DAYS = 7.0
 MIN_FORAGER_FRACTION      = 0.05   # foraging floor when overstocked
-MAX_FORAGER_FRACTION      = 0.50   # foraging ceiling when desperate
+MAX_FORAGER_FRACTION      = 0.80   # foraging ceiling when desperate
 
 # ---------- Starvation cascade ----------
 FAMINE_SLOWDOWN_PRESSURE  = 0.9    # pressure above which workers halve speed

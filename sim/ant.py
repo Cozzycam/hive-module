@@ -276,22 +276,40 @@ class Ant:
                 self.target = (larva.x, larva.y)
                 return
 
-        # Dynamic forager regulation — uses recovery bounce override
-        # when applicable.
+        # Recruitment signal — a returning forager has laid to_food
+        # pheromone in the nest. Idle ants that detect the trail
+        # follow it immediately, overriding the forager fraction cap.
+        # This is the core ant recruitment mechanism.
+        if self._detects_food_trail(chamber):
+            self.state         = TO_FOOD
+            self.target        = None
+            self.steps_walked  = 0
+            self.chamber_steps = 0
+            return
+
+        # Dynamic forager regulation — baseline fraction from
+        # pressure, with recovery bounce override.
         target_frac = colony.target_forager_fraction()
         total_pop = colony.population
         if total_pop > 0 and colony.forager_count / total_pop >= target_frac:
+            # Enough foragers out — stay home, but reconsider
+            # faster under famine so ants don't idle while starving.
+            if pressure > C.FAMINE_SLOWDOWN_PRESSURE:
+                cd = random.randint(10, 30)
+            else:
+                cd = random.randint(
+                    C.IDLE_RECONSIDER_MIN, C.IDLE_RECONSIDER_MAX,
+                )
             self.state         = IDLE
             self.target        = None
-            self.idle_cooldown = random.randint(
-                C.IDLE_RECONSIDER_MIN, C.IDLE_RECONSIDER_MAX,
-            )
+            self.idle_cooldown = cd
             return
 
         # Go forage.
         self.state         = TO_FOOD
         self.target        = None
         self.steps_walked  = 0
+        self.chamber_steps = 0
 
     # ================================================================
     #  Foraging: TO_FOOD (outbound, searching for food)
@@ -728,6 +746,18 @@ class Ant:
                 best = b
                 best_fed = b.fed_total
         return best
+
+    def _detects_food_trail(self, chamber):
+        """True if to_food pheromone exists at or adjacent to the
+        ant. Cheap 5-cell check — triggers recruitment when a
+        returning forager has laid a trail through the nest."""
+        food_fn = chamber.pheromones.food
+        if food_fn(self.x, self.y) > 0:
+            return True
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            if food_fn(self.x + dx, self.y + dy) > 0:
+                return True
+        return False
 
     def _within_sense(self, tx, ty):
         return abs(tx - self.x) + abs(ty - self.y) <= self.sense_radius
