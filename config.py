@@ -59,7 +59,7 @@ FOOD_STORE_START      = 500.0
 # ---------- Queen ----------
 QUEEN_METABOLISM        = 0.013
 QUEEN_LAY_INTERVAL      = days(0.5)
-QUEEN_EGG_FOOD_COST     = 3.0
+QUEEN_EGG_FOOD_COST     = 1.5      # per individual egg (batch of 6 = 9.0)
 QUEEN_LAY_FOOD_FLOOR    = 50.0
 QUEEN_FOUNDING_EGG_CAP  = 12
 QUEEN_HUNGER_RATE       = 0.02
@@ -95,7 +95,7 @@ CASTE_PARAMS = {
     CASTE_MINOR: {
         'move_ticks':        4,
         'sense_radius':      8,
-        'carry_amount':      4.0,
+        'carry_amount':      6.0,
         'metabolism':        WORKER_METABOLISM_MINOR,
         'lifespan':          WORKER_LIFESPAN_MINOR,
         'larva_duration':    days(20),
@@ -104,7 +104,7 @@ CASTE_PARAMS = {
     CASTE_MAJOR: {
         'move_ticks':        6,
         'sense_radius':      6,
-        'carry_amount':      7.0,
+        'carry_amount':      15.0,
         'metabolism':        WORKER_METABOLISM_MAJOR,
         'lifespan':          WORKER_LIFESPAN_MAJOR,
         'larva_duration':    days(28),
@@ -150,14 +150,10 @@ PHEROMONE_GRID_DECAY   = 0.997   # per-tick multiplicative decay
 PHEROMONE_MAX          = 20.0    # cap so busy corridors don't blow up
 
 # ---------- Foraging ----------
-SCOUT_PROBABILITY        = 0.30
 SCOUT_PATIENCE_TICKS     = 3000
-FORAGE_FOOD_PICKUP       = 10.0
-MIN_BROOD_FEED_RESERVE   = 40.0
 FORAGE_DEBUG_PILE_SIZE   = 200.0
 FOOD_PILE_CAP            = 50.0    # max per pile; forces spatial spread
 FOOD_DEPOSIT_RADIUS      = 5      # foragers look this far for a pile to add to
-HOME_WORKER_RESERVE      = 0.60
 RETURN_HOME_TICKS        = 960    # ~120 sec at 8 tps; ants forced TO_HOME
                                   # after this many ticks outside the queen
                                   # chamber. Prevents ants getting permanently
@@ -169,6 +165,13 @@ IDLE_RECONSIDER_MAX      = 120    # scouting decision. Random per ant so
 STALL_THRESHOLD_TICKS    = 12     # if a TO_FOOD ant hasn't moved for this
                                   # many movement ticks, the trail led to
                                   # exhausted food — ignore gradient, explore.
+
+# ---------- Food pressure (colony-level foraging regulation) ----------
+# Colony targets a buffer of this many sim-days of food. Below that,
+# food_pressure rises toward 1.0 and more workers deploy to forage.
+FOOD_PRESSURE_TARGET_DAYS = 7.0
+MIN_FORAGER_FRACTION      = 0.05   # foraging floor when overstocked
+MAX_FORAGER_FRACTION      = 0.50   # foraging ceiling when desperate
 
 # Legacy aliases — these are no longer used by the new pheromone
 # system but may be referenced by older code paths. Safe to remove

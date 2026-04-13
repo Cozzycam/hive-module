@@ -231,43 +231,23 @@ class Ant:
 
         # Domestic: feed larvae — same physical-food requirement.
         larva = self._nearest_hungry_larva(chamber)
-        if (larva is not None
-                and has_local_food
-                and chamber.colony.food_store
-                    >= C.MIN_BROOD_FEED_RESERVE):
+        if larva is not None and has_local_food:
             self.state  = TEND_BROOD
             self.target = (larva.x, larva.y)
             return
 
-        # Worker reservation — keep enough ants home for brood care.
-        if chamber.queen is not None and self._brood_present(chamber):
-            total_pop = chamber.colony.population
-            here_pop  = len(chamber.workers)
-            if total_pop > 0 and here_pop / total_pop < C.HOME_WORKER_RESERVE:
-                self.state         = IDLE
-                self.target        = None
-                self.idle_cooldown = random.randint(
-                    C.IDLE_RECONSIDER_MIN, C.IDLE_RECONSIDER_MAX,
-                )
-                return
-
-        # Scouting probability gate. Temporally spreads the decision
-        # so ants don't all leave on the same tick. If a returning
-        # ant has laid a to_food trail within sense_radius, bump the
-        # probability — this is the recruitment signal.
-        scout_prob = C.SCOUT_PROBABILITY
-        if chamber.queen is not None:
-            r = self.sense_radius
-            food_fn = chamber.pheromones.food
-            if any(
-                food_fn(self.x + dx, self.y + dy) > 0
-                for dy in range(-r, r + 1)
-                for dx in range(-r, r + 1)
-                if abs(dx) + abs(dy) <= r
-            ):
-                scout_prob = 0.80
-
-        if random.random() >= scout_prob:
+        # Dynamic forager regulation — food_pressure drives the
+        # fraction of the colony that forages. Replaces the old
+        # static HOME_WORKER_RESERVE and scout probability gate.
+        colony = chamber.colony
+        pressure = colony.food_pressure()
+        target_frac = (C.MIN_FORAGER_FRACTION
+                       + (C.MAX_FORAGER_FRACTION
+                          - C.MIN_FORAGER_FRACTION)
+                       * pressure)
+        total_pop = colony.population
+        if total_pop > 0 and colony.forager_count / total_pop >= target_frac:
+            # Colony has enough foragers — stay home.
             self.state         = IDLE
             self.target        = None
             self.idle_cooldown = random.randint(
@@ -303,7 +283,7 @@ class Ant:
         pile = self._food_pile_adjacent(chamber)
         if pile is not None:
             px, py = pile
-            taken = chamber.take_food(px, py, C.FORAGE_FOOD_PICKUP)
+            taken = chamber.take_food(px, py, self.carry_amount)
             if taken > 0:
                 self.food_carried  = taken
                 self.state         = TO_HOME

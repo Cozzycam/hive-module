@@ -52,6 +52,7 @@ class Coordinator:
             ch.tick(self)
 
         pop = 0
+        foragers = 0
         total_food = 0.0
         totals = {'egg': 0, 'larva': 0, 'pupa': 0}
         for ch in self.chambers.values():
@@ -60,12 +61,16 @@ class Coordinator:
             # Include queen's internal reserves (wing muscle/fat).
             if ch.queen is not None and ch.queen.alive:
                 total_food += ch.queen.reserves
+            for w in ch.workers:
+                if w.state in (TO_FOOD, TO_HOME):
+                    foragers += 1
             cb = ch.count_brood()
             for k in totals:
                 totals[k] += cb[k]
-        self.colony.population   = pop
-        self.colony.food_store   = total_food
-        self.colony.brood_counts = totals
+        self.colony.population    = pop
+        self.colony.forager_count = foragers
+        self.colony.food_store    = total_food
+        self.colony.brood_counts  = totals
 
     # ---- multi-module attachment ----
 

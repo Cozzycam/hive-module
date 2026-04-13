@@ -59,14 +59,18 @@ class Queen:
         if chamber.colony.population == 0:
             self._tend_founding_brood(chamber)
 
-        # Egg laying
+        # Egg laying — rate scales with food pressure.
         if self.lay_cooldown > 0:
             self.lay_cooldown -= 1
             return
 
         if self._can_lay(chamber):
             self._lay(chamber)
-            self.lay_cooldown = C.QUEEN_LAY_INTERVAL
+            pressure = chamber.colony.food_pressure()
+            if pressure > 0.4:
+                self.lay_cooldown = C.QUEEN_LAY_INTERVAL * 2
+            else:
+                self.lay_cooldown = C.QUEEN_LAY_INTERVAL
 
     def _consume(self, chamber, amount):
         """Draw from reserves first, then physical piles. Returns
@@ -104,27 +108,32 @@ class Queen:
     # ---- internals ----
 
     def _can_lay(self, chamber):
+        # Food pressure > 0.7 → too hungry, stop laying entirely.
+        pressure = chamber.colony.food_pressure()
+        if pressure > 0.7:
+            return False
         available = self.reserves + chamber.colony.food_store
         if available < C.QUEEN_LAY_FOOD_FLOOR:
             return False
-        # Soft cap during founding phase until the first nanitic emerges.
+        # Founding cap — prevents over-investing in brood before
+        # any workers exist. Post-founding, no cap; growth is
+        # naturally limited by food pressure.
         founding = chamber.colony.population == 0
         if founding and self.eggs_laid >= C.QUEEN_FOUNDING_EGG_CAP:
             return False
         return True
 
     def _lay(self, chamber):
-        consumed = self._consume(chamber, C.QUEEN_EGG_FOOD_COST)
-        if consumed < C.QUEEN_EGG_FOOD_COST:
-            # Not enough — put back partial amount.
-            if consumed > 0:
-                self.reserves += consumed
-            return
-        # Phase 1 founding: only minors. Phase 2 will promote some
-        # larvae to majors once the colony passes a population gate.
+        """Lay a batch of up to 6 eggs around the queen, each
+        costing QUEEN_EGG_FOOD_COST. Stops early if food runs out
+        or no valid position is found."""
         caste = C.DEFAULT_BROOD_CASTE
-        # Eggs cluster in adjacent cells around the queen.
         for _ in range(6):
+            consumed = self._consume(chamber, C.QUEEN_EGG_FOOD_COST)
+            if consumed < C.QUEEN_EGG_FOOD_COST:
+                if consumed > 0:
+                    self.reserves += consumed
+                return
             dx = random.randint(-2, 2)
             dy = random.randint(-2, 2)
             ex = self.x + dx
@@ -132,7 +141,9 @@ class Queen:
             if chamber.in_bounds(ex, ey) and (dx, dy) != (0, 0):
                 chamber.brood.append(Brood(ex, ey, caste=caste))
                 self.eggs_laid += 1
-                return
+            else:
+                # Position invalid — refund this egg's cost.
+                self.reserves += consumed
 
     # ---- worker-visible needs ----
 
