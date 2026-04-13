@@ -16,6 +16,9 @@ class Colony:
         # Updated by Coordinator.tick().
         self.population = 0
         self.brood_counts = {'egg': 0, 'larva': 0, 'pupa': 0}
+        # Lifetime counter — used to identify nanitics (first
+        # QUEEN_FOUNDING_EGG_CAP workers get shorter lifespans).
+        self.total_workers_born = 0
 
     def summary(self):
         return {

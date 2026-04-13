@@ -78,11 +78,26 @@ PUPA_DURATION         = days(20)
 CASTE_MINOR = 'minor'
 CASTE_MAJOR = 'major'
 
+# Worker metabolism — passive per-tick drain from food_store.
+# Minor ~1/10 the queen's rate, matching biological mass ratio.
+WORKER_METABOLISM_MINOR  = 0.0013    # per tick (= 0.26/sim-day)
+WORKER_METABOLISM_MAJOR  = 0.002     # per tick (= 0.40/sim-day)
+WORKER_HUNGER_RATE       = 0.015     # per tick when food_store can't cover
+WORKER_STARVE_THRESHOLD  = 30.0      # hunger at which worker dies
+
+# Worker lifespan — randomised per individual.
+WORKER_LIFESPAN_MINOR    = (days(250), days(400))    # 50k–80k ticks
+WORKER_LIFESPAN_MAJOR    = (days(350), days(550))    # 70k–110k ticks
+WORKER_LIFESPAN_NANITIC  = (days(200), days(350))    # first 12 workers
+FORAGING_TRIP_WEAR       = (10, 20)  # bonus age ticks per completed trip
+
 CASTE_PARAMS = {
     CASTE_MINOR: {
         'move_ticks':        4,
         'sense_radius':      8,
         'carry_amount':      4.0,
+        'metabolism':        WORKER_METABOLISM_MINOR,
+        'lifespan':          WORKER_LIFESPAN_MINOR,
         'larva_duration':    days(20),
         'larva_food_needed': 16.0,
     },
@@ -90,6 +105,8 @@ CASTE_PARAMS = {
         'move_ticks':        6,
         'sense_radius':      6,
         'carry_amount':      7.0,
+        'metabolism':        WORKER_METABOLISM_MAJOR,
+        'lifespan':          WORKER_LIFESPAN_MAJOR,
         'larva_duration':    days(28),
         'larva_food_needed': 32.0,
     },

@@ -66,9 +66,10 @@ class Ant:
         'last_dx', 'last_dy',
         'steps_walked', 'ticks_away', 'stall_ticks',
         'idle_cooldown',
+        'hunger', 'max_age', 'metabolism',
     )
 
-    def __init__(self, x, y, caste=None):
+    def __init__(self, x, y, caste=None, is_nanitic=False):
         self.x             = x
         self.y             = y
         self.prev_x        = x
@@ -107,12 +108,25 @@ class Ant:
         # every ant re-rolls every tick and all leave at once.
         self.idle_cooldown = 0
 
+        # Hunger — accumulates when food_store can't cover
+        # metabolism. Worker dies at WORKER_STARVE_THRESHOLD.
+        self.hunger        = 0.0
+
         # Caste-dependent params — baked at spawn time.
         self.caste = caste if caste is not None else C.CASTE_MINOR
         params = C.CASTE_PARAMS[self.caste]
         self.move_ticks    = params['move_ticks']
         self.sense_radius  = params['sense_radius']
         self.carry_amount  = params['carry_amount']
+        self.metabolism    = params['metabolism']
+
+        # Lifespan — nanitics (first founding brood) are
+        # shorter-lived than regular workers of the same caste.
+        if is_nanitic:
+            lo, hi = C.WORKER_LIFESPAN_NANITIC
+        else:
+            lo, hi = params['lifespan']
+        self.max_age = random.randint(lo, hi)
 
     # ================================================================
     #  Per-tick entry point
@@ -123,6 +137,25 @@ class Ant:
             return
 
         self.age += 1
+
+        # Natural death — old age.
+        if self.age >= self.max_age:
+            self.alive = False
+            return
+
+        # Metabolism — passive drain from colony food store.
+        # Matches the queen's pattern: eat if available, else
+        # accumulate hunger until starvation threshold.
+        colony = chamber.colony
+        if colony.food_store >= self.metabolism:
+            colony.food_store -= self.metabolism
+            if self.hunger > 0:
+                self.hunger = max(0.0, self.hunger - self.metabolism)
+        else:
+            self.hunger += C.WORKER_HUNGER_RATE
+            if self.hunger >= C.WORKER_STARVE_THRESHOLD:
+                self.alive = False
+                return
 
         # Track time away from the queen chamber.
         if chamber.queen is not None:
@@ -336,6 +369,8 @@ class Ant:
                 self.state         = IDLE
                 self.target        = None
                 self.steps_walked  = 0
+                # Foraging wear — completed trips age the worker.
+                self.age += random.randint(*C.FORAGING_TRIP_WEAR)
                 # Flip facing — ready to head back out.
                 self.facing_dx = -self.facing_dx
                 self.facing_dy = -self.facing_dy

@@ -12,6 +12,8 @@ handoff and the Coordinator moves the ant to the opposite face of the
 neighbour on the same tick.
 """
 
+import random
+
 import config as C
 from sim.queen import Queen
 from sim.ant import Ant, TO_FOOD
@@ -195,12 +197,19 @@ class Chamber:
                 dead_brood.append(b)
 
         for b in hatched:
-            self.workers.append(Ant(b.x, b.y, caste=b.caste))
+            is_nanitic = (self.colony.total_workers_born
+                          < C.QUEEN_FOUNDING_EGG_CAP)
+            self.workers.append(
+                Ant(b.x, b.y, caste=b.caste, is_nanitic=is_nanitic),
+            )
+            self.colony.total_workers_born += 1
             self.brood.remove(b)
         for b in dead_brood:
             self.brood.remove(b)
 
-        # Workers
+        # Workers — shuffled so metabolism draws from food_store
+        # in random order each tick (no first-in-list survival bias).
+        random.shuffle(self.workers)
         dead_workers = []
         crossings = []
         for w in self.workers:
@@ -213,6 +222,9 @@ class Chamber:
                 crossings.append((w, crossing))
 
         for w in dead_workers:
+            # Drop carried food as a small pile at death location.
+            if w.food_carried > 0:
+                self.add_food(w.x, w.y, w.food_carried)
             self.workers.remove(w)
 
         # Hand crossings off to the coordinator
