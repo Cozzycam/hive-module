@@ -34,9 +34,9 @@ class Coordinator:
         self.chambers[FOUNDING_ID] = founding
         self.topology[FOUNDING_ID] = {}
 
-        # Starting food is the queen's internal reserves (wing
-        # muscle / fat), not a physical pile. See queen.reserves.
-        self.colony.food_store = C.FOOD_STORE_START
+        # Starting food is in queen.reserves (wing muscle / fat).
+        # colony.food_store starts at 0; foragers deposit into it.
+        self.colony.food_total = C.FOOD_STORE_START
 
     # ---- per-tick ----
 
@@ -53,18 +53,9 @@ class Coordinator:
 
         pop = 0
         foragers = 0
-        total_food = 0.0
         totals = {'egg': 0, 'larva': 0, 'pupa': 0}
         for ch in self.chambers.values():
             pop += len(ch.workers)
-            # Only count food in the queen chamber as colony
-            # reserves. Food sitting in outworld/non-queen chambers
-            # is raw — it doesn't count until workers forage it
-            # home and deposit it in the nest.
-            if ch.queen is not None:
-                total_food += ch.total_food()
-                if ch.queen.alive:
-                    total_food += ch.queen.reserves
             for w in ch.workers:
                 if w.state in (TO_FOOD, TO_HOME):
                     foragers += 1
@@ -73,8 +64,16 @@ class Coordinator:
                 totals[k] += cb[k]
         self.colony.population    = pop
         self.colony.forager_count = foragers
-        self.colony.food_store    = total_food
         self.colony.brood_counts  = totals
+        # food_total = processed food + queen reserves. Used for
+        # pressure and display. food_store is the direct counter
+        # modified by ants (not touched here).
+        queen_reserves = 0.0
+        for ch in self.chambers.values():
+            if ch.queen is not None and ch.queen.alive:
+                queen_reserves = ch.queen.reserves
+                break
+        self.colony.food_total = self.colony.food_store + queen_reserves
         self.colony.update_recovery_boost()
 
     # ---- multi-module attachment ----
@@ -246,7 +245,7 @@ class Coordinator:
 
     def state_broadcast(self):
         return protocol.colony_state(
-            food        = round(self.colony.food_store, 1),
+            food        = round(self.colony.food_total, 1),
             population  = self.colony.population,
             brood_counts= dict(self.colony.brood_counts),
         )

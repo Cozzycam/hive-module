@@ -131,7 +131,7 @@ def _draw_hud(screen, font, font_small, coord, inp, window_w, window_h):
 
     line1 = (
         f"day {sim_day:>5.1f}   tick {coord.tick_count:>6}   "
-        f"{inp.speed_label:>10}   food {colony.food_store:6.1f}   "
+        f"{inp.speed_label:>10}   food {colony.food_total:6.1f}   "
         f"queen {q_state} (h {q_hunger:4.1f})   modules {modules}"
     )
     line2 = (

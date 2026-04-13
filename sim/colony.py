@@ -7,10 +7,13 @@ import config as C
 
 class Colony:
     def __init__(self):
-        # Derived total — sum of all physical food piles + queen
-        # reserves across all chambers. Recomputed by Coordinator
-        # each tick.
+        # Abstract food pool — foragers deposit into it, metabolism
+        # draws from it. Not physical piles; conceptually stored
+        # communally in the nest. Queen reserves are separate.
         self.food_store = 0.0
+        # Total including queen reserves — set by Coordinator each
+        # tick. Used for display and pressure calculations.
+        self.food_total = 0.0
         # Mirror of per-chamber state for quick reads by ants / UI.
         # Updated by Coordinator.tick().
         self.population = 0
@@ -40,7 +43,7 @@ class Colony:
         target = daily_burn * C.FOOD_PRESSURE_TARGET_DAYS
         if target <= 0:
             return 0.5
-        ratio = self.food_store / target
+        ratio = self.food_total / target
         return max(0.0, 1.0 - min(1.0, ratio / 2.0))
 
     def update_recovery_boost(self):
@@ -71,7 +74,7 @@ class Colony:
 
     def summary(self):
         return {
-            'food':       round(self.food_store, 1),
+            'food':       round(self.food_total, 1),
             'population': self.population,
             'brood':      dict(self.brood_counts),
         }
