@@ -344,23 +344,26 @@ class Ant:
                 self.facing_dy = -self.facing_dy
                 return
 
-        # Stall detection — if the ant hasn't changed position for
-        # too many movement ticks it's stuck at the peak of an
-        # exhausted-food gradient. Ignore the gradient and explore.
+        # Stall detection — if the ant is following a food gradient
+        # but there's no actual food here, it's at the peak of an
+        # exhausted supply. Count ticks at the gradient peak and
+        # break out to explore after STALL_THRESHOLD_TICKS.
+        #
+        # Detects both true stalls (no movement) and oscillation
+        # (bouncing between two cells at the gradient peak).
         old_x, old_y = self.x, self.y
 
         # Movement decision (in priority order):
         # 1. Walk toward a visible food pile within sense radius.
-        # 2. Follow to_food gradient (unless stalled — trail is
-        #    a dead end, skip straight to random walk).
-        # 3. If near an active entry, sometimes steer toward it
-        #    so scouts discover passages between chambers.
-        # 4. Momentum-biased random walk (exploration).
+        # 2. Follow to_food gradient (unless stalled at an
+        #    exhausted site — skip to random walk).
+        # 3. Entry attraction / momentum random walk.
         visible_pile = chamber.nearest_food_within(
             self.x, self.y, self.sense_radius,
         )
         if visible_pile is not None:
             self._step_toward_cell(visible_pile, chamber)
+            self.stall_ticks = 0
         elif self.stall_ticks < C.STALL_THRESHOLD_TICKS:
             step = self._sample_markers(chamber, 'food')
             if step is not None:
@@ -371,10 +374,16 @@ class Ant:
         else:
             self._explore_or_wander(chamber)
 
-        # Update stall counter.
-        if self.x == old_x and self.y == old_y:
+        # Update stall counter — increments when following a food
+        # gradient with no actual food in sight. This catches both
+        # true stalls AND oscillation at exhausted peaks.
+        if visible_pile is not None:
+            pass  # already reset above
+        elif self._sample_markers(chamber, 'food') is not None:
+            # On a food trail but no food visible — counting.
             self.stall_ticks += 1
         else:
+            # No trail at all — exploring freely, not stalled.
             self.stall_ticks = 0
 
         # Deposit to_home marker at new position. Intensity decays
