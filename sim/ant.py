@@ -68,6 +68,7 @@ class Ant:
         'steps_walked', 'ticks_away', 'stall_ticks',
         'idle_cooldown', 'chamber_steps',
         'hunger', 'max_age', 'metabolism',
+        'is_nanitic',
     )
 
     def __init__(self, x, y, caste=None, is_nanitic=False):
@@ -129,6 +130,7 @@ class Ant:
 
         # Lifespan — nanitics (first founding brood) are
         # shorter-lived than regular workers of the same caste.
+        self.is_nanitic = is_nanitic
         if is_nanitic:
             lo, hi = C.WORKER_LIFESPAN_NANITIC
         else:
@@ -232,7 +234,7 @@ class Ant:
         colony   = chamber.colony
         pressure = colony.food_pressure()
         queen    = chamber.queen
-        has_food = colony.food_store >= self.carry_amount
+        has_food = colony.food_store >= C.LARVA_FEED_AMOUNT
 
         # Stage 2 override — under severe famine, workers feed the
         # queen first if her hunger is critical, before anything else.
@@ -259,7 +261,7 @@ class Ant:
         if pressure > C.FAMINE_SLOWDOWN_PRESSURE:
             # Brood cannibalism: convert doomed larvae back to food.
             if (pressure >= C.BROOD_CANNIBALISM_PRESSURE
-                    and colony.food_store < self.carry_amount
+                    and colony.food_store < C.LARVA_FEED_AMOUNT
                     and chamber.cannibalism_cooldown <= 0):
                 victim = self._least_invested_larva(chamber)
                 if victim is not None:
@@ -268,12 +270,20 @@ class Ant:
                     chamber.cannibalism_cooldown = C.BROOD_CANNIBALISM_COOLDOWN
                     return
         else:
-            # Normal domestic: feed larvae.
+            # Normal domestic: feed larvae — but maintain a forager
+            # floor so brood tending doesn't completely starve foraging
+            # income.  Without this, all workers go domestic when larvae
+            # hatch, income drops to zero, and food_store crashes.
             larva = self._nearest_hungry_larva(chamber)
             if larva is not None and has_food:
-                self.state  = TEND_BROOD
-                self.target = (larva.x, larva.y)
-                return
+                total_pop = colony.population
+                target_frac = colony.target_forager_fraction()
+                min_foragers = max(2, int(total_pop * target_frac))
+                if colony.forager_count >= min_foragers:
+                    self.state  = TEND_BROOD
+                    self.target = (larva.x, larva.y)
+                    return
+                # Not enough foragers — fall through to foraging.
 
         # Recruitment signal — a returning forager has laid to_food
         # pheromone in the nest. Idle ants that detect the trail
@@ -516,15 +526,19 @@ class Ant:
 
         tx, ty = self.target
         if abs(tx - self.x) + abs(ty - self.y) <= 1:
+            feed_amt = C.LARVA_FEED_AMOUNT
             store = chamber.colony.food_store
-            if store >= self.carry_amount:
+            if store >= feed_amt:
                 for b in chamber.brood:
                     if (b.x, b.y) == (tx, ty) and b.stage == brood_mod.LARVA:
-                        chamber.colony.food_store -= self.carry_amount
-                        b.feed(self.carry_amount)
+                        if not b.needs_feeding():
+                            break  # already fed by another worker
+                        chamber.colony.food_store -= feed_amt
+                        b.feed(feed_amt)
                         break
-            self.state  = IDLE
-            self.target = None
+            self.state         = IDLE
+            self.target        = None
+            self.idle_cooldown = random.randint(20, 40)
             return
         self._step_toward_cell((tx, ty), chamber)
 
@@ -537,15 +551,17 @@ class Ant:
 
         tx, ty = self.target
         if abs(tx - self.x) + abs(ty - self.y) <= 1:
+            feed_amt = C.LARVA_FEED_AMOUNT
             store = chamber.colony.food_store
-            if store >= self.carry_amount:
-                chamber.colony.food_store -= self.carry_amount
+            if store >= feed_amt:
+                chamber.colony.food_store -= feed_amt
                 if chamber.queen is not None:
                     chamber.queen.hunger = max(
-                        0.0, chamber.queen.hunger - self.carry_amount,
+                        0.0, chamber.queen.hunger - feed_amt,
                     )
-            self.state  = IDLE
-            self.target = None
+            self.state         = IDLE
+            self.target        = None
+            self.idle_cooldown = random.randint(20, 40)
             return
         self._step_toward_cell((tx, ty), chamber)
 
@@ -583,7 +599,8 @@ class Ant:
             for b in chamber.brood:
                 if ((b.x, b.y) == self.target
                         and b.stage == brood_mod.LARVA
-                        and b.alive):
+                        and b.alive
+                        and b.needs_feeding()):
                     return True
             return False
         return True
@@ -707,9 +724,10 @@ class Ant:
 
     def _explore_or_wander(self, chamber):
         """Exploration with three phases:
-        Push (< 30 steps in non-home chamber): walk straight in the
-        facing direction. After handoff, facing points inward, so
-        this drives the ant deep into the new chamber.
+        Push (< 5 steps in non-home chamber): walk a few steps inward
+        from the entry to clear the handoff cell and prevent instant
+        re-crossing. Short enough that the ant explores from the
+        entrance rather than being driven to the chamber center.
         Explore (< CHAMBER_EXPLORE_STEPS): random walk, 30% chance
         of steering toward a non-home active entry.
         Exit (>= CHAMBER_EXPLORE_STEPS): deterministic walk to the
@@ -719,11 +737,10 @@ class Ant:
             if entry is not None:
                 self._step_toward_cell(entry, chamber)
                 return
-        elif (self.chamber_steps < 30
+        elif (self.chamber_steps < 5
               and chamber.home_face is not None):
-            # Just entered a non-home chamber — push inward using
-            # the facing direction set by handoff. Ensures the ant
-            # surveys the bulk of the chamber, not just the entrance.
+            # Just entered a non-home chamber — push a few steps
+            # inward to clear the entry cell (prevents re-crossing).
             dx, dy = self.facing_dx, self.facing_dy
             if dx == 0 and dy == 0:
                 dx, dy = 1, 0

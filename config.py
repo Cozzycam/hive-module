@@ -62,7 +62,11 @@ QUEEN_LAY_INTERVAL_FOUNDING = days(0.5)   # fast burst during claustral phase
 QUEEN_LAY_INTERVAL_NORMAL  = days(2)     # steady-state post-founding
 QUEEN_LAY_INTERVAL         = QUEEN_LAY_INTERVAL_FOUNDING  # initial value
 QUEEN_EGG_FOOD_COST     = 1.08     # -28% from original 1.5
-QUEEN_LAY_FOOD_FLOOR    = 50.0
+QUEEN_LAY_FOOD_FLOOR    = 50.0     # absolute minimum food to allow laying
+QUEEN_LAY_PRESSURE_MAX  = 0.35     # queen only breeds when colony has ~9 days
+                                    # of reserves (was 0.7 → constant boom-bust)
+QUEEN_LAY_SLOWDOWN      = 0.25     # interval doubles above this pressure
+QUEEN_MAX_BROOD_RATIO   = 0.25     # pending brood capped at quarter worker count
 QUEEN_FOUNDING_EGG_CAP  = 12
 QUEEN_HUNGER_RATE       = 0.02
 QUEEN_STARVE_THRESHOLD  = 50.0
@@ -204,7 +208,8 @@ MAX_FORAGER_FRACTION      = 0.80   # foraging ceiling when desperate
 # ---------- Starvation cascade ----------
 FAMINE_SLOWDOWN_PRESSURE  = 0.9    # pressure above which workers halve speed
 FAMINE_BROOD_CULL_PRESSURE = 0.8   # pressure above which hungry larvae die
-FAMINE_BROOD_CULL_HUNGER  = 0.5    # larva hunger threshold for culling (~500 ticks unfed)
+FAMINE_BROOD_CULL_HUNGER  = 2.0    # larva hunger threshold for culling (~2000 ticks unfed)
+                                    # was 0.5 — culled larvae that were barely hungry
 QUEEN_PRIORITY_HUNGER     = 20.0   # queen hunger above which workers feed her first
 
 # ---------- Brood cannibalism ----------

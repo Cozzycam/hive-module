@@ -28,10 +28,18 @@ QUEEN_EYE    = (8, 14, 10)
 ANT_BODY     = (32, 52, 28)
 ANT_LIMB     = (20, 34, 18)
 
+# Nanitic workers (first founding brood) — paler, warmer amber-brown
+# to distinguish from mature minors. Smaller and weaker in real life.
+NANITIC_BODY = (58, 48, 30)
+NANITIC_LIMB = (40, 32, 20)
+
 # Major workers (Pheidole/Messor soldiers) — lighter olive head capsule
 # to read clearly against minor workers.
 MAJOR_HEAD   = (66, 104, 48)
 MAJOR_BODY   = (36, 60, 30)
+
+# Food morsel carried by a forager — bright seed-yellow dot
+FOOD_CARRY   = (220, 200, 80)
 
 # Brood — pale mint cream
 EGG_COLOUR   = (220, 238, 210)

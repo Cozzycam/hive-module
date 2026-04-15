@@ -63,7 +63,7 @@ class Queen:
             else:
                 pressure = chamber.colony.food_pressure()
                 base = C.QUEEN_LAY_INTERVAL_NORMAL
-                self.lay_cooldown = base * 2 if pressure > 0.4 else base
+                self.lay_cooldown = base * 2 if pressure > C.QUEEN_LAY_SLOWDOWN else base
 
     def _consume(self, chamber, amount):
         """Draw from reserves first, then colony food_store."""
@@ -100,7 +100,7 @@ class Queen:
 
     def _can_lay(self, chamber):
         pressure = chamber.colony.food_pressure()
-        if pressure > 0.7:
+        if pressure > C.QUEEN_LAY_PRESSURE_MAX:
             return False
         if chamber.colony.food_total < C.QUEEN_LAY_FOOD_FLOOR:
             return False
@@ -111,17 +111,33 @@ class Queen:
         if not founding:
             bc = colony.brood_counts
             pending = bc.get('egg', 0) + bc.get('larva', 0)
-            if pending >= colony.population:
+            if pending >= max(4, colony.population * C.QUEEN_MAX_BROOD_RATIO):
+                return False
+            # Prospective check — can the colony actually afford to raise
+            # this batch through to pupation, with reserves left over?
+            batch = max(1, min(6, colony.population // 5))
+            brood_cost = batch * C.CASTE_PARAMS[C.DEFAULT_BROOD_CASTE]['larva_food_needed']
+            if colony.food_total < brood_cost + C.QUEEN_LAY_FOOD_FLOOR:
                 return False
         return True
 
     def _lay(self, chamber):
-        """Lay a batch of eggs. Batch size scales with worker count."""
+        """Lay a batch of eggs. Batch size scales with worker count and
+        tapers down as food pressure rises — smooth ramp-down instead
+        of a cliff edge."""
         colony = chamber.colony
         if colony.population == 0:
             max_batch = 6
         else:
-            max_batch = max(1, min(6, colony.population // 5))
+            base_batch = max(1, min(6, colony.population // 5))
+            pressure = colony.food_pressure()
+            # Full batch at low pressure, tapers to 1 egg near the cutoff.
+            comfort = C.QUEEN_LAY_PRESSURE_MAX * 0.33  # ~0.15
+            if pressure <= comfort:
+                max_batch = base_batch
+            else:
+                t = (pressure - comfort) / (C.QUEEN_LAY_PRESSURE_MAX - comfort)
+                max_batch = max(1, round(base_batch * (1.0 - t)))
         caste = C.DEFAULT_BROOD_CASTE
         for _ in range(max_batch):
             consumed = self._consume(chamber, C.QUEEN_EGG_FOOD_COST)

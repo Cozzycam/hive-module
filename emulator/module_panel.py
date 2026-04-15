@@ -11,6 +11,7 @@ import config as C
 from rendering import palette as P
 from rendering import sprites as S
 from sim import brood as brood_mod
+from sim.ant import TEND_BROOD, TEND_QUEEN, TO_HOME
 
 
 # Pre-baked pygame Surfaces for each sprite, built lazily.
@@ -133,17 +134,48 @@ def draw_chamber(dest, chamber, origin_x=0, origin_y=0, lerp_t=1.0,
                        origin_x, origin_y)
 
     # Workers — interpolated between prev and current grid position.
-    # Caste picks which sprite to use.
-    minor_surf = _surface_for('minor', S.WORKER_MINOR)
-    major_surf = _surface_for('major', S.MAJOR)
+    # Sprite chosen by caste and nanitic status.
+    minor_surf   = _surface_for('minor',   S.WORKER_MINOR)
+    nanitic_surf = _surface_for('nanitic', S.WORKER_NANITIC)
+    major_surf   = _surface_for('major',   S.MAJOR)
     t = max(0.0, min(1.0, lerp_t))
+    cell = C.CELL_SIZE
     for w in chamber.workers:
         if not w.alive:
             continue
         fx = w.prev_x + (w.x - w.prev_x) * t
         fy = w.prev_y + (w.y - w.prev_y) * t
-        surf = major_surf if w.caste == C.CASTE_MAJOR else minor_surf
+
+        # Pick sprite: major > nanitic > minor
+        if w.caste == C.CASTE_MAJOR:
+            surf = major_surf
+        elif w.is_nanitic:
+            surf = nanitic_surf
+        else:
+            surf = minor_surf
         _blit_centered_px(dest, surf, fx, fy, origin_x, origin_y)
+
+        # Pixel position of this ant (for overlays)
+        apx = origin_x + int(fx * cell + cell / 2)
+        apy = origin_y + int(fy * cell + cell / 2)
+
+        # Food morsel — bright dot when carrying food
+        if w.food_carried > 0:
+            # Offset morsel opposite to facing direction (carried on back)
+            mx = apx - w.facing_dx * 2
+            my = apy - w.facing_dy * 2
+            pygame.draw.circle(dest, P.FOOD_CARRY, (mx, my), 2)
+
+        # Feeding indicator — small food particle between worker and
+        # target when adjacent and actively tending brood or queen.
+        if w.state in (TEND_BROOD, TEND_QUEEN) and w.target is not None:
+            tx, ty = w.target
+            if abs(tx - w.x) + abs(ty - w.y) <= 1:
+                tpx = origin_x + tx * cell + cell // 2
+                tpy = origin_y + ty * cell + cell // 2
+                mid_x = (apx + tpx) // 2
+                mid_y = (apy + tpy) // 2
+                pygame.draw.circle(dest, P.FOOD_CARRY, (mid_x, mid_y), 1)
 
 
 def _draw_pheromone_overlay(dest, chamber, origin_x, origin_y):
@@ -230,23 +262,48 @@ def _draw_direction_overlay(dest, chamber, origin_x, origin_y):
 
 
 def _draw_food_piles(dest, chamber, origin_x, origin_y):
-    """Draw each food pile as a small cluster whose size scales with
-    the remaining amount. Caps at a 3-cell-wide clump."""
+    """Draw each food pile as scattered seed-like shapes. Small piles
+    are a single seed; larger piles add more granules spreading outward."""
     cell = C.CELL_SIZE
+    half = cell // 2
     for (fx, fy), amount in chamber.food_cells.items():
         if amount <= 0:
             continue
-        # Size: 1 cell at low amounts, up to 3 cells at big piles.
-        radius = 1
-        if amount > 50:
-            radius = 2
-        if amount > 150:
-            radius = 3
-        cx = origin_x + fx * cell + cell // 2
-        cy = origin_y + fy * cell + cell // 2
-        # Darker outer ring, lighter core
-        pygame.draw.circle(dest, P.FOOD_DARK,  (cx, cy), radius * 2 + 1)
-        pygame.draw.circle(dest, P.FOOD_LIGHT, (cx, cy), radius * 2 - 1)
+        cx = origin_x + fx * cell + half
+        cy = origin_y + fy * cell + half
+        if amount <= 15:
+            # Single seed — small elongated shape
+            pygame.draw.ellipse(dest, P.FOOD_LIGHT,
+                                (cx - 1, cy - 1, 3, 2))
+        elif amount <= 50:
+            # Small cluster — 2-3 seeds
+            pygame.draw.ellipse(dest, P.FOOD_DARK,
+                                (cx - 2, cy - 1, 3, 2))
+            pygame.draw.ellipse(dest, P.FOOD_LIGHT,
+                                (cx,     cy,     3, 2))
+        elif amount <= 150:
+            # Medium pile — scattered seeds
+            pygame.draw.ellipse(dest, P.FOOD_DARK,
+                                (cx - 3, cy - 2, 3, 2))
+            pygame.draw.ellipse(dest, P.FOOD_LIGHT,
+                                (cx - 1, cy,     4, 2))
+            pygame.draw.ellipse(dest, P.FOOD_DARK,
+                                (cx + 1, cy - 1, 3, 2))
+            pygame.draw.ellipse(dest, P.FOOD_LIGHT,
+                                (cx - 2, cy + 1, 3, 2))
+        else:
+            # Large pile — dense cluster
+            pygame.draw.circle(dest, P.FOOD_DARK,  (cx, cy), 4)
+            pygame.draw.ellipse(dest, P.FOOD_LIGHT,
+                                (cx - 3, cy - 2, 4, 2))
+            pygame.draw.ellipse(dest, P.FOOD_DARK,
+                                (cx,     cy - 1, 3, 2))
+            pygame.draw.ellipse(dest, P.FOOD_LIGHT,
+                                (cx - 2, cy + 1, 4, 2))
+            pygame.draw.ellipse(dest, P.FOOD_DARK,
+                                (cx + 1, cy,     3, 2))
+            pygame.draw.ellipse(dest, P.FOOD_LIGHT,
+                                (cx - 1, cy - 3, 3, 2))
 
 
 def _draw_edge_markers(dest, chamber, origin_x, origin_y, w, h):

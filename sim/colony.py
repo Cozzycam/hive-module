@@ -33,13 +33,23 @@ class Colony:
         forager deployment, egg production, and starvation cascade.
 
         Daily burn uses the ¾-power metabolic scaling so the target
-        reserve scales correctly with colony size.
+        reserve scales correctly with colony size. Includes projected
+        brood feeding costs so the pressure rises proactively when
+        larvae are present — not just after the store is already empty.
         """
         scale = C.metabolic_scale_factor(self.population)
         daily_burn = C.QUEEN_METABOLISM * C.TICKS_PER_SIM_DAY
         daily_burn += (self.population * scale
                        * C.WORKER_METABOLISM_MINOR
                        * C.TICKS_PER_SIM_DAY)
+        # Brood feeding cost: each larva needs feeding roughly every
+        # 500 ticks (hunger threshold 0.5 / rate 0.001). Each feeding
+        # costs LARVA_FEED_AMOUNT.
+        larva_count = self.brood_counts.get('larva', 0)
+        if larva_count > 0:
+            feed_interval = 0.5 / C.LARVA_HUNGER_RATE  # 500 ticks
+            feeds_per_day = C.TICKS_PER_SIM_DAY / feed_interval
+            daily_burn += larva_count * feeds_per_day * C.LARVA_FEED_AMOUNT
         target = daily_burn * C.FOOD_PRESSURE_TARGET_DAYS
         if target <= 0:
             return 0.5

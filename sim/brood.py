@@ -80,13 +80,17 @@ class Brood:
         return self.stage == LARVA and self.hunger > 0.5
 
     def feed(self, amount):
-        """Worker drops food onto a larva. Returns actual amount used."""
+        """Worker drops food onto a larva. Returns actual amount used.
+
+        Hunger resets to zero — the larva is sated and won't signal for
+        more food until hunger re-accumulates past the 0.5 threshold
+        (~500 ticks / 2.5 sim-days). This prevents a feeding frenzy
+        where multiple workers repeatedly feed the same high-hunger
+        larva, draining the colony's entire food store in hours.
+        """
         if self.stage != LARVA:
             return 0.0
-        used = min(amount, self.hunger if self.hunger > 0 else amount)
-        # Always accept up to the feed amount so fed_total can climb even
-        # on a not-very-hungry larva (pupation gate).
-        self.hunger    = max(0.0, self.hunger - amount)
+        self.hunger    = 0.0
         self.fed_total += amount
         return amount
 

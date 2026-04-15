@@ -24,6 +24,9 @@ SPRITE_KEY = {
     # minor workers
     'a': P.ANT_BODY,
     'l': P.ANT_LIMB,
+    # nanitic workers (amber-brown founding brood)
+    'n': P.NANITIC_BODY,
+    'k': P.NANITIC_LIMB,
     # major workers (big-headed soldiers)
     'M': P.MAJOR_HEAD,
     'm': P.MAJOR_BODY,
@@ -54,7 +57,7 @@ QUEEN = [
     "...QQQQQQ...",
 ]
 
-# ---- minor worker (nanitic): 6x6, compact ----
+# ---- minor worker: 6x6, compact ----
 WORKER_MINOR = [
     "..aa..",
     ".aaaa.",
@@ -62,6 +65,16 @@ WORKER_MINOR = [
     "laaaal",
     ".aaaa.",
     "..ll..",
+]
+
+# ---- nanitic worker: same shape, amber-brown founding brood ----
+WORKER_NANITIC = [
+    "..nn..",
+    ".nnnn.",
+    "knnnnk",
+    "knnnnk",
+    ".nnnn.",
+    "..kk..",
 ]
 
 # Legacy alias — old code called this WORKER.
