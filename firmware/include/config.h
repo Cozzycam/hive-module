@@ -153,6 +153,13 @@ constexpr Face FACE_OPPOSITE[FACE_COUNT] = { FACE_S, FACE_N, FACE_E, FACE_W };
 constexpr int QUEEN_SPAWN_X = GRID_WIDTH / 2;   // 30
 constexpr int QUEEN_SPAWN_Y = GRID_HEIGHT / 2;  // 20
 
+// ---- Proximity interactions ----
+constexpr int   PROXIMITY_DETECTION_RADIUS = 1;
+constexpr float PROXIMITY_GREETING_CHANCE  = 0.35f;
+constexpr float PROXIMITY_FOOD_SHARE_CHANCE = 0.15f;
+constexpr int   GREETING_DURATION_TICKS    = 4;
+constexpr int   FOOD_SHARE_DURATION_TICKS  = 88;
+
 // ---- Pool limits ----
 constexpr int MAX_LIL_GUYS  = 200;
 constexpr int MAX_BROOD      = 100;

@@ -1,6 +1,7 @@
 /* Queen behavior — ported from sim/queen.py. */
 #include "queen.h"
 #include "chamber.h"
+#include "events.h"
 #include "rng.h"
 #include <cmath>
 
@@ -132,6 +133,8 @@ void Queen::_lay(Chamber& ch) {
         if (ch.in_bounds(ex, ey) && (dx != 0 || dy != 0)) {
             ch.add_brood(ex, ey, Cfg::DEFAULT_BROOD_ROLE);
             eggs_laid++;
+            Event ev; ev.type = EVT_QUEEN_LAID_EGG; ev.tick = ch.tick_num;
+            ch.emit(ev);
         } else {
             reserves += consumed;
         }

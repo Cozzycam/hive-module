@@ -12,8 +12,8 @@ void Brood::init(int8_t px, int8_t py, Role c) {
     food_needed    = Cfg::ROLE_PARAMS[c].larva_food_needed;
 }
 
-bool Brood::tick() {
-    if (stage == STAGE_DEAD) return false;
+BroodTransition Brood::tick() {
+    if (stage == STAGE_DEAD) return BROOD_NONE;
 
     age++;
 
@@ -21,27 +21,29 @@ bool Brood::tick() {
         if (age >= Cfg::EGG_DURATION) {
             stage = STAGE_LARVA;
             age = 0;
+            return BROOD_EGG_TO_LARVA;
         }
-        return false;
+        return BROOD_NONE;
     }
 
     if (stage == STAGE_LARVA) {
         hunger += Cfg::LARVA_HUNGER_RATE;
         if (hunger >= Cfg::LARVA_STARVE) {
             stage = STAGE_DEAD;
-            return false;
+            return BROOD_DIED;
         }
         if (age >= static_cast<uint16_t>(larva_duration)
                 && fed_total >= food_needed) {
             stage = STAGE_PUPA;
             age = 0;
+            return BROOD_LARVA_TO_PUPA;
         }
-        return false;
+        return BROOD_NONE;
     }
 
     if (stage == STAGE_PUPA) {
         if (age >= Cfg::PUPA_DURATION)
-            return true;  // hatch signal
+            return BROOD_HATCH;
     }
-    return false;
+    return BROOD_NONE;
 }

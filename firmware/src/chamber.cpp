@@ -2,6 +2,7 @@
 #include "chamber.h"
 #include "rng.h"
 #include <cstring>
+#include <cmath>
 
 void Chamber::init(ColonyState* col, bool with_queen) {
     colony = col;
@@ -12,6 +13,8 @@ void Chamber::init(ColonyState* col, bool with_queen) {
     cannibalism_cooldown = 0;
     home_face = -1;
     has_queen = with_queen;
+    event_bus = nullptr;
+    tick_num = 0;
 
     for (int f = 0; f < FACE_COUNT; f++) entries[f] = -1;
 
@@ -34,16 +37,45 @@ void Chamber::tick() {
     // Queen tick
     if (has_queen) queen_obj.tick(*this);
 
-    // Brood tick
+    // Brood tick — with transition events
     for (int i = brood_count - 1; i >= 0; i--) {
-        bool hatch = brood[i].tick();
-        if (hatch) {
+        BroodTransition result = brood[i].tick();
+        switch (result) {
+        case BROOD_HATCH: {
             bool pioneer = colony->total_workers_born < Cfg::QUEEN_FOUNDING_EGG_CAP;
             add_lil_guy(brood[i].x, brood[i].y, brood[i].role, pioneer);
             colony->total_workers_born++;
+            Event ev; ev.type = EVT_YOUNG_HATCHED; ev.tick = tick_num;
+            ev.young_hatched = {STAGE_PUPA, 0xFF};  // 0xFF = worker
+            emit(ev);
             remove_brood(i);
-        } else if (!brood[i].alive()) {
+            break;
+        }
+        case BROOD_EGG_TO_LARVA: {
+            Event ev; ev.type = EVT_YOUNG_HATCHED; ev.tick = tick_num;
+            ev.young_hatched = {STAGE_EGG, STAGE_LARVA};
+            emit(ev);
+            break;
+        }
+        case BROOD_LARVA_TO_PUPA: {
+            Event ev; ev.type = EVT_YOUNG_HATCHED; ev.tick = tick_num;
+            ev.young_hatched = {STAGE_LARVA, STAGE_PUPA};
+            emit(ev);
+            break;
+        }
+        case BROOD_DIED: {
+            Event ev; ev.type = EVT_YOUNG_DIED; ev.tick = tick_num;
+            emit(ev);
             remove_brood(i);
+            break;
+        }
+        default:
+            if (!brood[i].alive()) {
+                Event ev; ev.type = EVT_YOUNG_DIED; ev.tick = tick_num;
+                emit(ev);
+                remove_brood(i);
+            }
+            break;
         }
     }
 
@@ -53,6 +85,8 @@ void Chamber::tick() {
         for (int i = brood_count - 1; i >= 0; i--) {
             if (brood[i].stage == STAGE_LARVA && brood[i].alive()
                     && brood[i].hunger > Cfg::FAMINE_BROOD_CULL_HUNGER) {
+                Event ev; ev.type = EVT_YOUNG_DIED; ev.tick = tick_num;
+                emit(ev);
                 remove_brood(i);
             }
         }
@@ -76,15 +110,127 @@ void Chamber::tick() {
         lil_guys[i].prev_y = lil_guys[i].y;
     }
 
-    // Worker ticks + edge crossing + death
+    // Worker ticks + death
     for (int i = lil_guy_count - 1; i >= 0; i--) {
         lil_guys[i].tick(*this);
         if (!lil_guys[i].alive) {
             if (lil_guys[i].food_carried > 0)
-                add_food(lil_guys[i].cell_x(), lil_guys[i].cell_y(), lil_guys[i].food_carried);
+                add_food(lil_guys[i].cell_x(), lil_guys[i].cell_y(),
+                         lil_guys[i].food_carried);
+            Event ev; ev.type = EVT_LIL_GUY_DIED; ev.tick = tick_num;
+            emit(ev);
             remove_lil_guy(i);
         }
-        // Edge crossing check (single-board: no neighbors, so no crossings)
+    }
+
+    // Proximity interactions between lil guys
+    _detect_proximity_interactions();
+}
+
+// ---- proximity interactions ----
+
+void Chamber::_detect_proximity_interactions() {
+    if (!event_bus || lil_guy_count < 2) return;
+
+    // Simple spatial hash: cell -> first worker index, chain via -1 sentinel.
+    // For bounded memory, use a fixed grid array.
+    static int16_t grid_head[Cfg::GRID_CELLS];
+    static int16_t grid_next[Cfg::MAX_LIL_GUYS];
+    memset(grid_head, -1, sizeof(grid_head));
+
+    for (int i = 0; i < lil_guy_count; i++) {
+        if (!lil_guys[i].alive) continue;
+        int cx = lil_guys[i].cell_x();
+        int cy = lil_guys[i].cell_y();
+        if (cx < 0 || cx >= Cfg::GRID_WIDTH || cy < 0 || cy >= Cfg::GRID_HEIGHT)
+            continue;
+        int idx = cy * Cfg::GRID_WIDTH + cx;
+        grid_next[i] = grid_head[idx];
+        grid_head[idx] = i;
+    }
+
+    // Check same-cell and adjacent-cell pairs
+    for (int cy = 0; cy < Cfg::GRID_HEIGHT; cy++) {
+        for (int cx = 0; cx < Cfg::GRID_WIDTH; cx++) {
+            int idx = cy * Cfg::GRID_WIDTH + cx;
+            if (grid_head[idx] < 0) continue;
+
+            // Same-cell pairs
+            for (int ai = grid_head[idx]; ai >= 0; ai = grid_next[ai]) {
+                for (int bi = grid_next[ai]; bi >= 0; bi = grid_next[bi]) {
+                    auto& a = lil_guys[ai];
+                    auto& b = lil_guys[bi];
+                    // Food sharing
+                    if ((a.food_carried > 0) != (b.food_carried > 0)) {
+                        if (g_rng.rand_float() < Cfg::PROXIMITY_FOOD_SHARE_CHANCE) {
+                            uint16_t pid = event_bus->next_pair_id();
+                            Event es; es.type = EVT_INTERACTION_STARTED; es.tick = tick_num;
+                            es.interaction_started = {pid, INTERACT_FOOD_SHARING,
+                                static_cast<uint8_t>(Cfg::FOOD_SHARE_DURATION_TICKS)};
+                            emit(es);
+                            Event ee; ee.type = EVT_INTERACTION_ENDED; ee.tick = tick_num;
+                            ee.interaction_ended = {pid};
+                            emit(ee);
+                            continue;
+                        }
+                    }
+                    // Greeting
+                    if (g_rng.rand_float() < Cfg::PROXIMITY_GREETING_CHANCE) {
+                        uint16_t pid = event_bus->next_pair_id();
+                        Event es; es.type = EVT_INTERACTION_STARTED; es.tick = tick_num;
+                        es.interaction_started = {pid, INTERACT_GREETING,
+                            static_cast<uint8_t>(Cfg::GREETING_DURATION_TICKS)};
+                        emit(es);
+                        Event ee; ee.type = EVT_INTERACTION_ENDED; ee.tick = tick_num;
+                        ee.interaction_ended = {pid};
+                        emit(ee);
+                    }
+                }
+            }
+
+            // Adjacent cells (4 cardinal)
+            const int dx[] = {1, 0, -1, 0};
+            const int dy[] = {0, 1, 0, -1};
+            for (int d = 0; d < 4; d++) {
+                int nx = cx + dx[d], ny = cy + dy[d];
+                if (nx < 0 || nx >= Cfg::GRID_WIDTH || ny < 0 || ny >= Cfg::GRID_HEIGHT)
+                    continue;
+                int nidx = ny * Cfg::GRID_WIDTH + nx;
+                if (grid_head[nidx] < 0) continue;
+                // Only check pairs where this cell < neighbor cell to avoid duplicates
+                if (nidx <= idx) continue;
+
+                for (int ai = grid_head[idx]; ai >= 0; ai = grid_next[ai]) {
+                    for (int bi = grid_head[nidx]; bi >= 0; bi = grid_next[bi]) {
+                        auto& a = lil_guys[ai];
+                        auto& b = lil_guys[bi];
+                        if ((a.food_carried > 0) != (b.food_carried > 0)) {
+                            if (g_rng.rand_float() < Cfg::PROXIMITY_FOOD_SHARE_CHANCE) {
+                                uint16_t pid = event_bus->next_pair_id();
+                                Event es; es.type = EVT_INTERACTION_STARTED; es.tick = tick_num;
+                                es.interaction_started = {pid, INTERACT_FOOD_SHARING,
+                                    static_cast<uint8_t>(Cfg::FOOD_SHARE_DURATION_TICKS)};
+                                emit(es);
+                                Event ee; ee.type = EVT_INTERACTION_ENDED; ee.tick = tick_num;
+                                ee.interaction_ended = {pid};
+                                emit(ee);
+                                continue;
+                            }
+                        }
+                        if (g_rng.rand_float() < Cfg::PROXIMITY_GREETING_CHANCE) {
+                            uint16_t pid = event_bus->next_pair_id();
+                            Event es; es.type = EVT_INTERACTION_STARTED; es.tick = tick_num;
+                            es.interaction_started = {pid, INTERACT_GREETING,
+                                static_cast<uint8_t>(Cfg::GREETING_DURATION_TICKS)};
+                            emit(es);
+                            Event ee; ee.type = EVT_INTERACTION_ENDED; ee.tick = tick_num;
+                            ee.interaction_ended = {pid};
+                            emit(ee);
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -110,7 +256,6 @@ float Chamber::take_food(int x, int y, float amount) {
     float taken = (amount < pile) ? amount : pile;
     food_piles[idx].amount -= taken;
     if (food_piles[idx].amount <= 0.0f) {
-        // Swap-with-last removal
         food_piles[idx] = food_piles[--food_pile_count];
     }
     return taken;
@@ -170,7 +315,6 @@ void Chamber::deposit_food(int x, int y, float amount) {
 
 void Chamber::_deposit_home_cell(int x, int y, float amount) {
     pheromones.deposit_home(x, y, amount);
-    // Mirror: would send to neighbor in multi-board mode
 }
 
 void Chamber::_deposit_food_cell(int x, int y, float amount) {

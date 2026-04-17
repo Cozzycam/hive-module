@@ -2,15 +2,28 @@
 #include <Arduino.h>
 #include "sim.h"
 
+// Event type names for serial logging
+static const char* EVT_NAMES[] = {
+    "interaction_started", "interaction_ended",
+    "food_delivered", "food_tapped", "pile_discovered",
+    "queen_laid_egg", "young_hatched", "young_died",
+    "lil_guy_died", "handoff_incoming", "handoff_outgoing",
+};
+
 void Sim::init() {
     colony = ColonyState();
     chamber.init(&colony, true);
+    event_bus.init();
     tick_count = 0;
     food_started = false;
 }
 
 void Sim::tick() {
     tick_count++;
+
+    // Bind event bus to chamber for this tick
+    chamber.event_bus = &event_bus;
+    chamber.tick_num = tick_count;
 
     chamber.tick();
 
@@ -65,8 +78,22 @@ void Sim::handle_touch() {
 
     chamber.add_food(cx, cy, Cfg::TAP_FEED_AMOUNT);
 
-    // TODO: emit food_tapped event when the event bus is ported to C++.
-    // event_bus.emit(events::food_tapped(tick_count, cx, cy));
+    // Emit food_tapped event
+    Event ev;
+    ev.type = EVT_FOOD_TAPPED;
+    ev.tick = tick_count;
+    ev.food_tapped = {static_cast<int8_t>(cx), static_cast<int8_t>(cy)};
+    event_bus.emit(ev);
 
     Serial.printf("[touch] fed (%d,%d) +%.0f\n", cx, cy, Cfg::TAP_FEED_AMOUNT);
+}
+
+void Sim::drain_events() {
+    static Event buf[64];
+    int n = event_bus.drain(buf, 64);
+    for (int i = 0; i < n; i++) {
+        int t = buf[i].type;
+        if (t >= 0 && t <= 10)
+            Serial.printf("[evt t=%6lu] %s\n", buf[i].tick, EVT_NAMES[t]);
+    }
 }

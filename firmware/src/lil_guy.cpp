@@ -55,7 +55,12 @@ void LilGuy::tick(Chamber& ch) {
     if (!alive) return;
     age++;
 
-    if (age >= max_age) { alive = false; return; }
+    if (age >= max_age) {
+        alive = false;
+        Event ev; ev.type = EVT_LIL_GUY_DIED; ev.tick = ch.tick_num;
+        ch.emit(ev);
+        return;
+    }
 
     // Metabolism
     float scale = Cfg::metabolic_scale_factor(ch.colony->population);
@@ -68,7 +73,12 @@ void LilGuy::tick(Chamber& ch) {
         if (hunger > 0) hunger = fmaxf(0.0f, hunger - drain);
     } else {
         hunger += Cfg::WORKER_HUNGER_RATE;
-        if (hunger >= Cfg::WORKER_STARVE_THRESHOLD) { alive = false; return; }
+        if (hunger >= Cfg::WORKER_STARVE_THRESHOLD) {
+            alive = false;
+            Event ev; ev.type = EVT_LIL_GUY_DIED; ev.tick = ch.tick_num;
+            ch.emit(ev);
+            return;
+        }
     }
 
     // Track time away from queen chamber
@@ -358,6 +368,9 @@ void LilGuy::_do_to_home(Chamber& ch) {
         int qx = ch.queen_obj.x, qy = ch.queen_obj.y;
         int cx = cell_x(), cy = cell_y();
         if (abs(qx - cx) + abs(qy - cy) <= 1) {
+            Event ev; ev.type = EVT_FOOD_DELIVERED; ev.tick = ch.tick_num;
+            ev.food_delivered = {static_cast<int8_t>(cx), static_cast<int8_t>(cy), food_carried};
+            ch.emit(ev);
             ch.colony->food_store += food_carried;
             food_carried = 0.0f;
             ch.food_delivery_signal = 200;
@@ -402,6 +415,16 @@ void LilGuy::_do_tend_brood(Chamber& ch) {
                     if (!b.needs_feeding()) break;
                     ch.colony->food_store -= feed_amt;
                     b.feed(feed_amt);
+                    if (ch.event_bus) {
+                        uint16_t pid = ch.event_bus->next_pair_id();
+                        Event es; es.type = EVT_INTERACTION_STARTED; es.tick = ch.tick_num;
+                        es.interaction_started = {pid, INTERACT_TENDING_YOUNG,
+                            static_cast<uint8_t>(Cfg::GREETING_DURATION_TICKS)};
+                        ch.emit(es);
+                        Event ee; ee.type = EVT_INTERACTION_ENDED; ee.tick = ch.tick_num;
+                        ee.interaction_ended = {pid};
+                        ch.emit(ee);
+                    }
                     break;
                 }
             }
@@ -423,6 +446,16 @@ void LilGuy::_do_tend_queen(Chamber& ch) {
         if (ch.colony->food_store >= feed_amt) {
             ch.colony->food_store -= feed_amt;
             ch.queen_obj.hunger = fmaxf(0.0f, ch.queen_obj.hunger - feed_amt);
+            if (ch.event_bus) {
+                uint16_t pid = ch.event_bus->next_pair_id();
+                Event es; es.type = EVT_INTERACTION_STARTED; es.tick = ch.tick_num;
+                es.interaction_started = {pid, INTERACT_TENDING_QUEEN,
+                    static_cast<uint8_t>(Cfg::GREETING_DURATION_TICKS)};
+                ch.emit(es);
+                Event ee; ee.type = EVT_INTERACTION_ENDED; ee.tick = ch.tick_num;
+                ee.interaction_ended = {pid};
+                ch.emit(ee);
+            }
         }
         state = STATE_IDLE;
         has_target = false;
@@ -463,6 +496,7 @@ void LilGuy::_do_cannibalize(Chamber& ch) {
                 if (recovered < Cfg::BROOD_CANNIBALISM_MIN_PILE)
                     recovered = Cfg::BROOD_CANNIBALISM_MIN_PILE;
                 ch.colony->food_store += recovered;
+                { Event ev; ev.type = EVT_YOUNG_DIED; ev.tick = ch.tick_num; ch.emit(ev); }
                 ch.remove_brood(i);
                 break;
             }

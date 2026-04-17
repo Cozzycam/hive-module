@@ -186,6 +186,7 @@ void loop() {
 
         renderer.draw(sim.chamber, lerp_t);
         renderer.flush();
+        sim.drain_events();
     }
 
     // Periodic status

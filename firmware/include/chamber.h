@@ -6,6 +6,7 @@
 #include "brood.h"
 #include "lil_guy.h"
 #include "queen.h"
+#include "events.h"
 
 struct FoodPile {
     int8_t x, y;
@@ -16,6 +17,8 @@ class Chamber {
 public:
     ColonyState* colony;
     PheromoneGrid pheromones;
+    EventBus*    event_bus = nullptr;   // transient, set per-tick by Sim
+    uint32_t     tick_num  = 0;         // transient, set per-tick by Sim
 
     Queen  queen_obj;
     bool   has_queen = false;
@@ -40,6 +43,11 @@ public:
 
     bool in_bounds(int x, int y) const {
         return x >= 0 && x < Cfg::GRID_WIDTH && y >= 0 && y < Cfg::GRID_HEIGHT;
+    }
+
+    // ---- events ----
+    void emit(const Event& ev) {
+        if (event_bus) event_bus->emit(ev);
     }
 
     // ---- food ----
@@ -68,4 +76,5 @@ private:
     void _deposit_home_cell(int x, int y, float amount);
     void _deposit_food_cell(int x, int y, float amount);
     int  _entry_face_at(int x, int y) const;  // returns Face or -1
+    void _detect_proximity_interactions();
 };
