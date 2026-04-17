@@ -1,4 +1,5 @@
 /* Single-board sim coordinator. */
+#include <Arduino.h>
 #include "sim.h"
 
 void Sim::init() {
