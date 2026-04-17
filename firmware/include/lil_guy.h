@@ -1,10 +1,10 @@
-/* Worker ant — JohnBuffer-inspired marker-following. Ported from sim/ant.py. */
+/* Worker lil_guy — JohnBuffer-inspired marker-following. */
 #pragma once
 #include "config.h"
 
 class Chamber;  // forward declaration
 
-struct Ant {
+struct LilGuy {
     int8_t   x, y, prev_x, prev_y;
     AntState state          = STATE_IDLE;
     int8_t   target_x, target_y;
@@ -13,13 +13,13 @@ struct Ant {
     uint32_t age            = 0;
     bool     alive          = true;
 
-    Caste    caste          = CASTE_MINOR;
+    Role     role           = ROLE_MINOR;
     uint8_t  move_ticks;
     uint8_t  sense_radius;
     float    carry_amount;
     float    metabolism;
     uint32_t max_age;
-    bool     is_nanitic     = false;
+    bool     is_pioneer     = false;
 
     int8_t   facing_dx, facing_dy;
     int8_t   last_dx, last_dy;
@@ -32,7 +32,7 @@ struct Ant {
     uint16_t chamber_steps  = 0;
     float    hunger         = 0.0f;
 
-    void init(int8_t px, int8_t py, Caste c = CASTE_MINOR, bool nanitic = false);
+    void init(int8_t px, int8_t py, Role c = ROLE_MINOR, bool pioneer = false);
     void tick(Chamber& chamber);
 
     // ---- internal methods ----

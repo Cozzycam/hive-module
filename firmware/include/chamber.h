@@ -4,7 +4,7 @@
 #include "colony_state.h"
 #include "pheromone_grid.h"
 #include "brood.h"
-#include "ant.h"
+#include "lil_guy.h"
 #include "queen.h"
 
 struct FoodPile {
@@ -20,8 +20,8 @@ public:
     Queen  queen_obj;
     bool   has_queen = false;
 
-    Ant    ants[Cfg::MAX_ANTS];
-    int    ant_count = 0;
+    LilGuy lil_guys[Cfg::MAX_LIL_GUYS];
+    int    lil_guy_count = 0;
 
     Brood  brood[Cfg::MAX_BROOD];
     int    brood_count = 0;
@@ -52,16 +52,16 @@ public:
     void deposit_home(int x, int y, float amount);
     void deposit_food(int x, int y, float amount);
 
-    // ---- brood/ant pool management ----
-    void add_ant(int8_t px, int8_t py, Caste c, bool nanitic);
-    void remove_ant(int idx);
-    void add_brood(int8_t px, int8_t py, Caste c);
+    // ---- brood/lil_guy pool management ----
+    void add_lil_guy(int8_t px, int8_t py, Role c, bool pioneer);
+    void remove_lil_guy(int idx);
+    void add_brood(int8_t px, int8_t py, Role c);
     void remove_brood(int idx);
 
     // ---- brood counts ----
     void count_brood(uint16_t& eggs, uint16_t& larvae, uint16_t& pupae) const;
 
-    // Used by Ant for food pile checks
+    // Used by LilGuy for food pile checks
     int  _food_pile_index(int x, int y) const;
 
 private:

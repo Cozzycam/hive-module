@@ -7,30 +7,30 @@ import config as C
 
 class Colony:
     def __init__(self):
-        # Abstract food pool — foragers deposit into it, metabolism
+        # Abstract food pool — gatherers deposit into it, metabolism
         # draws from it. Not physical piles; conceptually stored
         # communally in the nest. Queen reserves are separate.
         self.food_store = 0.0
         # Total including queen reserves — set by Coordinator each
         # tick. Used for display and pressure calculations.
         self.food_total = 0.0
-        # Mirror of per-chamber state for quick reads by ants / UI.
+        # Mirror of per-chamber state for quick reads by workers / UI.
         # Updated by Coordinator.tick().
         self.population = 0
-        self.forager_count = 0     # workers in TO_FOOD or TO_HOME
+        self.gatherer_count = 0    # workers in TO_FOOD or TO_HOME
         self.brood_counts = {'egg': 0, 'larva': 0, 'pupa': 0}
-        # Lifetime counter — used to identify nanitics (first
+        # Lifetime counter — used to identify pioneers (first
         # QUEEN_FOUNDING_EGG_CAP workers get shorter lifespans).
         self.total_workers_born = 0
 
         # Recovery bounce — after a famine, temporarily boost
-        # foraging to restock quickly.
+        # gathering to restock quickly.
         self.peak_pressure = 0.0
         self.recovery_boost_remaining = 0
 
     def food_pressure(self):
         """Returns 0.0 (overstocked) to 1.0 (starving). Drives
-        forager deployment, egg production, and starvation cascade.
+        gatherer deployment, egg production, and starvation cascade.
 
         Daily burn uses the ¾-power metabolic scaling so the target
         reserve scales correctly with colony size. Includes projected
@@ -72,14 +72,14 @@ class Colony:
             self.recovery_boost_remaining = C.RECOVERY_BOOST_DURATION
             self.peak_pressure = pressure  # reset so it doesn't re-trigger
 
-    def target_forager_fraction(self):
-        """Fraction of workers that should be foraging, accounting
+    def target_gatherer_fraction(self):
+        """Fraction of workers that should be gathering, accounting
         for recovery bounce override."""
         if self.recovery_boost_remaining > 0:
-            return C.MAX_FORAGER_FRACTION
+            return C.MAX_GATHERER_FRACTION
         pressure = self.food_pressure()
-        return (C.MIN_FORAGER_FRACTION
-                + (C.MAX_FORAGER_FRACTION - C.MIN_FORAGER_FRACTION)
+        return (C.MIN_GATHERER_FRACTION
+                + (C.MAX_GATHERER_FRACTION - C.MIN_GATHERER_FRACTION)
                 * pressure)
 
     def summary(self):

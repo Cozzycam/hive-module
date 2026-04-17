@@ -3,7 +3,7 @@
  *
  * Build:  g++ -std=c++17 -O2 -I../include -o yeartest desktop_yeartest.cpp \
  *         ../src/colony_state.cpp ../src/pheromone_grid.cpp ../src/brood.cpp \
- *         ../src/ant.cpp ../src/queen.cpp ../src/chamber.cpp ../src/sim.cpp \
+ *         ../src/lil_guy.cpp ../src/queen.cpp ../src/chamber.cpp ../src/sim.cpp \
  *         ../src/rng.cpp
  */
 #include <cstdio>
@@ -24,7 +24,7 @@ int main() {
     sim.init();
 
     printf("%5s %5s %8s %8s %4s %4s %4s %4s %6s\n",
-           "day", "pop", "store", "total", "eggs", "larv", "pupa", "frgr", "pres");
+           "day", "pop", "store", "total", "eggs", "larv", "pupa", "gthr", "pres");
     printf("------------------------------------------------------\n");
 
     float peak_food = 0;
@@ -50,7 +50,7 @@ int main() {
                 printf("%5d %5d %8.1f %8.1f %4d %4d %4d %4d %6.3f\n",
                     day, pop, col.food_store, col.food_total,
                     col.brood_egg, col.brood_larva, col.brood_pupa,
-                    col.forager_count, pressure);
+                    col.gatherer_count, pressure);
             }
         }
     }
@@ -74,7 +74,7 @@ int main() {
 
     printf("\n");
     if (col.population >= 50 && col.population <= 200)
-        printf("Population in expected Messor range (50-200). GOOD\n");
+        printf("Population in expected range (50-200). GOOD\n");
     else if (col.population < 50)
         printf("Population %d is BELOW expected range (50-200)\n", col.population);
     else

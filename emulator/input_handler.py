@@ -96,8 +96,8 @@ class InputHandler:
                 return
             cx, cy = C.GRID_WIDTH // 2, C.GRID_HEIGHT // 2
         chamber = coordinator.chambers[module_id]
-        chamber.add_food(cx, cy, C.FORAGE_DEBUG_PILE_SIZE)
-        self.last_status = (f"dropped {C.FORAGE_DEBUG_PILE_SIZE:.0f} food "
+        chamber.add_food(cx, cy, C.GATHER_DEBUG_PILE_SIZE)
+        self.last_status = (f"dropped {C.GATHER_DEBUG_PILE_SIZE:.0f} food "
                             f"at ({cx},{cy}) in {module_id}")
 
     def _last_non_queen(self, coordinator):

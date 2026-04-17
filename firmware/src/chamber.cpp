@@ -5,7 +5,7 @@
 
 void Chamber::init(ColonyState* col, bool with_queen) {
     colony = col;
-    ant_count = 0;
+    lil_guy_count = 0;
     brood_count = 0;
     food_pile_count = 0;
     food_delivery_signal = 0;
@@ -38,8 +38,8 @@ void Chamber::tick() {
     for (int i = brood_count - 1; i >= 0; i--) {
         bool hatch = brood[i].tick();
         if (hatch) {
-            bool nanitic = colony->total_workers_born < Cfg::QUEEN_FOUNDING_EGG_CAP;
-            add_ant(brood[i].x, brood[i].y, brood[i].caste, nanitic);
+            bool pioneer = colony->total_workers_born < Cfg::QUEEN_FOUNDING_EGG_CAP;
+            add_lil_guy(brood[i].x, brood[i].y, brood[i].role, pioneer);
             colony->total_workers_born++;
             remove_brood(i);
         } else if (!brood[i].alive()) {
@@ -63,26 +63,26 @@ void Chamber::tick() {
     if (food_delivery_signal > 0) food_delivery_signal--;
 
     // Shuffle workers (Fisher-Yates)
-    for (int i = ant_count - 1; i > 0; i--) {
+    for (int i = lil_guy_count - 1; i > 0; i--) {
         int j = g_rng.rand_int(0, i);
         if (i != j) {
-            Ant tmp = ants[i]; ants[i] = ants[j]; ants[j] = tmp;
+            LilGuy tmp = lil_guys[i]; lil_guys[i] = lil_guys[j]; lil_guys[j] = tmp;
         }
     }
 
     // Save prev positions
-    for (int i = 0; i < ant_count; i++) {
-        ants[i].prev_x = ants[i].x;
-        ants[i].prev_y = ants[i].y;
+    for (int i = 0; i < lil_guy_count; i++) {
+        lil_guys[i].prev_x = lil_guys[i].x;
+        lil_guys[i].prev_y = lil_guys[i].y;
     }
 
     // Worker ticks + edge crossing + death
-    for (int i = ant_count - 1; i >= 0; i--) {
-        ants[i].tick(*this);
-        if (!ants[i].alive) {
-            if (ants[i].food_carried > 0)
-                add_food(ants[i].x, ants[i].y, ants[i].food_carried);
-            remove_ant(i);
+    for (int i = lil_guy_count - 1; i >= 0; i--) {
+        lil_guys[i].tick(*this);
+        if (!lil_guys[i].alive) {
+            if (lil_guys[i].food_carried > 0)
+                add_food(lil_guys[i].x, lil_guys[i].y, lil_guys[i].food_carried);
+            remove_lil_guy(i);
         }
         // Edge crossing check (single-board: no neighbors, so no crossings)
     }
@@ -179,18 +179,18 @@ void Chamber::_deposit_food_cell(int x, int y, float amount) {
 
 // ---- pool management ----
 
-void Chamber::add_ant(int8_t px, int8_t py, Caste c, bool nanitic) {
-    if (ant_count >= Cfg::MAX_ANTS) return;
-    ants[ant_count].init(px, py, c, nanitic);
-    ant_count++;
+void Chamber::add_lil_guy(int8_t px, int8_t py, Role c, bool pioneer) {
+    if (lil_guy_count >= Cfg::MAX_LIL_GUYS) return;
+    lil_guys[lil_guy_count].init(px, py, c, pioneer);
+    lil_guy_count++;
 }
 
-void Chamber::remove_ant(int idx) {
-    if (idx < 0 || idx >= ant_count) return;
-    ants[idx] = ants[--ant_count];
+void Chamber::remove_lil_guy(int idx) {
+    if (idx < 0 || idx >= lil_guy_count) return;
+    lil_guys[idx] = lil_guys[--lil_guy_count];
 }
 
-void Chamber::add_brood(int8_t px, int8_t py, Caste c) {
+void Chamber::add_brood(int8_t px, int8_t py, Role c) {
     if (brood_count >= Cfg::MAX_BROOD) return;
     brood[brood_count].init(px, py, c);
     brood_count++;

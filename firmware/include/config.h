@@ -7,7 +7,7 @@
 
 // ---- Enums ----
 enum Face    : uint8_t { FACE_N = 0, FACE_S = 1, FACE_W = 2, FACE_E = 3, FACE_COUNT = 4 };
-enum Caste   : uint8_t { CASTE_MINOR = 0, CASTE_MAJOR = 1, CASTE_COUNT = 2 };
+enum Role    : uint8_t { ROLE_MINOR = 0, ROLE_MAJOR = 1, ROLE_COUNT = 2 };
 enum BroodStage : uint8_t { STAGE_EGG = 0, STAGE_LARVA = 1, STAGE_PUPA = 2, STAGE_DEAD = 3 };
 enum AntState : uint8_t {
     STATE_IDLE = 0, STATE_TEND_QUEEN = 1, STATE_TEND_BROOD = 2,
@@ -53,38 +53,38 @@ constexpr float LARVA_STARVE        = 12.0f;
 constexpr float LARVA_FEED_AMOUNT   = 1.44f;
 constexpr int   PUPA_DURATION       = days(20);     // 4000
 
-// ---- Caste params (indexed by Caste enum) ----
-struct CasteParams {
+// ---- Role params (indexed by Role enum) ----
+struct RoleParams {
     uint8_t move_ticks;
     uint8_t sense_radius;
     float   carry_amount;
     float   metabolism;
     int     lifespan_lo, lifespan_hi;
-    int     lifespan_nanitic_lo, lifespan_nanitic_hi;
+    int     lifespan_pioneer_lo, lifespan_pioneer_hi;
     int     larva_duration;
     float   larva_food_needed;
 };
 
-constexpr CasteParams CASTE_PARAMS[CASTE_COUNT] = {
-    // CASTE_MINOR
+constexpr RoleParams ROLE_PARAMS[ROLE_COUNT] = {
+    // ROLE_MINOR
     { 4, 8, 6.6f, 0.00094f,
       days(250), days(400),     // 50000, 80000
       days(200), days(350),     // 40000, 70000
       days(20), 11.5f },        // 4000
-    // CASTE_MAJOR
+    // ROLE_MAJOR
     { 6, 6, 16.5f, 0.00144f,
       days(350), days(550),     // 70000, 110000
-      days(200), days(350),     // nanitic (same range for now)
+      days(200), days(350),     // pioneer (same range for now)
       days(28), 23.0f },        // 5600
 };
 
-constexpr Caste DEFAULT_BROOD_CASTE = CASTE_MINOR;
+constexpr Role DEFAULT_BROOD_ROLE = ROLE_MINOR;
 
 // ---- Worker ----
 constexpr float WORKER_HUNGER_RATE      = 0.015f;
 constexpr float WORKER_STARVE_THRESHOLD = 30.0f;
-constexpr int   FORAGING_TRIP_WEAR_LO   = 10;
-constexpr int   FORAGING_TRIP_WEAR_HI   = 20;
+constexpr int   GATHERING_TRIP_WEAR_LO  = 10;
+constexpr int   GATHERING_TRIP_WEAR_HI  = 20;
 
 // ---- Pheromones (JohnBuffer-inspired) ----
 constexpr float BASE_MARKER_INTENSITY = 10.0f;
@@ -93,7 +93,7 @@ constexpr float PHEROMONE_GRID_DECAY  = 0.997f;
 constexpr float PHEROMONE_MAX         = 20.0f;
 constexpr float SENSE_FLOOR           = 0.02f;
 
-// ---- Foraging ----
+// ---- Gathering ----
 constexpr int   SCOUT_PATIENCE_TICKS    = 3000;
 constexpr float FORAGE_DEBUG_PILE_SIZE  = 220.0f;
 constexpr float FOOD_PILE_CAP           = 55.0f;
@@ -105,7 +105,7 @@ constexpr int   STALL_THRESHOLD_TICKS   = 12;
 constexpr int   ENTRY_ATTRACT_RADIUS    = 8;
 constexpr int   CHAMBER_EXPLORE_STEPS   = 150;
 
-// ---- Metabolic scaling (¾-power law) ----
+// ---- Metabolic scaling (3/4-power law) ----
 constexpr float METABOLIC_SCALE_FLOOR = 0.7f;
 constexpr int   METABOLIC_SCALE_ONSET = 10;
 
@@ -117,8 +117,8 @@ inline float metabolic_scale_factor(int population) {
 
 // ---- Food pressure ----
 constexpr float FOOD_PRESSURE_TARGET_DAYS = 7.0f;
-constexpr float MIN_FORAGER_FRACTION      = 0.05f;
-constexpr float MAX_FORAGER_FRACTION      = 0.80f;
+constexpr float MIN_GATHERER_FRACTION     = 0.05f;
+constexpr float MAX_GATHERER_FRACTION     = 0.80f;
 
 // ---- Starvation cascade ----
 constexpr float FAMINE_SLOWDOWN_PRESSURE   = 0.9f;
@@ -149,7 +149,7 @@ constexpr int QUEEN_SPAWN_X = GRID_WIDTH / 2;   // 30
 constexpr int QUEEN_SPAWN_Y = GRID_HEIGHT / 2;  // 20
 
 // ---- Pool limits ----
-constexpr int MAX_ANTS       = 200;
+constexpr int MAX_LIL_GUYS  = 200;
 constexpr int MAX_BROOD      = 100;
 constexpr int MAX_FOOD_PILES = 64;
 

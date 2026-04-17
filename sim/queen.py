@@ -1,7 +1,7 @@
 """Founding queen. Stationary. Lays eggs on a cooldown as long as the
-colony has enough food. Pre-nanitic she survives off her internal
-reserves (metabolised wing muscle and stored fat); post-nanitic
-workers forage and deposit into the colony's abstract food_store.
+colony has enough food. Pre-pioneer she survives off her internal
+reserves (metabolised wing muscle and stored fat); post-pioneer
+workers gather and deposit into the colony's abstract food_store.
 """
 
 import random
@@ -116,7 +116,7 @@ class Queen:
             # Prospective check — can the colony actually afford to raise
             # this batch through to pupation, with reserves left over?
             batch = max(1, min(6, colony.population // 5))
-            brood_cost = batch * C.CASTE_PARAMS[C.DEFAULT_BROOD_CASTE]['larva_food_needed']
+            brood_cost = batch * C.ROLE_PARAMS[C.DEFAULT_BROOD_ROLE]['larva_food_needed']
             if colony.food_total < brood_cost + C.QUEEN_LAY_FOOD_FLOOR:
                 return False
         return True
@@ -138,7 +138,7 @@ class Queen:
             else:
                 t = (pressure - comfort) / (C.QUEEN_LAY_PRESSURE_MAX - comfort)
                 max_batch = max(1, round(base_batch * (1.0 - t)))
-        caste = C.DEFAULT_BROOD_CASTE
+        role = C.DEFAULT_BROOD_ROLE
         for _ in range(max_batch):
             consumed = self._consume(chamber, C.QUEEN_EGG_FOOD_COST)
             if consumed < C.QUEEN_EGG_FOOD_COST:
@@ -150,7 +150,7 @@ class Queen:
             ex = self.x + dx
             ey = self.y + dy
             if chamber.in_bounds(ex, ey) and (dx, dy) != (0, 0):
-                chamber.brood.append(Brood(ex, ey, caste=caste))
+                chamber.brood.append(Brood(ex, ey, role=role))
                 self.eggs_laid += 1
             else:
                 self.reserves += consumed

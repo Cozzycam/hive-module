@@ -4,7 +4,7 @@ float ColonyState::food_pressure() const {
     float scale = Cfg::metabolic_scale_factor(population);
     float daily_burn = Cfg::QUEEN_METABOLISM * Cfg::TICKS_PER_SIM_DAY;
     daily_burn += population * scale
-                  * Cfg::CASTE_PARAMS[CASTE_MINOR].metabolism
+                  * Cfg::ROLE_PARAMS[ROLE_MINOR].metabolism
                   * Cfg::TICKS_PER_SIM_DAY;
     // Brood feeding cost
     if (brood_larva > 0) {
@@ -33,10 +33,10 @@ void ColonyState::update_recovery_boost() {
     }
 }
 
-float ColonyState::target_forager_fraction() const {
+float ColonyState::target_gatherer_fraction() const {
     if (recovery_boost_remaining > 0)
-        return Cfg::MAX_FORAGER_FRACTION;
+        return Cfg::MAX_GATHERER_FRACTION;
     float pressure = food_pressure();
-    return Cfg::MIN_FORAGER_FRACTION
-         + (Cfg::MAX_FORAGER_FRACTION - Cfg::MIN_FORAGER_FRACTION) * pressure;
+    return Cfg::MIN_GATHERER_FRACTION
+         + (Cfg::MAX_GATHERER_FRACTION - Cfg::MIN_GATHERER_FRACTION) * pressure;
 }

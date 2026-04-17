@@ -1,18 +1,18 @@
-/* Brood lifecycle: egg → larva → pupa → hatch. Ported from sim/brood.py. */
+/* Brood lifecycle: egg -> larva -> pupa -> hatch. Ported from sim/brood.py. */
 #pragma once
 #include "config.h"
 
 struct Brood {
     int8_t     x, y;
     BroodStage stage        = STAGE_EGG;
-    Caste      caste        = CASTE_MINOR;
+    Role       role         = ROLE_MINOR;
     uint16_t   age          = 0;
     float      hunger       = 0.0f;
     float      fed_total    = 0.0f;
     int        larva_duration;
     float      food_needed;
 
-    void init(int8_t px, int8_t py, Caste c = CASTE_MINOR);
+    void init(int8_t px, int8_t py, Role c = ROLE_MINOR);
 
     // Returns true if the pupa is ready to hatch.
     bool tick();

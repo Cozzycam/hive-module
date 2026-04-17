@@ -1,11 +1,11 @@
 /*
- * Hive Module — Live ant colony simulation on ESP32-S3.
+ * Hive Module — Live colony simulation on ESP32-S3.
  *
  * Serial commands (via device monitor):
- *   +/f  — faster sim speed       -/s  — slower sim speed
- *   1-7  — set speed directly     (2,5,8,15,30,60,150 tps)
- *   z    — zoom in                x    — zoom out
- *   ?    — print current status
+ *   +/f  -- faster sim speed       -/s  -- slower sim speed
+ *   1-7  -- set speed directly     (2,5,8,15,30,60,150 tps)
+ *   z    -- zoom in                x    -- zoom out
+ *   ?    -- print current status
  */
 
 #include <Arduino.h>
@@ -19,7 +19,7 @@
 #include "sim.h"
 #include "renderer.h"
 
-// ── TCA9554 I/O expander ────────────────────────────────────────────
+// -- TCA9554 I/O expander --------------------------------------------
 
 static void tca9554_write_reg(uint8_t reg, uint8_t val) {
     Wire.beginTransmission(TCA9554_ADDR);
@@ -47,7 +47,7 @@ static void lcd_reset() {
     delay(200);
 }
 
-// ── Display ─────────────────────────────────────────────────────────
+// -- Display ---------------------------------------------------------
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
     LCD_QSPI_CS, LCD_QSPI_CLK,
@@ -56,12 +56,12 @@ Arduino_GFX *panel = new Arduino_AXS15231B(
     bus, -1, 0, false, LCD_WIDTH, LCD_HEIGHT);
 Arduino_Canvas *gfx = new Arduino_Canvas(LCD_WIDTH, LCD_HEIGHT, panel);
 
-// ── Sim + Renderer ──────────────────────────────────────────────────
+// -- Sim + Renderer --------------------------------------------------
 
 static Sim sim;
 static Renderer renderer;
 
-// ── Speed control ───────────────────────────────────────────────────
+// -- Speed control ---------------------------------------------------
 
 static const int SPEED_LEVELS[] = {2, 5, 8, 15, 30, 60, 150, 300, 600, 1000};
 static const int NUM_SPEEDS = sizeof(SPEED_LEVELS) / sizeof(SPEED_LEVELS[0]);
@@ -71,12 +71,12 @@ static unsigned long tick_interval_ms() {
     return 1000 / SPEED_LEVELS[speed_index];
 }
 
-// ── Timing ──────────────────────────────────────────────────────────
+// -- Timing ----------------------------------------------------------
 
 static unsigned long last_tick_ms = 0;
 static unsigned long last_frame_ms = 0;
 
-// ── Serial command handling ─────────────────────────────────────────
+// -- Serial command handling -----------------------------------------
 
 static void print_status() {
     int day = sim.tick_count / Cfg::TICKS_PER_SIM_DAY;
@@ -125,11 +125,11 @@ static void handle_serial() {
     }
 }
 
-// ── Arduino entry points ────────────────────────────────────────────
+// -- Arduino entry points --------------------------------------------
 
 void setup() {
     Serial.begin(115200);
-    Serial.println("Hive Module — live sim");
+    Serial.println("Hive Module -- live sim");
     Serial.println("Commands: +/- speed, 1-9/0 speed level, r redraw, ? status");
 
     g_rng = Rng(esp_random());

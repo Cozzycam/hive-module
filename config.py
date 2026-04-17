@@ -3,18 +3,18 @@
 All numbers are pure data — no pygame, no OS calls. Safe to import from
 anywhere in sim/.
 
-Species model: Pheidole / Messor — polymorphic seed-harvesting ants.
+Species model: Pheidole / Messor — polymorphic seed-harvesting colony.
 Defining traits that drive the sim:
-  - Polymorphic workers: MINORS handle brood care and foraging,
+  - Polymorphic workers: MINORS handle brood care and gathering,
     MAJORS defend and mill seeds with oversized heads. Majors only
     emerge once the colony reaches critical mass; Phase 1 founding
     produces exclusively minors.
   - Large claustral queen. She seals herself in, eats nothing, and
     produces her first brood entirely off metabolised wing muscle
     and stored fat. Her metabolism in this period is in low-power
-    mode — roughly 1/10 of a foraging worker's.
+    mode — roughly 1/10 of a gathering worker's.
   - Slow brood cycle: Messor larvae are bulky and take longer to
-    develop than most ants.
+    develop than most species.
   - Food abstraction still represents seed/fat reserves; seed
     milling and granary chambers arrive with the Phase 2 outworld.
 
@@ -26,7 +26,7 @@ adjustable at runtime; wall-clock durations scale with it.
 
 Default: 8 ticks/sec and 200 ticks per sim-day → one sim-day every
 25 real seconds. The 56-sim-day claustral founding period plays out
-in ~23 minutes of wall-clock time. First nanitics eclose around
+in ~23 minutes of wall-clock time. First pioneers eclose around
 day 50–51 (~21 minutes in).
 """
 
@@ -80,9 +80,9 @@ LARVA_FEED_AMOUNT     = 1.44      # -28% from original 2.0
 LARVA_MIN_FED_TOTAL   = 11.5     # -28% from original 16.0
 PUPA_DURATION         = days(20)
 
-# ---------- Worker castes ----------
-CASTE_MINOR = 'minor'
-CASTE_MAJOR = 'major'
+# ---------- Worker roles ----------
+ROLE_MINOR = 'minor'
+ROLE_MAJOR = 'major'
 
 # Worker metabolism — passive per-tick drain from food_store.
 # Minor ~1/10 the queen's rate, matching biological mass ratio.
@@ -94,11 +94,11 @@ WORKER_STARVE_THRESHOLD  = 30.0      # hunger at which worker dies
 # Worker lifespan — randomised per individual.
 WORKER_LIFESPAN_MINOR    = (days(250), days(400))    # 50k–80k ticks
 WORKER_LIFESPAN_MAJOR    = (days(350), days(550))    # 70k–110k ticks
-WORKER_LIFESPAN_NANITIC  = (days(200), days(350))    # first 12 workers
-FORAGING_TRIP_WEAR       = (10, 20)  # bonus age ticks per completed trip
+WORKER_LIFESPAN_PIONEER  = (days(200), days(350))    # first 12 workers
+GATHERING_TRIP_WEAR       = (10, 20)  # bonus age ticks per completed trip
 
-CASTE_PARAMS = {
-    CASTE_MINOR: {
+ROLE_PARAMS = {
+    ROLE_MINOR: {
         'move_ticks':        4,
         'sense_radius':      8,
         'carry_amount':      6.6,      # was 6.0, +10%
@@ -107,7 +107,7 @@ CASTE_PARAMS = {
         'larva_duration':    days(20),
         'larva_food_needed': 11.5,   # -28% from original
     },
-    CASTE_MAJOR: {
+    ROLE_MAJOR: {
         'move_ticks':        6,
         'sense_radius':      6,
         'carry_amount':      16.5,   # +10% from original 15.0
@@ -118,20 +118,20 @@ CASTE_PARAMS = {
     },
 }
 
-DEFAULT_BROOD_CASTE = CASTE_MINOR
+DEFAULT_BROOD_ROLE = ROLE_MINOR
 
-WORKER_MOVE_TICKS    = CASTE_PARAMS[CASTE_MINOR]['move_ticks']
-WORKER_SENSE_RADIUS  = CASTE_PARAMS[CASTE_MINOR]['sense_radius']
-WORKER_CARRY_AMOUNT  = CASTE_PARAMS[CASTE_MINOR]['carry_amount']
+WORKER_MOVE_TICKS    = ROLE_PARAMS[ROLE_MINOR]['move_ticks']
+WORKER_SENSE_RADIUS  = ROLE_PARAMS[ROLE_MINOR]['sense_radius']
+WORKER_CARRY_AMOUNT  = ROLE_PARAMS[ROLE_MINOR]['carry_amount']
 WORKER_INITIAL_COUNT = 0
 
 # ---------- Task priorities ----------
 PRIO_TEND_QUEEN = 3
 PRIO_TEND_BROOD = 2
-PRIO_FORAGE     = 1
+PRIO_GATHER     = 1
 
 # ---------- Pheromones (JohnBuffer-inspired) ----------
-# Distance-based marker system. Ants deposit markers whose intensity
+# Distance-based marker system. Workers deposit markers whose intensity
 # encodes distance from source via exponential step-decay:
 #   intensity = BASE_MARKER_INTENSITY * exp(-MARKER_STEP_DECAY * steps)
 #
@@ -139,9 +139,9 @@ PRIO_FORAGE     = 1
 # (exponential decay — the v2 fix that solved JohnBuffer's path
 # formation issues when he switched from linear).
 #
-# Two layers: to_home (deposited by outbound ants, followed by
-# returning ants) and to_food (deposited by returning ants, followed
-# by outbound ants).
+# Two layers: to_home (deposited by outbound workers, followed by
+# returning workers) and to_food (deposited by returning workers,
+# followed by outbound workers).
 
 BASE_MARKER_INTENSITY  = 10.0    # deposit strength at 0 steps from source
 MARKER_STEP_DECAY      = 0.02   # exp coefficient per step walked
@@ -155,23 +155,23 @@ PHEROMONE_GRID_DECAY   = 0.997   # per-tick multiplicative decay
                                   #   trails fade within ~1-2 minutes
 PHEROMONE_MAX          = 20.0    # cap so busy corridors don't blow up
 
-# ---------- Foraging ----------
+# ---------- Gathering ----------
 SCOUT_PATIENCE_TICKS     = 3000
-FORAGE_DEBUG_PILE_SIZE   = 220.0    # was 200, +10%
+GATHER_DEBUG_PILE_SIZE   = 220.0    # was 200, +10%
 FOOD_PILE_CAP            = 55.0    # was 50, +10%
-FOOD_DEPOSIT_RADIUS      = 5      # foragers look this far for a pile to add to
-RETURN_HOME_TICKS        = 960    # ~120 sec at 8 tps; ants forced TO_HOME
+FOOD_DEPOSIT_RADIUS      = 5      # gatherers look this far for a pile to add to
+RETURN_HOME_TICKS        = 960    # ~120 sec at 8 tps; workers forced TO_HOME
                                   # after this many ticks outside the queen
-                                  # chamber. Prevents ants getting permanently
+                                  # chamber. Prevents workers getting permanently
                                   # stuck in non-queen modules.
-IDLE_RECONSIDER_MIN      = 40     # ticks before an IDLE ant re-rolls the
-IDLE_RECONSIDER_MAX      = 120    # scouting decision. Random per ant so
+IDLE_RECONSIDER_MIN      = 40     # ticks before an IDLE worker re-rolls the
+IDLE_RECONSIDER_MAX      = 120    # scouting decision. Random per worker so
                                   # departures stagger over ~5–15 sec at
                                   # 8 tps instead of bursting in a wave.
-STALL_THRESHOLD_TICKS    = 12     # if a TO_FOOD ant hasn't moved for this
+STALL_THRESHOLD_TICKS    = 12     # if a TO_FOOD worker hasn't moved for this
                                   # many movement ticks, the trail led to
                                   # exhausted food — ignore gradient, explore.
-ENTRY_ATTRACT_RADIUS     = 8      # TO_FOOD ants within this distance of an
+ENTRY_ATTRACT_RADIUS     = 8      # TO_FOOD workers within this distance of an
                                   # active entry are drawn toward it (~30%
                                   # chance per move tick, so scouts naturally
                                   # discover passages between chambers).
@@ -198,12 +198,12 @@ def metabolic_scale_factor(population):
     return max(METABOLIC_SCALE_FLOOR, min(1.0, factor))
 
 
-# ---------- Food pressure (colony-level foraging regulation) ----------
+# ---------- Food pressure (colony-level gathering regulation) ----------
 # Colony targets a buffer of this many sim-days of food. Below that,
-# food_pressure rises toward 1.0 and more workers deploy to forage.
+# food_pressure rises toward 1.0 and more workers deploy to gather.
 FOOD_PRESSURE_TARGET_DAYS = 7.0
-MIN_FORAGER_FRACTION      = 0.05   # foraging floor when overstocked
-MAX_FORAGER_FRACTION      = 0.80   # foraging ceiling when desperate
+MIN_GATHERER_FRACTION     = 0.05   # gathering floor when overstocked
+MAX_GATHERER_FRACTION     = 0.80   # gathering ceiling when desperate
 
 # ---------- Starvation cascade ----------
 FAMINE_SLOWDOWN_PRESSURE  = 0.9    # pressure above which workers halve speed
@@ -219,7 +219,7 @@ BROOD_CANNIBALISM_MIN_PILE  = 2.0    # minimum food pile created
 BROOD_CANNIBALISM_COOLDOWN  = 100    # ticks between events per chamber
 
 # ---------- Recovery bounce ----------
-RECOVERY_BOOST_DURATION     = 400    # ticks of boosted foraging after famine
+RECOVERY_BOOST_DURATION     = 400    # ticks of boosted gathering after famine
 RECOVERY_BOOST_THRESHOLD    = 0.8    # pressure must have exceeded this
 
 # Legacy aliases — these are no longer used by the new pheromone

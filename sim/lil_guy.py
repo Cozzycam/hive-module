@@ -1,4 +1,4 @@
-"""Worker ant — JohnBuffer-inspired marker-following foraging.
+"""Worker — JohnBuffer-inspired marker-following gathering.
 
 States:
   IDLE       — no current task. Random walk near queen, picks up
@@ -7,26 +7,26 @@ States:
   TEND_BROOD — walking to a hungry larva to feed it (in-chamber only).
   TO_FOOD    — searching for food. Deposits to_home markers whose
                intensity decays with distance from colony. Follows
-               to_food gradient laid by returning ants. On finding
+               to_food gradient laid by returning workers. On finding
                food, flips 180° and switches to TO_HOME.
   TO_HOME    — carrying food back. Deposits to_food markers whose
                intensity decays with distance from food. Follows
-               to_home gradient laid by outbound ants. On reaching
+               to_home gradient laid by outbound workers. On reaching
                the queen, drops cargo and switches to IDLE.
 
 Movement engine:
-  Ants read the 4 cardinal-neighbour marker values directly and step
+  Workers read the 4 cardinal-neighbour marker values directly and step
   toward the strongest. This is the discrete-grid equivalent of
   JohnBuffer's continuous-space random-cone sampling — cheaper,
   deterministic, and far more reliable because we can't miss a
-  trail cell the ant is literally adjacent to. If every neighbour
-  reads zero the ant falls through to a momentum-biased random
-  walk (see _persistent_forward_step) so lost ants still explore.
+  trail cell the worker is literally adjacent to. If every neighbour
+  reads zero the worker falls through to a momentum-biased random
+  walk (see _persistent_forward_step) so lost workers still explore.
 
   Trails are diffused at deposit time (Chamber.deposit_home/food
   writes the primary cell plus its 4 cardinal neighbours at half
   intensity), so a 1-cell walking path becomes a 3-cell-wide trail
-  and an ant drifting slightly off the centre line still picks it
+  and a worker drifting slightly off the centre line still picks it
   up on the next step.
 
   Distance from source is encoded in deposit intensity via
@@ -58,20 +58,20 @@ RETURNING   = TO_HOME
 FORAGE      = TO_FOOD
 
 
-class Ant:
+class LilGuy:
     __slots__ = (
         'x', 'y', 'prev_x', 'prev_y', 'state', 'target',
         'move_cooldown', 'age', 'alive',
-        'caste', 'move_ticks', 'sense_radius', 'carry_amount',
+        'role', 'move_ticks', 'sense_radius', 'carry_amount',
         'facing_dx', 'facing_dy', 'food_carried',
         'last_dx', 'last_dy',
         'steps_walked', 'ticks_away', 'stall_ticks',
         'idle_cooldown', 'chamber_steps',
         'hunger', 'max_age', 'metabolism',
-        'is_nanitic',
+        'is_pioneer',
     )
 
-    def __init__(self, x, y, caste=None, is_nanitic=False):
+    def __init__(self, x, y, role=None, is_pioneer=False):
         self.x             = x
         self.y             = y
         self.prev_x        = x
@@ -82,7 +82,7 @@ class Ant:
         self.age           = 0
         self.alive         = True
 
-        # Random initial facing so ants scatter naturally on spawn.
+        # Random initial facing so workers scatter naturally on spawn.
         self.facing_dx     = random.choice((-1, 1))
         self.facing_dy     = 0
         self.last_dx       = self.facing_dx
@@ -95,23 +95,23 @@ class Ant:
         self.steps_walked  = 0
 
         # Ticks spent outside the queen chamber. When this exceeds
-        # RETURN_HOME_TICKS the ant is forced into TO_HOME so it
+        # RETURN_HOME_TICKS the worker is forced into TO_HOME so it
         # doesn't get permanently stuck in a non-queen module.
         self.ticks_away    = 0
 
-        # Consecutive movement ticks where the ant didn't change
+        # Consecutive movement ticks where the worker didn't change
         # position (stalled at the peak of an exhausted-food
-        # gradient). After STALL_THRESHOLD_TICKS the ant ignores
+        # gradient). After STALL_THRESHOLD_TICKS the worker ignores
         # the gradient and explores randomly.
         self.stall_ticks   = 0
 
-        # Cooldown before an IDLE ant re-rolls the scouting
+        # Cooldown before an IDLE worker re-rolls the scouting
         # decision. Prevents the wave-departure problem where
-        # every ant re-rolls every tick and all leave at once.
+        # every worker re-rolls every tick and all leave at once.
         self.idle_cooldown = 0
 
         # Steps taken in the CURRENT chamber. Resets on chamber
-        # crossing so the ant explores each new chamber before
+        # crossing so the worker explores each new chamber before
         # seeking exits. Separate from steps_walked which drives
         # pheromone deposit intensity.
         self.chamber_steps = 0
@@ -120,19 +120,19 @@ class Ant:
         # metabolism. Worker dies at WORKER_STARVE_THRESHOLD.
         self.hunger        = 0.0
 
-        # Caste-dependent params — baked at spawn time.
-        self.caste = caste if caste is not None else C.CASTE_MINOR
-        params = C.CASTE_PARAMS[self.caste]
+        # Role-dependent params — baked at spawn time.
+        self.role = role if role is not None else C.ROLE_MINOR
+        params = C.ROLE_PARAMS[self.role]
         self.move_ticks    = params['move_ticks']
         self.sense_radius  = params['sense_radius']
         self.carry_amount  = params['carry_amount']
         self.metabolism    = params['metabolism']
 
-        # Lifespan — nanitics (first founding brood) are
-        # shorter-lived than regular workers of the same caste.
-        self.is_nanitic = is_nanitic
-        if is_nanitic:
-            lo, hi = C.WORKER_LIFESPAN_NANITIC
+        # Lifespan — pioneers (first founding brood) are
+        # shorter-lived than regular workers of the same role.
+        self.is_pioneer = is_pioneer
+        if is_pioneer:
+            lo, hi = C.WORKER_LIFESPAN_PIONEER
         else:
             lo, hi = params['lifespan']
         self.max_age = random.randint(lo, hi)
@@ -179,7 +179,7 @@ class Ant:
             self.ticks_away += 1
 
         # Return-home timer — after too long in a non-queen chamber,
-        # interrupt whatever the ant is doing and head home.
+        # interrupt whatever the worker is doing and head home.
         if (self.ticks_away >= C.RETURN_HOME_TICKS
                 and self.state != TO_HOME):
             self.state        = TO_HOME
@@ -188,7 +188,7 @@ class Ant:
             self.facing_dx    = -self.facing_dx
             self.facing_dy    = -self.facing_dy
 
-        # IDLE ants only reconsider after their cooldown expires,
+        # IDLE workers only reconsider after their cooldown expires,
         # so departures stagger naturally instead of wave-bursting.
         if self.state == IDLE:
             if self.idle_cooldown > 0:
@@ -216,7 +216,7 @@ class Ant:
     # ================================================================
 
     def _pick_task(self, chamber):
-        """Priority: cargo delivery > queen (famine) > domestic > forage."""
+        """Priority: cargo delivery > queen (famine) > domestic > gather."""
 
         # Food in crop must be delivered first.
         if self.food_carried > 0:
@@ -270,25 +270,25 @@ class Ant:
                     chamber.cannibalism_cooldown = C.BROOD_CANNIBALISM_COOLDOWN
                     return
         else:
-            # Normal domestic: feed larvae — but maintain a forager
-            # floor so brood tending doesn't completely starve foraging
+            # Normal domestic: feed larvae — but maintain a gatherer
+            # floor so brood tending doesn't completely starve gathering
             # income.  Without this, all workers go domestic when larvae
             # hatch, income drops to zero, and food_store crashes.
             larva = self._nearest_hungry_larva(chamber)
             if larva is not None and has_food:
                 total_pop = colony.population
-                target_frac = colony.target_forager_fraction()
-                min_foragers = max(2, int(total_pop * target_frac))
-                if colony.forager_count >= min_foragers:
+                target_frac = colony.target_gatherer_fraction()
+                min_gatherers = max(2, int(total_pop * target_frac))
+                if colony.gatherer_count >= min_gatherers:
                     self.state  = TEND_BROOD
                     self.target = (larva.x, larva.y)
                     return
-                # Not enough foragers — fall through to foraging.
+                # Not enough gatherers — fall through to gathering.
 
-        # Recruitment signal — a returning forager has laid to_food
-        # pheromone in the nest. Idle ants that detect the trail
-        # follow it immediately, overriding the forager fraction cap.
-        # This is the core ant recruitment mechanism.
+        # Recruitment signal — a returning gatherer has laid to_food
+        # pheromone in the nest. Idle workers that detect the trail
+        # follow it immediately, overriding the gatherer fraction cap.
+        # This is the core recruitment mechanism.
         if self._detects_food_trail(chamber):
             self.state         = TO_FOOD
             self.target        = None
@@ -296,13 +296,13 @@ class Ant:
             self.chamber_steps = 0
             return
 
-        # Dynamic forager regulation — baseline fraction from
+        # Dynamic gatherer regulation — baseline fraction from
         # pressure, with recovery bounce override.
-        target_frac = colony.target_forager_fraction()
+        target_frac = colony.target_gatherer_fraction()
         total_pop = colony.population
-        if total_pop > 0 and colony.forager_count / total_pop >= target_frac:
-            # Enough foragers out — stay home, but reconsider
-            # faster under famine so ants don't idle while starving.
+        if total_pop > 0 and colony.gatherer_count / total_pop >= target_frac:
+            # Enough gatherers out — stay home, but reconsider
+            # faster under famine so workers don't idle while starving.
             if pressure > C.FAMINE_SLOWDOWN_PRESSURE:
                 cd = random.randint(10, 30)
             else:
@@ -314,14 +314,14 @@ class Ant:
             self.idle_cooldown = cd
             return
 
-        # Go forage.
+        # Go gather.
         self.state         = TO_FOOD
         self.target        = None
         self.steps_walked  = 0
         self.chamber_steps = 0
 
     # ================================================================
-    #  Foraging: TO_FOOD (outbound, searching for food)
+    #  Gathering: TO_FOOD (outbound, searching for food)
     # ================================================================
 
     def _do_to_food(self, chamber):
@@ -354,7 +354,7 @@ class Ant:
                 self.facing_dy = -self.facing_dy
                 return
 
-        # Stall detection — if the ant is following a food gradient
+        # Stall detection — if the worker is following a food gradient
         # but there's no actual food here, it's at the peak of an
         # exhausted supply. Count ticks at the gradient peak and
         # break out to explore after STALL_THRESHOLD_TICKS.
@@ -407,7 +407,7 @@ class Ant:
         self.chamber_steps += 1
 
     # ================================================================
-    #  Foraging: TO_HOME (returning with food)
+    #  Gathering: TO_HOME (returning with food)
     # ================================================================
 
     def _do_to_home(self, chamber):
@@ -423,13 +423,13 @@ class Ant:
             if abs(qx - self.x) + abs(qy - self.y) <= 1:
                 chamber.colony.food_store += self.food_carried
                 self.food_carried  = 0.0
-                # Signal nestmates — a forager just delivered food.
+                # Signal nestmates — a gatherer just delivered food.
                 chamber.food_delivery_signal = 200
                 self.state         = IDLE
                 self.target        = None
                 self.steps_walked  = 0
-                # Foraging wear — completed trips age the worker.
-                self.age += random.randint(*C.FORAGING_TRIP_WEAR)
+                # Gathering wear — completed trips age the worker.
+                self.age += random.randint(*C.GATHERING_TRIP_WEAR)
                 self.facing_dx = -self.facing_dx
                 self.facing_dy = -self.facing_dy
                 return
@@ -448,8 +448,8 @@ class Ant:
                 else:
                     self._persistent_forward_step(chamber)
 
-        # Deposit to_food marker everywhere the forager walks — the
-        # trail must extend through the nest so outbound ants can
+        # Deposit to_food marker everywhere the gatherer walks — the
+        # trail must extend through the nest so outbound workers can
         # follow it from the queen all the way to the food source.
         if self.food_carried > 0:
             intensity = C.BASE_MARKER_INTENSITY * math.exp(
@@ -481,9 +481,9 @@ class Ant:
           - to_food markers are strongest near food (source), so
             "strongest neighbour" points uphill toward food.
 
-        Ties break toward the ant's current facing so committed
+        Ties break toward the worker's current facing so committed
         walkers stay committed; remaining ties break randomly so
-        ants don't all queue into the same cell.
+        workers don't all queue into the same cell.
         """
         read_fn = (chamber.pheromones.home if layer == 'home'
                    else chamber.pheromones.food)
@@ -641,7 +641,7 @@ class Ant:
 
     def _move_delay(self, chamber):
         """Movement cooldown, doubled under severe food stress
-        (starvation cascade stage 2 — conserve energy). Foragers
+        (starvation cascade stage 2 — conserve energy). Gatherers
         are exempt — they need full speed to find food and save
         the colony."""
         if (chamber.colony.food_pressure() > C.FAMINE_SLOWDOWN_PRESSURE
@@ -683,7 +683,7 @@ class Ant:
         return best
 
     def _detects_food_trail(self, chamber):
-        """True if a forager recently delivered food to this chamber.
+        """True if a gatherer recently delivered food to this chamber.
         Uses a delivery signal (not pheromone) so residual to_food
         scent from old deliveries doesn't cause false recruitment."""
         return chamber.food_delivery_signal > 0
@@ -692,7 +692,7 @@ class Ant:
         return abs(tx - self.x) + abs(ty - self.y) <= self.sense_radius
 
     def _food_pile_adjacent(self, chamber):
-        """Return (x, y) of a food pile on or adjacent to the ant."""
+        """Return (x, y) of a food pile on or adjacent to the worker."""
         if (self.x, self.y) in chamber.food_cells:
             return (self.x, self.y)
         for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
@@ -705,7 +705,7 @@ class Ant:
                               exclude_face=None):
         """Return the closest active entry point within max_dist,
         or None. Only considers faces with a connected neighbour.
-        exclude_face skips that face (e.g. home_face so foragers
+        exclude_face skips that face (e.g. home_face so gatherers
         explore outward, not back toward the nest)."""
         if max_dist is None:
             max_dist = C.ENTRY_ATTRACT_RADIUS
@@ -726,7 +726,7 @@ class Ant:
         """Exploration with three phases:
         Push (< 5 steps in non-home chamber): walk a few steps inward
         from the entry to clear the handoff cell and prevent instant
-        re-crossing. Short enough that the ant explores from the
+        re-crossing. Short enough that the worker explores from the
         entrance rather than being driven to the chamber center.
         Explore (< CHAMBER_EXPLORE_STEPS): random walk, 30% chance
         of steering toward a non-home active entry.

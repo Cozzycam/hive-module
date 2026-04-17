@@ -8,7 +8,7 @@ black box with a population of entities.
 A Chamber also tracks its neighbour on each of its four faces via the
 `entries` dict (face -> neighbour module_id or None). When a worker
 steps onto an entry cell on an active face the chamber flags it for
-handoff and the Coordinator moves the ant to the opposite face of the
+handoff and the Coordinator moves the worker to the opposite face of the
 neighbour on the same tick.
 """
 
@@ -16,7 +16,7 @@ import random
 
 import config as C
 from sim.queen import Queen
-from sim.ant import Ant, TO_FOOD
+from sim.lil_guy import LilGuy, TO_FOOD
 from sim import brood as brood_mod
 from sim.pheromones import PheromoneMap
 
@@ -41,7 +41,7 @@ class Chamber:
             self.queen = Queen(qx, qy)
 
         self.brood   = []       # list[Brood]
-        self.workers = []       # list[Ant]
+        self.workers = []       # list[LilGuy]
 
         # face -> neighbour module_id (None = no neighbour attached).
         self.entries = {face: None for face in C.ENTRY_POINTS}
@@ -59,8 +59,8 @@ class Chamber:
         # Brood cannibalism cooldown (ticks until next allowed).
         self.cannibalism_cooldown = 0
 
-        # Food delivery signal — set when a forager deposits food.
-        # Idle ants check this for recruitment (not pheromone, which
+        # Food delivery signal — set when a gatherer deposits food.
+        # Idle workers check this for recruitment (not pheromone, which
         # lingers and causes false triggers from stored food).
         self.food_delivery_signal = 0
 
@@ -129,7 +129,7 @@ class Chamber:
     def deposit_home(self, x, y, amount):
         """Deposit to_home scent at (x, y), diffused across the 4
         cardinal neighbours at half intensity. A 3-cell-wide trail
-        is robust to gradient-step sampling even when ants drift
+        is robust to gradient-step sampling even when workers drift
         one cell off the original path.
 
         Every cell written (primary + 4 neighbours) goes through
@@ -229,10 +229,10 @@ class Chamber:
                 dead_brood.append(b)
 
         for b in hatched:
-            is_nanitic = (self.colony.total_workers_born
+            is_pioneer = (self.colony.total_workers_born
                           < C.QUEEN_FOUNDING_EGG_CAP)
             self.workers.append(
-                Ant(b.x, b.y, caste=b.caste, is_nanitic=is_nanitic),
+                LilGuy(b.x, b.y, role=b.role, is_pioneer=is_pioneer),
             )
             self.colony.total_workers_born += 1
             self.brood.remove(b)
@@ -285,7 +285,7 @@ class Chamber:
                 neighbour_id = self.entries.get(face)
                 if neighbour_id is None:
                     continue
-                # Suppress empty TO_FOOD ants bouncing back through
+                # Suppress empty TO_FOOD workers bouncing back through
                 # home face — they should be exploring outward, not
                 # retreating empty-handed. Belt-and-braces; the
                 # gradient should prevent this naturally.

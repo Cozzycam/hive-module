@@ -94,7 +94,7 @@ bool Queen::_can_lay(Chamber& ch) {
         int batch = ch.colony->population / 5;
         if (batch < 1) batch = 1;
         if (batch > 6) batch = 6;
-        float brood_cost = batch * Cfg::CASTE_PARAMS[Cfg::DEFAULT_BROOD_CASTE].larva_food_needed;
+        float brood_cost = batch * Cfg::ROLE_PARAMS[Cfg::DEFAULT_BROOD_ROLE].larva_food_needed;
         if (ch.colony->food_total < brood_cost + Cfg::QUEEN_LAY_FOOD_FLOOR)
             return false;
     }
@@ -130,7 +130,7 @@ void Queen::_lay(Chamber& ch) {
         int dy = g_rng.rand_int(-2, 2);
         int ex = x + dx, ey = y + dy;
         if (ch.in_bounds(ex, ey) && (dx != 0 || dy != 0)) {
-            ch.add_brood(ex, ey, Cfg::DEFAULT_BROOD_CASTE);
+            ch.add_brood(ex, ey, Cfg::DEFAULT_BROOD_ROLE);
             eggs_laid++;
         } else {
             reserves += consumed;

@@ -1,15 +1,15 @@
 #include "brood.h"
 
-void Brood::init(int8_t px, int8_t py, Caste c) {
+void Brood::init(int8_t px, int8_t py, Role c) {
     x = px;
     y = py;
     stage = STAGE_EGG;
-    caste = c;
+    role = c;
     age = 0;
     hunger = 0.0f;
     fed_total = 0.0f;
-    larva_duration = Cfg::CASTE_PARAMS[c].larva_duration;
-    food_needed    = Cfg::CASTE_PARAMS[c].larva_food_needed;
+    larva_duration = Cfg::ROLE_PARAMS[c].larva_duration;
+    food_needed    = Cfg::ROLE_PARAMS[c].larva_food_needed;
 }
 
 bool Brood::tick() {

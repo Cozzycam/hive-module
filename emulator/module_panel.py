@@ -11,7 +11,7 @@ import config as C
 from rendering import palette as P
 from rendering import sprites as S
 from sim import brood as brood_mod
-from sim.ant import TEND_BROOD, TEND_QUEEN, TO_HOME
+from sim.lil_guy import TEND_BROOD, TEND_QUEEN, TO_HOME
 
 
 # Pre-baked pygame Surfaces for each sprite, built lazily.
@@ -134,9 +134,9 @@ def draw_chamber(dest, chamber, origin_x=0, origin_y=0, lerp_t=1.0,
                        origin_x, origin_y)
 
     # Workers — interpolated between prev and current grid position.
-    # Sprite chosen by caste and nanitic status.
+    # Sprite chosen by role and pioneer status.
     minor_surf   = _surface_for('minor',   S.WORKER_MINOR)
-    nanitic_surf = _surface_for('nanitic', S.WORKER_NANITIC)
+    pioneer_surf = _surface_for('pioneer', S.WORKER_PIONEER)
     major_surf   = _surface_for('major',   S.MAJOR)
     t = max(0.0, min(1.0, lerp_t))
     cell = C.CELL_SIZE
@@ -146,16 +146,16 @@ def draw_chamber(dest, chamber, origin_x=0, origin_y=0, lerp_t=1.0,
         fx = w.prev_x + (w.x - w.prev_x) * t
         fy = w.prev_y + (w.y - w.prev_y) * t
 
-        # Pick sprite: major > nanitic > minor
-        if w.caste == C.CASTE_MAJOR:
+        # Pick sprite: major > pioneer > minor
+        if w.role == C.ROLE_MAJOR:
             surf = major_surf
-        elif w.is_nanitic:
-            surf = nanitic_surf
+        elif w.is_pioneer:
+            surf = pioneer_surf
         else:
             surf = minor_surf
         _blit_centered_px(dest, surf, fx, fy, origin_x, origin_y)
 
-        # Pixel position of this ant (for overlays)
+        # Pixel position of this worker (for overlays)
         apx = origin_x + int(fx * cell + cell / 2)
         apy = origin_y + int(fy * cell + cell / 2)
 

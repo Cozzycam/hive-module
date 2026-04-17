@@ -25,20 +25,20 @@ QUEEN_HEAD   = (44, 112, 60)
 QUEEN_EYE    = (8, 14, 10)
 
 # Workers — olive
-ANT_BODY     = (32, 52, 28)
-ANT_LIMB     = (20, 34, 18)
+BODY         = (32, 52, 28)
+LIMB         = (20, 34, 18)
 
-# Nanitic workers (first founding brood) — paler, warmer amber-brown
+# Pioneer workers (first founding brood) — paler, warmer amber-brown
 # to distinguish from mature minors. Smaller and weaker in real life.
-NANITIC_BODY = (58, 48, 30)
-NANITIC_LIMB = (40, 32, 20)
+PIONEER_BODY = (58, 48, 30)
+PIONEER_LIMB = (40, 32, 20)
 
 # Major workers (Pheidole/Messor soldiers) — lighter olive head capsule
 # to read clearly against minor workers.
 MAJOR_HEAD   = (66, 104, 48)
 MAJOR_BODY   = (36, 60, 30)
 
-# Food morsel carried by a forager — bright seed-yellow dot
+# Food morsel carried by a gatherer — bright seed-yellow dot
 FOOD_CARRY   = (220, 200, 80)
 
 # Brood — pale mint cream
@@ -60,8 +60,8 @@ FOOD_LIGHT   = (200, 218, 100)
 FOOD_DARK    = (110, 150, 50)
 
 # Pheromone overlay — semi-transparent tints painted over cells with
-# scent above a threshold. Home trail is a cool cyan-teal (ants
+# scent above a threshold. Home trail is a cool cyan-teal (workers
 # remembering the way back); food trail is a warm yellow-gold
-# (ants recruiting foragers).
+# (workers recruiting gatherers).
 HOME_SCENT   = (100, 200, 220)
 FOOD_SCENT   = (240, 220, 100)

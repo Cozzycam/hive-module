@@ -14,15 +14,15 @@ void Sim::tick() {
     chamber.tick();
 
     // Aggregate colony-wide stats
-    colony.population = chamber.ant_count;
+    colony.population = chamber.lil_guy_count;
 
-    int foragers = 0;
-    for (int i = 0; i < chamber.ant_count; i++) {
-        if (chamber.ants[i].state == STATE_TO_FOOD
-                || chamber.ants[i].state == STATE_TO_HOME)
-            foragers++;
+    int gatherers = 0;
+    for (int i = 0; i < chamber.lil_guy_count; i++) {
+        if (chamber.lil_guys[i].state == STATE_TO_FOOD
+                || chamber.lil_guys[i].state == STATE_TO_HOME)
+            gatherers++;
     }
-    colony.forager_count = foragers;
+    colony.gatherer_count = gatherers;
 
     uint16_t eggs, larvae, pupae;
     chamber.count_brood(eggs, larvae, pupae);

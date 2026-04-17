@@ -10,7 +10,7 @@ defined now so Phase 2 can plug straight in.
 """
 
 # ---------- message type tags ----------
-ANT_HANDOFF      = 'ant_handoff'
+HANDOFF          = 'handoff'
 TOPOLOGY_UPDATE  = 'topology_update'
 COLONY_STATE     = 'colony_state'
 MODULE_ANNOUNCE  = 'module_announce'
@@ -27,16 +27,16 @@ def module_announce(module_id, kind, faces):
     }
 
 
-def ant_handoff(from_id, to_id, face, ant_state):
-    """Ant crossing a module boundary. `face` is the edge it exits from
+def handoff(from_id, to_id, face, worker_state):
+    """Worker crossing a module boundary. `face` is the edge it exits from
     on the source module; the receiver re-enters on the opposite face.
-    `ant_state` is a dict snapshot: position, facing, task, cargo."""
+    `worker_state` is a dict snapshot: position, facing, task, cargo."""
     return {
-        'type':      ANT_HANDOFF,
+        'type':      HANDOFF,
         'from':      from_id,
         'to':        to_id,
         'face':      face,
-        'ant':       ant_state,
+        'worker':    worker_state,
     }
 
 

@@ -1,10 +1,10 @@
-/* Worker ant — full behavior port from sim/ant.py. */
-#include "ant.h"
+/* Worker lil_guy — full behavior port. */
+#include "lil_guy.h"
 #include "chamber.h"
 #include "rng.h"
 #include <cmath>
 
-void Ant::init(int8_t px, int8_t py, Caste c, bool nanitic) {
+void LilGuy::init(int8_t px, int8_t py, Role c, bool pioneer) {
     x = px; y = py; prev_x = px; prev_y = py;
     state = STATE_IDLE;
     has_target = false;
@@ -24,21 +24,21 @@ void Ant::init(int8_t px, int8_t py, Caste c, bool nanitic) {
     chamber_steps = 0;
     hunger = 0.0f;
 
-    caste = c;
-    is_nanitic = nanitic;
-    const auto& p = Cfg::CASTE_PARAMS[c];
+    role = c;
+    is_pioneer = pioneer;
+    const auto& p = Cfg::ROLE_PARAMS[c];
     move_ticks   = p.move_ticks;
     sense_radius = p.sense_radius;
     carry_amount = p.carry_amount;
     metabolism   = p.metabolism;
 
-    if (nanitic)
-        max_age = g_rng.rand_int(p.lifespan_nanitic_lo, p.lifespan_nanitic_hi);
+    if (pioneer)
+        max_age = g_rng.rand_int(p.lifespan_pioneer_lo, p.lifespan_pioneer_hi);
     else
         max_age = g_rng.rand_int(p.lifespan_lo, p.lifespan_hi);
 }
 
-void Ant::tick(Chamber& ch) {
+void LilGuy::tick(Chamber& ch) {
     if (!alive) return;
     age++;
 
@@ -94,7 +94,7 @@ void Ant::tick(Chamber& ch) {
 //  Task selection
 // ================================================================
 
-void Ant::_pick_task(Chamber& ch) {
+void LilGuy::_pick_task(Chamber& ch) {
     if (food_carried > 0) {
         state = STATE_TO_HOME; has_target = false; return;
     }
@@ -140,14 +140,14 @@ void Ant::_pick_task(Chamber& ch) {
             }
         }
     } else {
-        // Normal domestic — feed larvae (maintain forager floor)
+        // Normal domestic — feed larvae (maintain gatherer floor)
         int li = _nearest_hungry_larva(ch);
         if (li >= 0 && has_food) {
             int total_pop = col->population;
-            float target_frac = col->target_forager_fraction();
-            int min_foragers = (2 > static_cast<int>(total_pop * target_frac))
+            float target_frac = col->target_gatherer_fraction();
+            int min_gatherers = (2 > static_cast<int>(total_pop * target_frac))
                              ? 2 : static_cast<int>(total_pop * target_frac);
-            if (col->forager_count >= min_foragers) {
+            if (col->gatherer_count >= min_gatherers) {
                 state = STATE_TEND_BROOD;
                 target_x = ch.brood[li].x; target_y = ch.brood[li].y;
                 has_target = true; return;
@@ -162,11 +162,11 @@ void Ant::_pick_task(Chamber& ch) {
         return;
     }
 
-    // Forager regulation
-    float target_frac = col->target_forager_fraction();
+    // Gatherer regulation
+    float target_frac = col->target_gatherer_fraction();
     int total_pop = col->population;
     if (total_pop > 0
-            && static_cast<float>(col->forager_count) / total_pop >= target_frac) {
+            && static_cast<float>(col->gatherer_count) / total_pop >= target_frac) {
         int cd = (pressure > Cfg::FAMINE_SLOWDOWN_PRESSURE)
                ? g_rng.rand_int(10, 30)
                : g_rng.rand_int(Cfg::IDLE_RECONSIDER_MIN, Cfg::IDLE_RECONSIDER_MAX);
@@ -176,7 +176,7 @@ void Ant::_pick_task(Chamber& ch) {
         return;
     }
 
-    // Go forage
+    // Go gather
     state = STATE_TO_FOOD;
     has_target = false; steps_walked = 0; chamber_steps = 0;
 }
@@ -185,7 +185,7 @@ void Ant::_pick_task(Chamber& ch) {
 //  TO_FOOD
 // ================================================================
 
-void Ant::_do_to_food(Chamber& ch) {
+void LilGuy::_do_to_food(Chamber& ch) {
     if (move_cooldown > 0) { move_cooldown--; return; }
     move_cooldown = _move_delay(ch);
 
@@ -247,7 +247,7 @@ void Ant::_do_to_food(Chamber& ch) {
 //  TO_HOME
 // ================================================================
 
-void Ant::_do_to_home(Chamber& ch) {
+void LilGuy::_do_to_home(Chamber& ch) {
     if (move_cooldown > 0) { move_cooldown--; return; }
     move_cooldown = _move_delay(ch);
 
@@ -259,7 +259,7 @@ void Ant::_do_to_home(Chamber& ch) {
             ch.food_delivery_signal = 200;
             state = STATE_IDLE; has_target = false;
             steps_walked = 0;
-            age += g_rng.rand_int(Cfg::FORAGING_TRIP_WEAR_LO, Cfg::FORAGING_TRIP_WEAR_HI);
+            age += g_rng.rand_int(Cfg::GATHERING_TRIP_WEAR_LO, Cfg::GATHERING_TRIP_WEAR_HI);
             facing_dx = -facing_dx; facing_dy = -facing_dy;
             return;
         }
@@ -288,7 +288,7 @@ void Ant::_do_to_home(Chamber& ch) {
 //  Domestic tasks
 // ================================================================
 
-void Ant::_do_tend_brood(Chamber& ch) {
+void LilGuy::_do_tend_brood(Chamber& ch) {
     if (move_cooldown > 0) { move_cooldown--; return; }
     move_cooldown = _move_delay(ch);
 
@@ -314,7 +314,7 @@ void Ant::_do_tend_brood(Chamber& ch) {
     _step_toward_cell(target_x, target_y, ch);
 }
 
-void Ant::_do_tend_queen(Chamber& ch) {
+void LilGuy::_do_tend_queen(Chamber& ch) {
     if (move_cooldown > 0) { move_cooldown--; return; }
     move_cooldown = _move_delay(ch);
 
@@ -332,7 +332,7 @@ void Ant::_do_tend_queen(Chamber& ch) {
     _step_toward_cell(target_x, target_y, ch);
 }
 
-void Ant::_do_idle(Chamber& ch) {
+void LilGuy::_do_idle(Chamber& ch) {
     if (move_cooldown > 0) { move_cooldown--; return; }
     move_cooldown = _move_delay(ch);
 
@@ -345,7 +345,7 @@ void Ant::_do_idle(Chamber& ch) {
     }
 }
 
-void Ant::_do_cannibalize(Chamber& ch) {
+void LilGuy::_do_cannibalize(Chamber& ch) {
     if (move_cooldown > 0) { move_cooldown--; return; }
     move_cooldown = _move_delay(ch);
 
@@ -373,7 +373,7 @@ void Ant::_do_cannibalize(Chamber& ch) {
 //  Task validity
 // ================================================================
 
-bool Ant::_target_still_valid(Chamber& ch) {
+bool LilGuy::_target_still_valid(Chamber& ch) {
     if (state == STATE_IDLE || state == STATE_TO_FOOD
             || state == STATE_TO_HOME || state == STATE_CANNIBALIZE)
         return true;
@@ -397,7 +397,7 @@ bool Ant::_target_still_valid(Chamber& ch) {
 //  Marker sampling
 // ================================================================
 
-bool Ant::_sample_markers(Chamber& ch, bool use_food, int8_t& out_dx, int8_t& out_dy) {
+bool LilGuy::_sample_markers(Chamber& ch, bool use_food, int8_t& out_dx, int8_t& out_dy) {
     struct { int8_t dx, dy; float val; } nbrs[4];
     if (use_food) {
         nbrs[0] = { 1,  0, ch.pheromones.food(x+1, y)};
@@ -446,7 +446,7 @@ bool Ant::_sample_markers(Chamber& ch, bool use_food, int8_t& out_dx, int8_t& ou
 //  Movement helpers
 // ================================================================
 
-void Ant::_step_toward_cell(int tx, int ty, Chamber& ch) {
+void LilGuy::_step_toward_cell(int tx, int ty, Chamber& ch) {
     if (x == tx && y == ty) return;
     int dx = (tx > x) ? 1 : ((tx < x) ? -1 : 0);
     int dy = (ty > y) ? 1 : ((ty < y) ? -1 : 0);
@@ -458,7 +458,7 @@ void Ant::_step_toward_cell(int tx, int ty, Chamber& ch) {
     }
 }
 
-void Ant::_persistent_forward_step(Chamber& ch) {
+void LilGuy::_persistent_forward_step(Chamber& ch) {
     int fx = facing_dx, fy = facing_dy;
     if (fx == 0 && fy == 0) { fx = 1; fy = 0; }
 
@@ -480,7 +480,7 @@ void Ant::_persistent_forward_step(Chamber& ch) {
     _try_move(dx, dy, ch);
 }
 
-void Ant::_explore_or_wander(Chamber& ch) {
+void LilGuy::_explore_or_wander(Chamber& ch) {
     if (chamber_steps >= Cfg::CHAMBER_EXPLORE_STEPS) {
         int8_t ex, ey;
         if (_nearest_active_entry(ch, 200, -1, ex, ey)) {
@@ -503,7 +503,7 @@ void Ant::_explore_or_wander(Chamber& ch) {
     _persistent_forward_step(ch);
 }
 
-bool Ant::_try_move(int dx, int dy, Chamber& ch) {
+bool LilGuy::_try_move(int dx, int dy, Chamber& ch) {
     if (dx != 0 && dy != 0) {
         if (g_rng.rand_float() < 0.5f) dy = 0; else dx = 0;
     }
@@ -516,7 +516,7 @@ bool Ant::_try_move(int dx, int dy, Chamber& ch) {
     return true;
 }
 
-int Ant::_move_delay(Chamber& ch) {
+int LilGuy::_move_delay(Chamber& ch) {
     if (ch.colony->food_pressure() > Cfg::FAMINE_SLOWDOWN_PRESSURE
             && state != STATE_TO_FOOD && state != STATE_TO_HOME)
         return move_ticks * 2;
@@ -527,11 +527,11 @@ int Ant::_move_delay(Chamber& ch) {
 //  Query helpers
 // ================================================================
 
-bool Ant::_detects_food_trail(Chamber& ch) {
+bool LilGuy::_detects_food_trail(Chamber& ch) {
     return ch.food_delivery_signal > 0;
 }
 
-int Ant::_nearest_hungry_larva(Chamber& ch) {
+int LilGuy::_nearest_hungry_larva(Chamber& ch) {
     int best = -1;
     int best_d = 1000000;
     for (int i = 0; i < ch.brood_count; i++) {
@@ -546,7 +546,7 @@ int Ant::_nearest_hungry_larva(Chamber& ch) {
     return best;
 }
 
-int Ant::_least_invested_larva(Chamber& ch) {
+int LilGuy::_least_invested_larva(Chamber& ch) {
     int best = -1;
     float best_fed = 1000000.0f;
     for (int i = 0; i < ch.brood_count; i++) {
@@ -557,7 +557,7 @@ int Ant::_least_invested_larva(Chamber& ch) {
     return best;
 }
 
-bool Ant::_food_pile_adjacent(Chamber& ch, int8_t& out_x, int8_t& out_y) {
+bool LilGuy::_food_pile_adjacent(Chamber& ch, int8_t& out_x, int8_t& out_y) {
     int idx = ch._food_pile_index(x, y);
     if (idx >= 0) { out_x = x; out_y = y; return true; }
     const int dx[] = {1, -1, 0, 0};
@@ -572,7 +572,7 @@ bool Ant::_food_pile_adjacent(Chamber& ch, int8_t& out_x, int8_t& out_y) {
     return false;
 }
 
-bool Ant::_nearest_active_entry(Chamber& ch, int max_dist, int exclude_face,
+bool LilGuy::_nearest_active_entry(Chamber& ch, int max_dist, int exclude_face,
                                 int8_t& out_x, int8_t& out_y) {
     int best_d = max_dist + 1;
     bool found = false;

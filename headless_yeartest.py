@@ -16,7 +16,7 @@ TICKS = DAYS * C.TICKS_PER_SIM_DAY  # 73,000
 SAMPLE_EVERY = C.TICKS_PER_SIM_DAY  # once per sim-day
 
 # Replenish food in the outworld every N sim-days, simulating
-# a steady seed source.  Real Messor colonies forage from scattered
+# a steady seed source.  Real Messor colonies gather from scattered
 # seed caches; we model this as a pile that refills periodically.
 FOOD_REPLENISH_INTERVAL = C.TICKS_PER_SIM_DAY       # every day
 FOOD_REPLENISH_AMOUNT   = 80.0    # steady daily seed availability
@@ -33,7 +33,7 @@ def run():
     outworld = coord.chambers[outworld_id]
 
     # Outworld food appears once the first workers hatch (not during
-    # founding — queen is sealed in and nobody forages).
+    # founding — queen is sealed in and nobody gathers).
     ox, oy = C.GRID_WIDTH // 2, C.GRID_HEIGHT // 2
     food_started = False
 
@@ -51,7 +51,7 @@ def run():
     header = (
         f"{'day':>5} {'pop':>5} {'store':>8} {'piles':>7} {'total':>8} "
         f"{'eggs':>4} {'larv':>4} {'pupa':>4} "
-        f"{'frgr':>4} {'pres':>6}"
+        f"{'gthr':>4} {'pres':>6}"
     )
     print(header)
     print("-" * len(header))
@@ -63,7 +63,7 @@ def run():
         post_store = coord.colony.food_store
         delta = post_store - pre_store
 
-        # Start food once first workers hatch (no foraging during founding).
+        # Start food once first workers hatch (no gathering during founding).
         if not food_started and coord.colony.population > 0:
             food_started = True
             outworld.add_food(ox, oy, FOOD_REPLENISH_AMOUNT)
@@ -106,7 +106,7 @@ def run():
                     f"{day:>5} {pop:>5} {col.food_store:>8.1f} "
                     f"{pile_food:>7.1f} {food:>8.1f} "
                     f"{bc['egg']:>4} {bc['larva']:>4} {bc['pupa']:>4} "
-                    f"{col.forager_count:>4} {pressure:>6.3f}"
+                    f"{col.gatherer_count:>4} {pressure:>6.3f}"
                 )
 
     # Final summary

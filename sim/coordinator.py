@@ -4,9 +4,9 @@ Owns the Colony state and the list of Chambers (modules). Per tick it
 drives each chamber, then aggregates populations/brood counts into the
 shared Colony object so every chamber sees consistent totals.
 
-Key change from the old system: handoff() now preserves ant state
+Key change from the old system: handoff() now preserves worker state
 (TO_FOOD / TO_HOME), food_carried, and steps_walked across chamber
-boundaries. The ant continues its mission in the new chamber — the
+boundaries. The worker continues its mission in the new chamber — the
 marker gradient guides it without needing a state reset.
 """
 
@@ -14,7 +14,7 @@ import math
 
 from sim.colony import Colony
 from sim.chamber import Chamber, KIND_CHAMBER
-from sim.ant import TO_FOOD, TO_HOME
+from sim.lil_guy import TO_FOOD, TO_HOME
 from sim import protocol
 import config as C
 
@@ -35,7 +35,7 @@ class Coordinator:
         self.topology[FOUNDING_ID] = {}
 
         # Starting food is in queen.reserves (wing muscle / fat).
-        # colony.food_store starts at 0; foragers deposit into it.
+        # colony.food_store starts at 0; gatherers deposit into it.
         self.colony.food_total = C.FOOD_STORE_START
 
     # ---- per-tick ----
@@ -52,22 +52,22 @@ class Coordinator:
             ch.tick(self)
 
         pop = 0
-        foragers = 0
+        gatherers = 0
         totals = {'egg': 0, 'larva': 0, 'pupa': 0}
         for ch in self.chambers.values():
             pop += len(ch.workers)
             for w in ch.workers:
                 if w.state in (TO_FOOD, TO_HOME):
-                    foragers += 1
+                    gatherers += 1
             cb = ch.count_brood()
             for k in totals:
                 totals[k] += cb[k]
-        self.colony.population    = pop
-        self.colony.forager_count = foragers
+        self.colony.population     = pop
+        self.colony.gatherer_count = gatherers
         self.colony.brood_counts  = totals
         # food_total = processed food + queen reserves. Used for
         # pressure and display. food_store is the direct counter
-        # modified by ants (not touched here).
+        # modified by workers (not touched here).
         queen_reserves = 0.0
         for ch in self.chambers.values():
             if ch.queen is not None and ch.queen.alive:
@@ -133,15 +133,15 @@ class Coordinator:
                 visited.add(neighbour_id)
                 queue.append(neighbour_id)
 
-    # ---- ant handoff across active edges ----
+    # ---- worker handoff across active edges ----
 
-    def handoff(self, ant, from_id, to_id, face):
-        """Move ant across a chamber boundary.
+    def handoff(self, lil_guy, from_id, to_id, face):
+        """Move worker across a chamber boundary.
 
-        Key design: the ant's state (TO_FOOD / TO_HOME), food_carried,
+        Key design: the worker's state (TO_FOOD / TO_HOME), food_carried,
         and steps_walked are ALL preserved. The marker gradient is
         continuous across borders (entry cell mirroring ensures this),
-        so the ant picks up the gradient on the other side naturally.
+        so the worker picks up the gradient on the other side naturally.
 
         What IS reset:
           - Position: one cell inside the destination (not on the
@@ -152,15 +152,15 @@ class Coordinator:
           - last_dx/last_dy: set to match new facing so momentum
             walk doesn't try to walk back the way it came.
 
-        Handoff-time deposit: the ant is placed one cell inside
+        Handoff-time deposit: the worker is placed one cell inside
         the destination (to prevent instant re-crossing), which
         normally means the placement cell never receives a primary
         pheromone deposit — its only signal is half-strength
-        diffusion from the NEXT cell the ant visits. That creates
+        diffusion from the NEXT cell the worker visits. That creates
         a local-minimum valley in the gradient exactly at the
-        border, and gradient-walking ants get trapped oscillating
+        border, and gradient-walking workers get trapped oscillating
         one cell west of it. We fix this by laying a deposit
-        equivalent to what the ant would have dropped had it
+        equivalent to what the worker would have dropped had it
         walked onto the placement cell naturally — matching the
         layer and intensity formula used by _do_to_food/_do_to_home.
         """
@@ -172,29 +172,29 @@ class Coordinator:
 
         # Step inward from the entry.
         dcol, drow = C.FACE_DELTAS[opp]
-        ant.x = ex - dcol
-        ant.y = ey - drow
-        if not dest.in_bounds(ant.x, ant.y):
-            ant.x, ant.y = ex, ey
+        lil_guy.x = ex - dcol
+        lil_guy.y = ey - drow
+        if not dest.in_bounds(lil_guy.x, lil_guy.y):
+            lil_guy.x, lil_guy.y = ex, ey
 
         # Reset interpolation.
-        ant.prev_x = ant.x
-        ant.prev_y = ant.y
+        lil_guy.prev_x = lil_guy.x
+        lil_guy.prev_y = lil_guy.y
 
         # Face inward — the negative of the outward-pointing delta.
-        ant.facing_dx = -dcol
-        ant.facing_dy = -drow
-        ant.last_dx   = -dcol
-        ant.last_dy   = -drow
+        lil_guy.facing_dx = -dcol
+        lil_guy.facing_dy = -drow
+        lil_guy.last_dx   = -dcol
+        lil_guy.last_dy   = -drow
 
         # Clear stale target (was in old chamber).
-        ant.target = None
+        lil_guy.target = None
 
         # State, food_carried, steps_walked are PRESERVED.
-        # The ant continues its mission in the new chamber.
-        # chamber_steps resets so the ant explores the new chamber
+        # The worker continues its mission in the new chamber.
+        # chamber_steps resets so the worker explores the new chamber
         # before seeking exits.
-        ant.chamber_steps = 0
+        lil_guy.chamber_steps = 0
 
         # Fill the handoff gap so the gradient is continuous.
         # Goes through dest.deposit_home/food (not pheromones.*
@@ -207,16 +207,16 @@ class Coordinator:
         # without the -1 bias, the handoff cell sits a few ticks
         # older than its neighbour inward, and decay alone is
         # enough to turn it back into a local-minimum valley.
-        effective_steps = max(0, ant.steps_walked - 1)
+        effective_steps = max(0, lil_guy.steps_walked - 1)
         intensity = C.BASE_MARKER_INTENSITY * math.exp(
             -C.MARKER_STEP_DECAY * effective_steps
         )
-        if ant.state == TO_HOME and ant.food_carried > 0:
-            dest.deposit_food(ant.x, ant.y, intensity)
-        elif ant.state == TO_FOOD:
-            dest.deposit_home(ant.x, ant.y, intensity)
+        if lil_guy.state == TO_HOME and lil_guy.food_carried > 0:
+            dest.deposit_food(lil_guy.x, lil_guy.y, intensity)
+        elif lil_guy.state == TO_FOOD:
+            dest.deposit_home(lil_guy.x, lil_guy.y, intensity)
 
-        dest.workers.append(ant)
+        dest.workers.append(lil_guy)
         return True
 
     # ---- layout ----

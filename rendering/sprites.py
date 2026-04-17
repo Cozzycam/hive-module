@@ -28,11 +28,11 @@ SPRITE_KEY = {
     'H': P.QUEEN_HEAD,
     'E': P.QUEEN_EYE,
     # minor workers
-    'a': P.ANT_BODY,
-    'l': P.ANT_LIMB,
-    # nanitic workers (amber-brown founding brood)
-    'n': P.NANITIC_BODY,
-    'k': P.NANITIC_LIMB,
+    'a': P.BODY,
+    'l': P.LIMB,
+    # pioneer workers (amber-brown founding brood)
+    'n': P.PIONEER_BODY,
+    'k': P.PIONEER_LIMB,
     # major workers (big-headed soldiers)
     'M': P.MAJOR_HEAD,
     'm': P.MAJOR_BODY,
@@ -119,8 +119,8 @@ WORKER_MINOR = [
     "......ll....ll......",
 ]
 
-# ---- nanitic worker: 10×10, tiny baby blob ----
-WORKER_NANITIC = [
+# ---- pioneer worker: 10×10, tiny baby blob ----
+WORKER_PIONEER = [
     "..nnnnnn..",
     "..nnnnnn..",
     "nnnnnnnnnn",

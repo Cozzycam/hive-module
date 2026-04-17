@@ -1,6 +1,6 @@
 /* Chamber renderer — 1:1 full-chamber, dirty-rect optimized.
  *
- * With CELL_SIZE=16 and grid 30×20, the full chamber fills 480×320
+ * With CELL_SIZE=16 and grid 30x20, the full chamber fills 480x320
  * exactly. No viewport or scaling needed. Screen borders = chamber borders.
  */
 #include "renderer.h"
@@ -19,7 +19,7 @@ void Renderer::init(Arduino_Canvas* canvas) {
 
 void Renderer::flush() { _gfx->flush(); }
 
-// ── Dirty rect management ───────────────────────────────────────────
+// -- Dirty rect management -------------------------------------------
 
 void Renderer::_mark_dirty(int sx, int sy, int sw, int sh) {
     if (sx < 0) { sw += sx; sx = 0; }
@@ -41,7 +41,7 @@ void Renderer::_clear_dirty() {
     _dirty_count = 0;
 }
 
-// ── Main draw ───────────────────────────────────────────────────────
+// -- Main draw -------------------------------------------------------
 
 void Renderer::draw(const Chamber& ch, float lerp_t) {
     if (_needs_full_redraw) {
@@ -63,7 +63,7 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
     _draw_workers(ch, lerp_t);
 }
 
-// ── Background (full redraw only) ───────────────────────────────────
+// -- Background (full redraw only) -----------------------------------
 
 void Renderer::_draw_background_full(const Chamber& ch) {
     if (ch.has_queen && ch.queen_obj.alive) {
@@ -89,7 +89,7 @@ void Renderer::_draw_background_full(const Chamber& ch) {
     }
 }
 
-// ── Food piles ──────────────────────────────────────────────────────
+// -- Food piles ------------------------------------------------------
 
 void Renderer::_draw_food_piles(const Chamber& ch) {
     for (int i = 0; i < ch.food_pile_count; i++) {
@@ -114,7 +114,7 @@ void Renderer::_draw_food_piles(const Chamber& ch) {
     }
 }
 
-// ── Sprites (1:1, no scaling) ───────────────────────────────────────
+// -- Sprites (1:1, no scaling) ---------------------------------------
 
 void Renderer::_draw_sprite(int cx, int cy, const uint16_t* data, int sw, int sh) {
     int ox = cx - sw / 2;
@@ -158,8 +158,8 @@ void Renderer::_draw_queen(const Chamber& ch) {
 
 void Renderer::_draw_workers(const Chamber& ch, float lerp_t) {
     float t = (lerp_t < 0.0f) ? 0.0f : ((lerp_t > 1.0f) ? 1.0f : lerp_t);
-    for (int i = 0; i < ch.ant_count; i++) {
-        auto& w = ch.ants[i];
+    for (int i = 0; i < ch.lil_guy_count; i++) {
+        auto& w = ch.lil_guys[i];
         if (!w.alive) continue;
 
         float fx = w.prev_x + (w.x - w.prev_x) * t;
@@ -167,10 +167,10 @@ void Renderer::_draw_workers(const Chamber& ch, float lerp_t) {
         int px = static_cast<int>(fx * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2);
         int py = static_cast<int>(fy * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2);
 
-        if (w.caste == CASTE_MAJOR)
+        if (w.role == ROLE_MAJOR)
             _draw_sprite(px, py, MAJOR, MAJOR_W, MAJOR_H);
-        else if (w.is_nanitic)
-            _draw_sprite(px, py, WORKER_NANITIC, WORKER_NANITIC_W, WORKER_NANITIC_H);
+        else if (w.is_pioneer)
+            _draw_sprite(px, py, WORKER_PIONEER, WORKER_PIONEER_W, WORKER_PIONEER_H);
         else
             _draw_sprite(px, py, WORKER_MINOR, WORKER_MINOR_W, WORKER_MINOR_H);
 

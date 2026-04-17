@@ -1,12 +1,12 @@
-"""Brood lifecycle: egg -> larva -> pupa -> nanitic (worker).
+"""Brood lifecycle: egg -> larva -> pupa -> pioneer (worker).
 
-Each Brood object carries its destined caste (minor/major) from egg
+Each Brood object carries its destined role (minor/major) from egg
 onward. Majors require more food and more time as larvae to grow their
-characteristic oversized heads. The queen sets the destined caste at
+characteristic oversized heads. The queen sets the destined role at
 laying; Phase 1 founding produces only minors.
 
-When a pupa completes, chamber.tick() consumes the brood and spawns an
-Ant of the matching caste in its place.
+When a pupa completes, chamber.tick() consumes the brood and spawns a
+LilGuy of the matching role in its place.
 """
 
 import config as C
@@ -21,10 +21,10 @@ DEAD  = 'dead'
 class Brood:
     __slots__ = (
         'x', 'y', 'stage', 'age', 'hunger', 'fed_total',
-        'caste', 'larva_duration', 'food_needed',
+        'role', 'larva_duration', 'food_needed',
     )
 
-    def __init__(self, x, y, caste=None):
+    def __init__(self, x, y, role=None):
         self.x         = x
         self.y         = y
         self.stage     = EGG
@@ -32,9 +32,9 @@ class Brood:
         self.hunger    = 0.0      # larva only
         self.fed_total = 0.0      # cumulative feeding received as a larva
 
-        # Caste destiny (minor by default during founding)
-        self.caste = caste if caste is not None else C.DEFAULT_BROOD_CASTE
-        params = C.CASTE_PARAMS[self.caste]
+        # Role destiny (minor by default during founding)
+        self.role = role if role is not None else C.DEFAULT_BROOD_ROLE
+        params = C.ROLE_PARAMS[self.role]
         self.larva_duration = params['larva_duration']
         self.food_needed    = params['larva_food_needed']
 
@@ -42,7 +42,7 @@ class Brood:
 
     def tick(self):
         """Advance one tick. Returns 'hatch' if a pupa is ready to become
-        a nanitic (chamber consumes the brood in that case). Otherwise
+        a pioneer (chamber consumes the brood in that case). Otherwise
         returns None."""
         if self.stage == DEAD:
             return None

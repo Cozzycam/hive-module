@@ -1,13 +1,13 @@
 """Pheromone grid — JohnBuffer-inspired scalar marker system.
 
 Two scalar layers:
-  - to_home: deposited by ants walking AWAY from the colony (TO_FOOD
+  - to_home: deposited by workers walking AWAY from the colony (TO_FOOD
     state). Intensity decreases with distance from colony via
-    exponential step-decay in the deposit function. Returning ants
+    exponential step-decay in the deposit function. Returning workers
     follow this gradient to find their way home.
-  - to_food: deposited by ants carrying food BACK to the colony
+  - to_food: deposited by workers carrying food BACK to the colony
     (TO_HOME state). Intensity decreases with distance from food.
-    Outbound ants follow this gradient to find known food sources.
+    Outbound workers follow this gradient to find known food sources.
 
 Each cell stores a single float per layer. No direction vectors —
 the gradient IS the direction. Decay is a uniform multiplicative
@@ -81,7 +81,7 @@ class PheromoneMap:
 
     def deposit_home(self, x, y, amount):
         """Add to_home scent. Takes the max of existing and new value
-        (JohnBuffer style) so multiple ants reinforce but don't
+        (JohnBuffer style) so multiple workers reinforce but don't
         explode the value."""
         if not self._in(x, y):
             return
