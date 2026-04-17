@@ -1,4 +1,4 @@
-"""Pixel art sprite data.
+"""Pixel art sprite data — blob-style for CELL_SIZE=16.
 
 Each sprite is a list of equal-length strings. One character per pixel.
 Map each character through SPRITE_KEY to a palette colour tuple.
@@ -10,6 +10,12 @@ framebuffer.
 
 Coordinates of drawn sprites are anchored on their *centre*, so even
 dimensions still land cleanly on a grid cell.
+
+Sprite canvases at CELL_SIZE=16 (30×20 grid on 480×320 display):
+  Queen 44×44, Major 32×28, Minor 20×20, Nanitic 10×10,
+  Egg 4×4, Larva 6×6, Pupa 8×8.
+Pixel-doubled from hand-drawn 1× originals. Edit freely to add
+detail — each sprite now has 2× the pixel budget per axis.
 """
 
 from rendering import palette as P
@@ -41,77 +47,155 @@ SPRITE_KEY = {
 }
 
 
-# ---- queen: 12x12, large Messor-scale founding queen ----
+# ---- queen: 44×44, big mama blob with antennae and smile ----
 QUEEN = [
-    "....HHHH....",
-    "...HEEEEH...",
-    "...HHHHHH...",
-    "....HHHH....",
-    "...QQQQQQ...",
-    "..QQwQQwQQ..",
-    ".QQQQQQQQQQ.",
-    "QQQQwQQwQQQQ",
-    "QQQQQQQQQQQQ",
-    ".QQwQQQQwQQ.",
-    "..QQQQQQQQ..",
-    "...QQQQQQ...",
+    "..........HH....................HH..........",
+    "..........HH....................HH..........",
+    "............HH................HH............",
+    "............HH................HH............",
+    "................QQQQQQQQQQQQ................",
+    "................QQQQQQQQQQQQ................",
+    "............QQQQQQQQQQQQQQQQQQQQ............",
+    "............QQQQQQQQQQQQQQQQQQQQ............",
+    "..........QQQQQQQQQQQQQQQQQQQQQQQQ..........",
+    "..........QQQQQQQQQQQQQQQQQQQQQQQQ..........",
+    "........QQQQQQQQQQQQQQQQQQQQQQQQQQQQ........",
+    "........QQQQQQQQQQQQQQQQQQQQQQQQQQQQ........",
+    "......QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ......",
+    "......QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ......",
+    "....QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ....",
+    "....QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ....",
+    ".....QQQQQQQQooooQQQQQQQQQQooooQQQQQQQQ.....",
+    ".....QQQQQQQQooooQQQQQQQQQQooooQQQQQQQQ.....",
+    "....QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ....",
+    "....QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ....",
+    ".....QQQQQQQQQQQQQQQQwwwwQQQQQQQQQQQQQQ.....",
+    ".....QQQQQQQQQQQQQQQQwwwwQQQQQQQQQQQQQQ.....",
+    "..QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ..",
+    "..QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ..",
+    "..QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ..",
+    "..QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ..",
+    "...QQQQQQQQwwQQQQQQQQQQQQQQQQQQwwQQQQQQQQ...",
+    "...QQQQQQQQwwQQQQQQQQQQQQQQQQQQwwQQQQQQQQ...",
+    "....QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ....",
+    "....QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ....",
+    ".......QQQQQQwwQQQQQQQQQQQQQQwwQQQQQQ.......",
+    ".......QQQQQQwwQQQQQQQQQQQQQQwwQQQQQQ.......",
+    "........QQQQQQQQQQQQQQQQQQQQQQQQQQQQ........",
+    "........QQQQQQQQQQQQQQQQQQQQQQQQQQQQ........",
+    "..........QQQQQQQQQQQQQQQQQQQQQQQQ..........",
+    "..........QQQQQQQQQQQQQQQQQQQQQQQQ..........",
+    "..............QQQQQQQQQQQQQQQQ..............",
+    "..............QQQQQQQQQQQQQQQQ..............",
+    "....................QQQQ....................",
+    "....................QQQQ....................",
+    "..................ll....ll..................",
+    "..................ll....ll..................",
+    "..................ll....ll..................",
+    "..................ll....ll..................",
 ]
 
-# ---- minor worker: 6x6, compact ----
+# ---- minor worker: 20×20, round blob with close-set dot eyes ----
 WORKER_MINOR = [
-    "..aa..",
-    ".aaaa.",
-    "laaaal",
-    "laaaal",
-    ".aaaa.",
-    "..ll..",
+    "......aaaaaaaa......",
+    "......aaaaaaaa......",
+    "....aaaaaaaaaaaa....",
+    "....aaaaaaaaaaaa....",
+    "..aaaaaaaaaaaaaaaa..",
+    "..aaaaaaaaaaaaaaaa..",
+    "..aaaaooaaaaoaaaaa..",
+    "..aaaaooaaaaoaaaaa..",
+    "..aaaaaaaaaaaaaaaa..",
+    "..aaaaaaaaaaaaaaaa..",
+    "....aaaaaaaaaaaa....",
+    "....aaaaaaaaaaaa....",
+    "....aaaaaaaaaaaa....",
+    "....aaaaaaaaaaaa....",
+    "......aaaaaaaa......",
+    "......aaaaaaaa......",
+    "......ll....ll......",
+    "......ll....ll......",
+    "......ll....ll......",
+    "......ll....ll......",
 ]
 
-# ---- nanitic worker: same shape, amber-brown founding brood ----
+# ---- nanitic worker: 10×10, tiny baby blob ----
 WORKER_NANITIC = [
-    "..nn..",
-    ".nnnn.",
-    "knnnnk",
-    "knnnnk",
-    ".nnnn.",
-    "..kk..",
+    "..nnnnnn..",
+    "..nnnnnn..",
+    "nnnnnnnnnn",
+    "nnnnnnnnnn",
+    "nnEEnnEEnn",
+    "nnEEnnEEnn",
+    "nnnnnnnnnn",
+    "nnnnnnnnnn",
+    "..kk..kk..",
+    "..kk..kk..",
 ]
 
-# Legacy alias — old code called this WORKER.
+# Legacy alias
 WORKER = WORKER_MINOR
 
-# ---- major worker: 8x7, oversized head capsule + mandibles ----
+# ---- major worker: 32×28, chunky blob with mandible pincers ----
 MAJOR = [
-    "..MMMM..",
-    ".MMMMMM.",
-    "MMeMMeMM",
-    ".MMMMMM.",
-    "..mmmm..",
-    ".mmmmmm.",
-    "..l..l..",
+    "..........MMMMMMMMMMMM..........",
+    "..........MMMMMMMMMMMM..........",
+    "......MMMMMMMMMMMMMMMMMMMM......",
+    "......MMMMMMMMMMMMMMMMMMMM......",
+    "MM..MMMMMMMMMMMMMMMMMMMMMMMM..MM",
+    "MM..MMMMMMMMMMMMMMMMMMMMMMMM..MM",
+    "MM..MMMMMMooooMMMMooooMMMMMM..MM",
+    "MM..MMMMMMooooMMMMooooMMMMMM..MM",
+    "....MMMMMMMMMMMMMMMMMMMMMMMM....",
+    "....MMMMMMMMMMMMMMMMMMMMMMMM....",
+    "......MMMMMMMMMMMMMMMMMMMM......",
+    "......MMMMMMMMMMMMMMMMMMMM......",
+    "..........mmmmmmmmmmmm..........",
+    "..........mmmmmmmmmmmm..........",
+    "........mmmmmmmmmmmmmmmm........",
+    "........mmmmmmmmmmmmmmmm........",
+    "........mmmmmmmmmmmmmmmm........",
+    "........mmmmmmmmmmmmmmmm........",
+    "..........mmmmmmmmmmmm..........",
+    "..........mmmmmmmmmmmm..........",
+    "............mmmmmmmm............",
+    "............mmmmmmmm............",
+    "............mmmmmmmm............",
+    "............mmmmmmmm............",
+    "..........mm........mm..........",
+    "..........mm........mm..........",
+    "..........mm........mm..........",
+    "..........mm........mm..........",
 ]
 
-# ---- egg: 3x3 ----
+# ---- egg: 4×4, tiny pale speck ----
 EGG = [
-    ".o.",
-    "ooo",
-    ".o.",
+    "oooo",
+    "oooo",
+    "oooo",
+    "oooo",
 ]
 
-# ---- larva: 4x3, curled grub ----
+# ---- larva: 6×6, small curled grub ----
 LARVA = [
-    ".LL.",
-    "LLLL",
-    ".LL.",
+    "..LLLL",
+    "..LLLL",
+    "LLLLLL",
+    "LLLLLL",
+    "LLLL..",
+    "LLLL..",
 ]
 
-# ---- pupa: 5x5, cocooned ----
+# ---- pupa: 8×8, smooth oval cocoon ----
 PUPA = [
-    ".ppp.",
-    "ppppp",
-    "ppppp",
-    "ppppp",
-    ".ppp.",
+    "..pppp..",
+    "..pppp..",
+    "pppppppp",
+    "pppppppp",
+    "pppppppp",
+    "pppppppp",
+    "..pppp..",
+    "..pppp..",
 ]
 
 

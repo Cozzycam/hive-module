@@ -48,7 +48,7 @@ def days(n):
 # Physical target: 480x320 per ESP32 module. Keep the grid tied to this.
 CHAMBER_WIDTH_PX  = 480
 CHAMBER_HEIGHT_PX = 320
-CELL_SIZE         = 8         # pixels per grid cell
+CELL_SIZE         = 16        # pixels per grid cell
 GRID_WIDTH        = CHAMBER_WIDTH_PX  // CELL_SIZE   # 60
 GRID_HEIGHT       = CHAMBER_HEIGHT_PX // CELL_SIZE   # 40
 
