@@ -18,6 +18,7 @@
 #include "rng.h"
 #include "sim.h"
 #include "renderer.h"
+#include "touch.h"
 
 // -- TCA9554 I/O expander --------------------------------------------
 
@@ -146,6 +147,7 @@ void setup() {
     }
     gfx->setRotation(1);
 
+    touch_init();
     sim.init();
     renderer.init(gfx);
 
@@ -160,6 +162,7 @@ void loop() {
     unsigned long interval = tick_interval_ms();
 
     handle_serial();
+    sim.handle_touch();
 
     // Sim ticks — run multiple if at high speed
     while (now - last_tick_ms >= interval) {

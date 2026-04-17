@@ -49,3 +49,23 @@ void Sim::tick() {
                          Cfg::FOOD_REPLENISH_AMOUNT);
     }
 }
+
+void Sim::handle_touch() {
+    TouchEvent te;
+    if (!touch_poll(&te))
+        return;
+
+    // Convert display pixels (480x320 after rotation) to grid cells.
+    int cx = te.x / Cfg::CELL_SIZE;
+    int cy = te.y / Cfg::CELL_SIZE;
+
+    if (cx < 0 || cx >= Cfg::GRID_WIDTH || cy < 0 || cy >= Cfg::GRID_HEIGHT)
+        return;
+
+    chamber.add_food(cx, cy, Cfg::TAP_FEED_AMOUNT);
+
+    // TODO: emit food_tapped event when the event bus is ported to C++.
+    // event_bus.emit(events::food_tapped(tick_count, cx, cy));
+
+    Serial.printf("[touch] fed (%d,%d) +%.0f\n", cx, cy, Cfg::TAP_FEED_AMOUNT);
+}

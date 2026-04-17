@@ -12,6 +12,8 @@ free). Workers crossing an active edge are handed off to the
 neighbour on the same tick.
 """
 
+import time
+
 import pygame
 
 import config as C
@@ -110,6 +112,21 @@ def run():
             ox = col * (panel_w + C.LAYOUT_GAP_PX)
             oy = row * (panel_h + C.LAYOUT_GAP_PX)
             screen.blit(scaled, (ox, oy))
+
+        # Tap feedback rings — expanding circles that fade out.
+        now_t = time.monotonic()
+        alive_rings = []
+        for rx, ry, birth in inp.tap_rings:
+            age = now_t - birth
+            if age > 0.35:
+                continue  # expired
+            alive_rings.append((rx, ry, birth))
+            t = age / 0.35  # 0..1
+            radius = int(6 + 18 * t)
+            alpha = int(200 * (1.0 - t))
+            pygame.draw.circle(screen, (alpha, alpha, alpha // 2),
+                               (rx, ry), radius, 1)
+        inp.tap_rings = alive_rings
 
         _draw_hud(screen, font, font_small, coord, inp, window_w, window_h)
 

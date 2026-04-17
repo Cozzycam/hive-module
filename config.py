@@ -162,6 +162,7 @@ PHEROMONE_MAX          = 20.0    # cap so busy corridors don't blow up
 # ---------- Gathering ----------
 SCOUT_PATIENCE_TICKS     = 3000
 GATHER_DEBUG_PILE_SIZE   = 220.0    # was 200, +10%
+TAP_FEED_AMOUNT         = 80.0     # food placed by player tap / touch
 FOOD_PILE_CAP            = 55.0    # was 50, +10%
 FOOD_DEPOSIT_RADIUS      = 5      # gatherers look this far for a pile to add to
 RETURN_HOME_TICKS        = 960    # ~120 sec at 8 tps; workers forced TO_HOME

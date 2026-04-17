@@ -96,6 +96,7 @@ constexpr float SENSE_FLOOR           = 0.02f;
 // ---- Gathering ----
 constexpr int   SCOUT_PATIENCE_TICKS    = 3000;
 constexpr float FORAGE_DEBUG_PILE_SIZE  = 220.0f;
+constexpr float TAP_FEED_AMOUNT        = 80.0f;   // food placed by player tap
 constexpr float FOOD_PILE_CAP           = 55.0f;
 constexpr int   FOOD_DEPOSIT_RADIUS     = 5;
 constexpr int   RETURN_HOME_TICKS       = 960;

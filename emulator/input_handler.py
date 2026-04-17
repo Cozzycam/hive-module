@@ -1,17 +1,24 @@
 """Keyboard / mouse input handling for the emulator.
 
-Phase 2 first cut: pause, speed, quit — and click-to-attach. A left
-click within EDGE_CLICK_DEPTH pixels of any chamber's inactive face
-calls `coordinator.announce_module()` to spawn a neighbour there.
+Left-click in the interior of a chamber places a food pile at that
+cell (tap-to-feed). Left-click on a chamber edge attaches a new
+chamber on that face.
 
 The app hands the current panel geometry (scale, gap, layout) into
 `poll()` so the handler can translate window coordinates back into
 panel-local coordinates.
 """
 
+import time
+
 import pygame
 
 import config as C
+from sim import events
+
+
+# Debounce: ignore taps within this many seconds of the previous tap.
+TAP_DEBOUNCE_SEC = 0.1
 
 
 class InputHandler:
@@ -27,6 +34,11 @@ class InputHandler:
         # vector, to eyeball whether the field is flowing where we
         # expect it to. Toggled with the D key.
         self.show_direction = False
+
+        # Tap-to-feed state
+        self._last_tap_time = 0.0
+        # Pending tap feedback rings: list of (screen_x, screen_y, birth_time)
+        self.tap_rings = []
 
     @property
     def sim_ticks_per_sec(self):
@@ -81,15 +93,11 @@ class InputHandler:
                                 else 'direction overlay off')
 
     def _debug_spawn_food(self, coordinator, panel_geom):
-        """Drop a food pile at the current mouse position. If the
-        cursor is outside any chamber, fall back to the most recently
-        attached chamber at its centre."""
+        """Drop a large debug food pile at the current mouse position."""
         hit = self._hit_test_chamber_cell(self.mouse_pos, coordinator, panel_geom)
         if hit is not None:
             module_id, cx, cy = hit
         else:
-            # Fallback — most recently attached non-queen chamber,
-            # if any, else the founding chamber.
             module_id = self.last_added or self._last_non_queen(coordinator)
             if module_id is None:
                 self.last_status = "no non-queen chamber to drop food in"
@@ -131,16 +139,44 @@ class InputHandler:
     def _on_click(self, pos, button, coordinator, panel_geom):
         if button != 1:
             return
-        hit = self._hit_test_edge(pos, coordinator, panel_geom)
-        if hit is None:
+
+        now = time.monotonic()
+
+        # Check edge click first (module attachment)
+        edge_hit = self._hit_test_edge(pos, coordinator, panel_geom)
+        if edge_hit is not None:
+            module_id, face = edge_hit
+            ok, result = coordinator.announce_module(attach_to=module_id, face=face)
+            if ok:
+                self.last_status = f"attached {result} on {face} of {module_id}"
+                self.last_added = result
+            else:
+                self.last_status = f"can't attach: {result}"
             return
-        module_id, face = hit
-        ok, result = coordinator.announce_module(attach_to=module_id, face=face)
-        if ok:
-            self.last_status = f"attached {result} on {face} of {module_id}"
-            self.last_added = result
-        else:
-            self.last_status = f"can't attach: {result}"
+
+        # Interior click — tap-to-feed
+        # Always show feedback ring
+        self.tap_rings.append((pos[0], pos[1], now))
+
+        # Debounce
+        if now - self._last_tap_time < TAP_DEBOUNCE_SEC:
+            return
+        self._last_tap_time = now
+
+        cell_hit = self._hit_test_chamber_cell(pos, coordinator, panel_geom)
+        if cell_hit is None:
+            # Clicked outside any chamber — feedback ring shows, no food
+            return
+
+        module_id, cx, cy = cell_hit
+        chamber = coordinator.chambers[module_id]
+        chamber.add_food(cx, cy, C.TAP_FEED_AMOUNT)
+
+        # Emit the food_tapped event
+        bus = coordinator.event_bus
+        bus.emit(events.food_tapped(coordinator.tick_count, cx, cy))
+
+        self.last_status = f"fed ({cx},{cy}) in {module_id}"
 
     def _hit_test_edge(self, pos, coordinator, panel_geom):
         """Return (module_id, face) if the click falls near an inactive
