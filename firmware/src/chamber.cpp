@@ -81,7 +81,7 @@ void Chamber::tick() {
         lil_guys[i].tick(*this);
         if (!lil_guys[i].alive) {
             if (lil_guys[i].food_carried > 0)
-                add_food(lil_guys[i].x, lil_guys[i].y, lil_guys[i].food_carried);
+                add_food(lil_guys[i].cell_x(), lil_guys[i].cell_y(), lil_guys[i].food_carried);
             remove_lil_guy(i);
         }
         // Edge crossing check (single-board: no neighbors, so no crossings)

@@ -164,8 +164,9 @@ void Renderer::_draw_workers(const Chamber& ch, float lerp_t) {
 
         float fx = w.prev_x + (w.x - w.prev_x) * t;
         float fy = w.prev_y + (w.y - w.prev_y) * t;
-        int px = static_cast<int>(fx * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2);
-        int py = static_cast<int>(fy * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2);
+        // Float positions are cell-centered (cx+0.5), so no CELL_SIZE/2 offset
+        int px = static_cast<int>(fx * Cfg::CELL_SIZE);
+        int py = static_cast<int>(fy * Cfg::CELL_SIZE);
 
         if (w.role == ROLE_MAJOR)
             _draw_sprite(px, py, MAJOR, MAJOR_W, MAJOR_H);
@@ -176,8 +177,8 @@ void Renderer::_draw_workers(const Chamber& ch, float lerp_t) {
 
         // Food morsel indicator
         if (w.food_carried > 0) {
-            int mx = px - w.facing_dx * 4;
-            int my = py - w.facing_dy * 4;
+            int mx = px - static_cast<int>(w.facing_dx * 4);
+            int my = py - static_cast<int>(w.facing_dy * 4);
             _gfx->fillRect(mx - 1, my - 1, 3, 3, PAL_FOOD_CARRY);
             _mark_dirty(mx - 1, my - 1, 3, 3);
         }

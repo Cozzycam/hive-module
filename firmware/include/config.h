@@ -59,6 +59,7 @@ struct RoleParams {
     uint8_t sense_radius;
     float   carry_amount;
     float   metabolism;
+    float   speed;              // cells per tick (sub-cell movement)
     int     lifespan_lo, lifespan_hi;
     int     lifespan_pioneer_lo, lifespan_pioneer_hi;
     int     larva_duration;
@@ -67,12 +68,12 @@ struct RoleParams {
 
 constexpr RoleParams ROLE_PARAMS[ROLE_COUNT] = {
     // ROLE_MINOR
-    { 4, 8, 6.6f, 0.00094f,
+    { 4, 8, 6.6f, 0.00094f, 0.25f,
       days(250), days(400),     // 50000, 80000
       days(200), days(350),     // 40000, 70000
       days(20), 11.5f },        // 4000
     // ROLE_MAJOR
-    { 6, 6, 16.5f, 0.00144f,
+    { 6, 6, 16.5f, 0.00144f, 1.0f / 6.0f,
       days(350), days(550),     // 70000, 110000
       days(200), days(350),     // pioneer (same range for now)
       days(28), 23.0f },        // 5600
@@ -92,6 +93,9 @@ constexpr float MARKER_STEP_DECAY     = 0.02f;
 constexpr float PHEROMONE_GRID_DECAY  = 0.997f;
 constexpr float PHEROMONE_MAX         = 20.0f;
 constexpr float SENSE_FLOOR           = 0.02f;
+
+// ---- Movement ----
+constexpr float ARRIVAL_THRESHOLD       = 0.05f;
 
 // ---- Gathering ----
 constexpr int   SCOUT_PATIENCE_TICKS    = 3000;
