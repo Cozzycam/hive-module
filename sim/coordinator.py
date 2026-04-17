@@ -16,6 +16,8 @@ from sim.colony import Colony
 from sim.chamber import Chamber, KIND_CHAMBER
 from sim.lil_guy import TO_FOOD, TO_HOME
 from sim import protocol
+from sim import events
+from sim.events import EventBus
 import config as C
 
 
@@ -24,10 +26,11 @@ FOUNDING_ID = 'M0'
 
 class Coordinator:
     def __init__(self):
-        self.colony   = Colony()
-        self.chambers = {}
-        self.topology = {}
+        self.colony    = Colony()
+        self.chambers  = {}
+        self.topology  = {}
         self.tick_count = 0
+        self.event_bus = EventBus()
 
         founding = Chamber(FOUNDING_ID, self.colony,
                            has_queen=True, kind=KIND_CHAMBER)
@@ -166,6 +169,10 @@ class Coordinator:
         """
         if to_id not in self.chambers:
             return False
+        self.event_bus.emit(events.handoff_outgoing(
+            self.tick_count,
+            {'role': lil_guy.role, 'food': lil_guy.food_carried,
+             'state': lil_guy.state, 'from': from_id, 'to': to_id}))
         dest = self.chambers[to_id]
         opp = C.FACE_OPPOSITE[face]
         ex, ey = C.ENTRY_POINTS[opp]
@@ -217,6 +224,10 @@ class Coordinator:
             dest.deposit_home(lil_guy.x, lil_guy.y, intensity)
 
         dest.workers.append(lil_guy)
+        self.event_bus.emit(events.handoff_incoming(
+            self.tick_count,
+            {'role': lil_guy.role, 'food': lil_guy.food_carried,
+             'state': lil_guy.state, 'from': from_id, 'to': to_id}))
         return True
 
     # ---- layout ----

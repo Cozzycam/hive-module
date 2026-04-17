@@ -234,6 +234,18 @@ FOOD_SCENT_SENSE_RADIUS  = 8
 EXPLORER_CHANCE          = 0.10
 EXPLORER_DEVIATE         = 0.20
 
+# ---------- Event bus ----------
+EVENT_BUS_CAPACITY           = 256     # ring buffer slots, overwrites oldest
+
+# ---------- Proximity interactions ----------
+# When two lil guys occupy the same or adjacent cell, they may interact.
+# Probabilities are per eligible pair per tick.
+PROXIMITY_DETECTION_RADIUS   = 1       # Manhattan distance for interaction
+PROXIMITY_GREETING_CHANCE    = 0.35    # ~1 in 3 adjacent pairs greet per tick
+PROXIMITY_FOOD_SHARE_CHANCE  = 0.15    # when one has food, the other doesn't
+GREETING_DURATION_TICKS      = 4       # renderer hint (~0.5 sec at 8 tps)
+FOOD_SHARE_DURATION_TICKS    = 88      # renderer hint (~11 sec at 8 tps)
+
 # ---------- Chamber geometry ----------
 ENTRY_POINTS = {
     'N': (GRID_WIDTH // 2, 0),

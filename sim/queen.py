@@ -8,6 +8,7 @@ import random
 
 import config as C
 from sim.brood import Brood
+from sim import events
 
 
 class Queen:
@@ -152,6 +153,7 @@ class Queen:
             if chamber.in_bounds(ex, ey) and (dx, dy) != (0, 0):
                 chamber.brood.append(Brood(ex, ey, role=role))
                 self.eggs_laid += 1
+                chamber._emit(events.queen_laid_egg(chamber._tick))
             else:
                 self.reserves += consumed
 

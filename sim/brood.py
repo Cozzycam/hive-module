@@ -41,9 +41,15 @@ class Brood:
     # ---- lifecycle ----
 
     def tick(self):
-        """Advance one tick. Returns 'hatch' if a pupa is ready to become
-        a pioneer (chamber consumes the brood in that case). Otherwise
-        returns None."""
+        """Advance one tick. Returns a transition signal string or None.
+
+        Possible returns:
+          'egg_to_larva'  — egg just became a larva
+          'larva_to_pupa' — larva just pupated
+          'hatch'         — pupa ready to become a worker
+          'died'          — larva starved
+          None            — no transition this tick
+        """
         if self.stage == DEAD:
             return None
 
@@ -53,17 +59,19 @@ class Brood:
             if self.age >= C.EGG_DURATION:
                 self.stage = LARVA
                 self.age   = 0
+                return 'egg_to_larva'
             return None
 
         if self.stage == LARVA:
             self.hunger += C.LARVA_HUNGER_RATE
             if self.hunger >= C.LARVA_STARVE:
                 self.stage = DEAD
-                return None
+                return 'died'
             if (self.age >= self.larva_duration
                     and self.fed_total >= self.food_needed):
                 self.stage = PUPA
                 self.age   = 0
+                return 'larva_to_pupa'
             return None
 
         if self.stage == PUPA:

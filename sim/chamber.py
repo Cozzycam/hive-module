@@ -16,8 +16,9 @@ import random
 
 import config as C
 from sim.queen import Queen
-from sim.lil_guy import LilGuy, TO_FOOD
+from sim.lil_guy import LilGuy, TO_FOOD, TO_HOME
 from sim import brood as brood_mod
+from sim import events
 from sim.pheromones import PheromoneMap
 
 
@@ -66,6 +67,10 @@ class Chamber:
 
         # Pheromone layers.
         self.pheromones = PheromoneMap(self.width, self.height)
+
+        # Transient per-tick — set by coordinator before tick().
+        self._event_bus = None
+        self._tick = 0
 
     # ---- queries ----
 
@@ -201,6 +206,14 @@ class Chamber:
     # ---- per-tick ----
 
     def tick(self, coordinator=None):
+        # Bind transient event context for this tick.
+        if coordinator is not None:
+            self._event_bus = coordinator.event_bus
+            self._tick = coordinator.tick_count
+        else:
+            self._event_bus = None
+            self._tick = 0
+
         # Pheromones decay before any fresh deposits.
         self.pheromones.decay()
 
@@ -225,6 +238,14 @@ class Chamber:
             result = b.tick()
             if result == 'hatch':
                 hatched.append(b)
+            elif result == 'egg_to_larva':
+                self._emit(events.young_hatched(
+                    self._tick, 'egg', 'larva'))
+            elif result == 'larva_to_pupa':
+                self._emit(events.young_hatched(
+                    self._tick, 'larva', 'pupa'))
+            elif result == 'died':
+                self._emit(events.young_died(self._tick))
             elif not b.alive:
                 dead_brood.append(b)
 
@@ -235,8 +256,11 @@ class Chamber:
                 LilGuy(b.x, b.y, role=b.role, is_pioneer=is_pioneer),
             )
             self.colony.total_workers_born += 1
+            self._emit(events.young_hatched(
+                self._tick, 'pupa', 'worker'))
             self.brood.remove(b)
         for b in dead_brood:
+            self._emit(events.young_died(self._tick))
             self.brood.remove(b)
 
         # Starvation cascade stage 1 — cull hungry larvae under
@@ -251,6 +275,7 @@ class Chamber:
                     and b.hunger > C.FAMINE_BROOD_CULL_HUNGER)
             ]
             for b in famine_dead:
+                self._emit(events.young_died(self._tick))
                 self.brood.remove(b)
 
         # Cooldown ticks.
@@ -273,10 +298,14 @@ class Chamber:
             if crossing is not None:
                 crossings.append((w, crossing))
 
+        # Proximity interactions between lil guys.
+        self._detect_proximity_interactions()
+
         for w in dead_workers:
             # Drop carried food as a small pile at death location.
             if w.food_carried > 0:
                 self.add_food(w.x, w.y, w.food_carried)
+            self._emit(events.lil_guy_died(self._tick))
             self.workers.remove(w)
 
         # Hand crossings off to the coordinator
@@ -303,3 +332,82 @@ class Chamber:
             if pos == entry_pos and self.entries.get(face) is not None:
                 return face
         return None
+
+    # ---- event helpers ----
+
+    def _emit(self, event):
+        if self._event_bus is not None:
+            self._event_bus.emit(event)
+
+    def _detect_proximity_interactions(self):
+        """Scan for adjacent lil guy pairs and emit interaction events.
+
+        Uses a spatial hash so cost is O(n) build + O(k) where k is the
+        number of actual adjacent pairs, not O(n^2).
+        """
+        bus = self._event_bus
+        if bus is None or len(self.workers) < 2:
+            return
+
+        # Build spatial index: (x, y) -> [worker index]
+        grid = {}
+        for i, w in enumerate(self.workers):
+            if not w.alive:
+                continue
+            key = (w.x, w.y)
+            if key in grid:
+                grid[key].append(i)
+            else:
+                grid[key] = [i]
+
+        checked = set()
+        tick = self._tick
+        radius = C.PROXIMITY_DETECTION_RADIUS
+
+        for (cx, cy), indices in grid.items():
+            # Same-cell pairs
+            for ai in range(len(indices)):
+                for bi in range(ai + 1, len(indices)):
+                    self._maybe_interact(
+                        indices[ai], indices[bi], tick, bus, checked)
+            # Adjacent cells (4 cardinal) — only if radius >= 1
+            if radius >= 1:
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nkey = (cx + dx, cy + dy)
+                    if nkey not in grid:
+                        continue
+                    for ai in indices:
+                        for bi in grid[nkey]:
+                            self._maybe_interact(
+                                ai, bi, tick, bus, checked)
+
+    def _maybe_interact(self, ai, bi, tick, bus, checked):
+        """Roll for an interaction between two lil guys (by index).
+        Emits start+end on the same tick with duration_hint for the
+        renderer. The sim stays stateless with respect to interactions.
+        """
+        pair = (min(ai, bi), max(ai, bi))
+        if pair in checked:
+            return
+        checked.add(pair)
+
+        a = self.workers[ai]
+        b = self.workers[bi]
+
+        # Food sharing: one carrying, the other not.
+        if ((a.food_carried > 0) != (b.food_carried > 0)):
+            if random.random() < C.PROXIMITY_FOOD_SHARE_CHANCE:
+                pid = bus.next_pair_id()
+                bus.emit(events.interaction_started(
+                    tick, pid, events.FOOD_SHARING,
+                    duration_hint=C.FOOD_SHARE_DURATION_TICKS))
+                bus.emit(events.interaction_ended(tick, pid))
+                return
+
+        # General greeting
+        if random.random() < C.PROXIMITY_GREETING_CHANCE:
+            pid = bus.next_pair_id()
+            bus.emit(events.interaction_started(
+                tick, pid, events.GREETING,
+                duration_hint=C.GREETING_DURATION_TICKS))
+            bus.emit(events.interaction_ended(tick, pid))

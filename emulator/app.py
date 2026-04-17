@@ -92,6 +92,11 @@ def run():
         else:
             lerp_t = 1.0
 
+        # ---- drain events ----
+        pending = coord.event_bus.drain()
+        for ev in pending:
+            print(f"[evt t={ev['tick']:>6}] {ev['type']}")
+
         # ---- draw ----
         screen.fill(P.WALL)
 

@@ -41,6 +41,7 @@ import math
 
 import config as C
 from sim import brood as brood_mod
+from sim import events
 
 
 # ---- state tags ----
@@ -150,6 +151,7 @@ class LilGuy:
         # Natural death — old age.
         if self.age >= self.max_age:
             self.alive = False
+            chamber._emit(events.lil_guy_died(chamber._tick))
             return
 
         # Metabolism — draw from colony food_store, or nibble from
@@ -170,6 +172,7 @@ class LilGuy:
             self.hunger += C.WORKER_HUNGER_RATE
             if self.hunger >= C.WORKER_STARVE_THRESHOLD:
                 self.alive = False
+                chamber._emit(events.lil_guy_died(chamber._tick))
                 return
 
         # Track time away from the queen chamber.
@@ -421,6 +424,8 @@ class LilGuy:
             # the colony's abstract food store.
             qx, qy = chamber.queen.x, chamber.queen.y
             if abs(qx - self.x) + abs(qy - self.y) <= 1:
+                chamber._emit(events.food_delivered(
+                    chamber._tick, self.x, self.y, self.food_carried))
                 chamber.colony.food_store += self.food_carried
                 self.food_carried  = 0.0
                 # Signal nestmates — a gatherer just delivered food.
@@ -535,6 +540,9 @@ class LilGuy:
                             break  # already fed by another worker
                         chamber.colony.food_store -= feed_amt
                         b.feed(feed_amt)
+                        self._emit_interaction(
+                            chamber, events.TENDING_YOUNG,
+                            C.GREETING_DURATION_TICKS)
                         break
             self.state         = IDLE
             self.target        = None
@@ -559,6 +567,9 @@ class LilGuy:
                     chamber.queen.hunger = max(
                         0.0, chamber.queen.hunger - feed_amt,
                     )
+                self._emit_interaction(
+                    chamber, events.TENDING_QUEEN,
+                    C.GREETING_DURATION_TICKS)
             self.state         = IDLE
             self.target        = None
             self.idle_cooldown = random.randint(20, 40)
@@ -629,6 +640,7 @@ class LilGuy:
                     )
                     chamber.brood.remove(b)
                     chamber.colony.food_store += recovered
+                    chamber._emit(events.young_died(chamber._tick))
                     break
             self.state  = IDLE
             self.target = None
@@ -833,3 +845,13 @@ class LilGuy:
         self.last_dx   = dx
         self.last_dy   = dy
         return True
+
+    def _emit_interaction(self, chamber, kind, duration_hint):
+        """Emit a paired interaction_started + interaction_ended event."""
+        bus = chamber._event_bus
+        if bus is None:
+            return
+        pid = bus.next_pair_id()
+        bus.emit(events.interaction_started(
+            chamber._tick, pid, kind, duration_hint=duration_hint))
+        bus.emit(events.interaction_ended(chamber._tick, pid))
