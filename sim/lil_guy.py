@@ -15,6 +15,10 @@ States:
                the queen, drops cargo and switches to IDLE.
 
 Movement engine:
+  Workers have float (x, y) positions and move fractionally each tick
+  toward a target_cell (int, int). Cell derivation: int(floor(x/y)).
+  Decision handlers only fire when target_cell is None (arrived).
+
   Workers read the 4 cardinal-neighbour marker values directly and step
   toward the strongest. This is the discrete-grid equivalent of
   JohnBuffer's continuous-space random-cone sampling — cheaper,
@@ -34,6 +38,9 @@ Movement engine:
   Cells near the colony have strong to_home markers; cells near food
   have strong to_food markers. Gradients point the right way by
   construction — no pathfinding, no corridor sampling, no BFS.
+
+  Pheromone deposits happen on cell entry (tracked by last_cell),
+  not every tick, so trail density matches actual grid traversal.
 """
 
 import random
@@ -62,7 +69,8 @@ FORAGE      = TO_FOOD
 class LilGuy:
     __slots__ = (
         'x', 'y', 'prev_x', 'prev_y', 'state', 'target',
-        'move_cooldown', 'age', 'alive',
+        'target_cell', 'speed', 'last_cell',
+        'age', 'alive',
         'role', 'move_ticks', 'sense_radius', 'carry_amount',
         'facing_dx', 'facing_dy', 'food_carried',
         'last_dx', 'last_dy',
@@ -73,21 +81,21 @@ class LilGuy:
     )
 
     def __init__(self, x, y, role=None, is_pioneer=False):
-        self.x             = x
-        self.y             = y
-        self.prev_x        = x
-        self.prev_y        = y
+        self.x             = float(x) + 0.5
+        self.y             = float(y) + 0.5
+        self.prev_x        = self.x
+        self.prev_y        = self.y
         self.state         = IDLE
         self.target        = None
-        self.move_cooldown = 0
+        self.target_cell   = None   # next cell to walk toward, (int, int) or None
         self.age           = 0
         self.alive         = True
 
         # Random initial facing so workers scatter naturally on spawn.
-        self.facing_dx     = random.choice((-1, 1))
-        self.facing_dy     = 0
+        self.facing_dx     = float(random.choice((-1, 1)))
+        self.facing_dy     = 0.0
         self.last_dx       = self.facing_dx
-        self.last_dy       = 0
+        self.last_dy       = 0.0
 
         self.food_carried  = 0.0
 
@@ -128,6 +136,7 @@ class LilGuy:
         self.sense_radius  = params['sense_radius']
         self.carry_amount  = params['carry_amount']
         self.metabolism    = params['metabolism']
+        self.speed         = params['speed']
 
         # Lifespan — pioneers (first founding brood) are
         # shorter-lived than regular workers of the same role.
@@ -137,6 +146,74 @@ class LilGuy:
         else:
             lo, hi = params['lifespan']
         self.max_age = random.randint(lo, hi)
+
+        # Last cell entered — pheromone deposits are gated on cell entry.
+        self.last_cell = (int(x), int(y))
+
+    # ================================================================
+    #  Position helpers
+    # ================================================================
+
+    def cell(self):
+        """Current grid cell as (int, int), derived from float position."""
+        return int(math.floor(self.x)), int(math.floor(self.y))
+
+    def _set_target_cell(self, cx, cy, chamber):
+        """Set the next cell to walk toward. Returns True if valid."""
+        if not chamber.in_bounds(cx, cy):
+            return False
+        self.target_cell = (cx, cy)
+        return True
+
+    def _advance_toward_target(self, chamber):
+        """Move fractionally toward target_cell center. Called every tick."""
+        if self.target_cell is None:
+            return
+        # Target is center of the target cell
+        tx = self.target_cell[0] + 0.5
+        ty = self.target_cell[1] + 0.5
+        dx = tx - self.x
+        dy = ty - self.y
+        dist = math.sqrt(dx * dx + dy * dy)
+        if dist < C.ARRIVAL_THRESHOLD:
+            # Snap to center, mark arrival
+            self.x, self.y = tx, ty
+            new_cell = self.target_cell
+            if new_cell != self.last_cell:
+                self._on_enter_cell(new_cell, chamber)
+                self.last_cell = new_cell
+            self.target_cell = None
+            return
+        # Move toward target, don't overshoot
+        step = min(self.speed, dist)
+        self.x += (dx / dist) * step
+        self.y += (dy / dist) * step
+        # Update facing from velocity
+        self.facing_dx = dx / dist
+        self.facing_dy = dy / dist
+        self.last_dx = self.facing_dx
+        self.last_dy = self.facing_dy
+        # Check cell entry mid-transit
+        new_cell = self.cell()
+        if new_cell != self.last_cell:
+            self._on_enter_cell(new_cell, chamber)
+            self.last_cell = new_cell
+
+    def _on_enter_cell(self, new_cell, chamber):
+        """Called when floor'd cell changes. Pheromone deposits happen here."""
+        cx, cy = new_cell
+        if self.state == TO_FOOD:
+            intensity = C.BASE_MARKER_INTENSITY * math.exp(
+                -C.MARKER_STEP_DECAY * self.steps_walked)
+            chamber.deposit_home(cx, cy, intensity)
+            self.steps_walked += 1
+            self.chamber_steps += 1
+        elif self.state == TO_HOME:
+            if self.food_carried > 0:
+                intensity = C.BASE_MARKER_INTENSITY * math.exp(
+                    -C.MARKER_STEP_DECAY * self.steps_walked)
+                chamber.deposit_food(cx, cy, intensity)
+            self.steps_walked += 1
 
     # ================================================================
     #  Per-tick entry point
@@ -187,12 +264,15 @@ class LilGuy:
                 and self.state != TO_HOME):
             self.state        = TO_HOME
             self.target       = None
+            self.target_cell  = None
             self.steps_walked = 0
             self.facing_dx    = -self.facing_dx
             self.facing_dy    = -self.facing_dy
 
-        # IDLE workers only reconsider after their cooldown expires,
-        # so departures stagger naturally instead of wave-bursting.
+        # Movement phase — every tick
+        self._advance_toward_target(chamber)
+
+        # Decision phase — only when arrived (no pending target)
         if self.state == IDLE:
             if self.idle_cooldown > 0:
                 self.idle_cooldown -= 1
@@ -201,18 +281,19 @@ class LilGuy:
         elif not self._target_still_valid(chamber):
             self._pick_task(chamber)
 
-        if self.state == TEND_BROOD:
-            self._do_tend_brood(chamber)
-        elif self.state == TEND_QUEEN:
-            self._do_tend_queen(chamber)
-        elif self.state == CANNIBALIZE:
-            self._do_cannibalize(chamber)
-        elif self.state == TO_FOOD:
-            self._do_to_food(chamber)
-        elif self.state == TO_HOME:
-            self._do_to_home(chamber)
-        else:
-            self._do_idle(chamber)
+        if self.target_cell is None:
+            if self.state == TEND_BROOD:
+                self._do_tend_brood(chamber)
+            elif self.state == TEND_QUEEN:
+                self._do_tend_queen(chamber)
+            elif self.state == CANNIBALIZE:
+                self._do_cannibalize(chamber)
+            elif self.state == TO_FOOD:
+                self._do_to_food(chamber)
+            elif self.state == TO_HOME:
+                self._do_to_home(chamber)
+            else:
+                self._do_idle(chamber)
 
     # ================================================================
     #  Task selection
@@ -225,12 +306,14 @@ class LilGuy:
         if self.food_carried > 0:
             self.state  = TO_HOME
             self.target = None
+            self.target_cell = None
             return
 
         # Non-queen chamber — head home.
         if chamber.queen is None:
             self.state        = TO_HOME
             self.target       = None
+            self.target_cell  = None
             self.steps_walked = 0
             return
 
@@ -248,6 +331,7 @@ class LilGuy:
                 and self._within_sense(queen.x, queen.y)):
             self.state  = TEND_QUEEN
             self.target = (queen.x, queen.y)
+            self.target_cell = None
             return
 
         # Domestic: feed queen (normal priority).
@@ -257,6 +341,7 @@ class LilGuy:
                 and self._within_sense(queen.x, queen.y)):
             self.state  = TEND_QUEEN
             self.target = (queen.x, queen.y)
+            self.target_cell = None
             return
 
         # Stage 2 — under severe famine, workers stop tending brood
@@ -270,6 +355,7 @@ class LilGuy:
                 if victim is not None:
                     self.state  = CANNIBALIZE
                     self.target = (victim.x, victim.y)
+                    self.target_cell = None
                     chamber.cannibalism_cooldown = C.BROOD_CANNIBALISM_COOLDOWN
                     return
         else:
@@ -285,6 +371,7 @@ class LilGuy:
                 if colony.gatherer_count >= min_gatherers:
                     self.state  = TEND_BROOD
                     self.target = (larva.x, larva.y)
+                    self.target_cell = None
                     return
                 # Not enough gatherers — fall through to gathering.
 
@@ -295,6 +382,7 @@ class LilGuy:
         if self._detects_food_trail(chamber):
             self.state         = TO_FOOD
             self.target        = None
+            self.target_cell   = None
             self.steps_walked  = 0
             self.chamber_steps = 0
             return
@@ -314,12 +402,14 @@ class LilGuy:
                 )
             self.state         = IDLE
             self.target        = None
+            self.target_cell   = None
             self.idle_cooldown = cd
             return
 
         # Go gather.
         self.state         = TO_FOOD
         self.target        = None
+        self.target_cell   = None
         self.steps_walked  = 0
         self.chamber_steps = 0
 
@@ -328,15 +418,11 @@ class LilGuy:
     # ================================================================
 
     def _do_to_food(self, chamber):
-        if self.move_cooldown > 0:
-            self.move_cooldown -= 1
-            return
-        self.move_cooldown = self._move_delay(chamber)
-
         # Scout patience — give up and head home after too long.
         if self.steps_walked > C.SCOUT_PATIENCE_TICKS:
             self.state         = TO_HOME
             self.target        = None
+            self.target_cell   = None
             self.steps_walked  = 0
             self.facing_dx     = -self.facing_dx
             self.facing_dy     = -self.facing_dy
@@ -351,28 +437,21 @@ class LilGuy:
                 self.food_carried  = taken
                 self.state         = TO_HOME
                 self.target        = None
+                self.target_cell   = None
                 self.steps_walked  = 0
                 # Flip facing 180° — "forward" now points home.
                 self.facing_dx = -self.facing_dx
                 self.facing_dy = -self.facing_dy
                 return
 
-        # Stall detection — if the worker is following a food gradient
-        # but there's no actual food here, it's at the peak of an
-        # exhausted supply. Count ticks at the gradient peak and
-        # break out to explore after STALL_THRESHOLD_TICKS.
-        #
-        # Detects both true stalls (no movement) and oscillation
-        # (bouncing between two cells at the gradient peak).
-        old_x, old_y = self.x, self.y
-
         # Movement decision (in priority order):
         # 1. Walk toward a visible food pile within sense radius.
         # 2. Follow to_food gradient (unless stalled at an
         #    exhausted site — skip to random walk).
         # 3. Entry attraction / momentum random walk.
+        cx, cy = self.cell()
         visible_pile = chamber.nearest_food_within(
-            self.x, self.y, self.sense_radius,
+            cx, cy, self.sense_radius,
         )
         if visible_pile is not None:
             self._step_toward_cell(visible_pile, chamber)
@@ -381,7 +460,8 @@ class LilGuy:
             step = self._sample_markers(chamber, 'food')
             if step is not None:
                 dx, dy = step
-                self._try_move(dx, dy, chamber)
+                cx, cy = self.cell()
+                self._set_target_cell(cx + dx, cy + dy, chamber)
             else:
                 self._explore_or_wander(chamber)
         else:
@@ -399,39 +479,26 @@ class LilGuy:
             # No trail at all — exploring freely, not stalled.
             self.stall_ticks = 0
 
-        # Deposit to_home marker at new position. Intensity decays
-        # with steps walked — cells near the colony are strong, far
-        # cells are weak. The gradient points home by construction.
-        intensity = C.BASE_MARKER_INTENSITY * math.exp(
-            -C.MARKER_STEP_DECAY * self.steps_walked
-        )
-        chamber.deposit_home(self.x, self.y, intensity)
-        self.steps_walked += 1
-        self.chamber_steps += 1
-
     # ================================================================
     #  Gathering: TO_HOME (returning with food)
     # ================================================================
 
     def _do_to_home(self, chamber):
-        if self.move_cooldown > 0:
-            self.move_cooldown -= 1
-            return
-        self.move_cooldown = self._move_delay(chamber)
-
         if chamber.queen is not None:
             # In the queen chamber — walk to queen, dump food into
             # the colony's abstract food store.
             qx, qy = chamber.queen.x, chamber.queen.y
-            if abs(qx - self.x) + abs(qy - self.y) <= 1:
+            cx, cy = self.cell()
+            if abs(qx - cx) + abs(qy - cy) <= 1:
                 chamber._emit(events.food_delivered(
-                    chamber._tick, self.x, self.y, self.food_carried))
+                    chamber._tick, cx, cy, self.food_carried))
                 chamber.colony.food_store += self.food_carried
                 self.food_carried  = 0.0
                 # Signal nestmates — a gatherer just delivered food.
                 chamber.food_delivery_signal = 200
                 self.state         = IDLE
                 self.target        = None
+                self.target_cell   = None
                 self.steps_walked  = 0
                 # Gathering wear — completed trips age the worker.
                 self.age += random.randint(*C.GATHERING_TRIP_WEAR)
@@ -444,7 +511,8 @@ class LilGuy:
             step = self._sample_markers(chamber, 'home')
             if step is not None:
                 dx, dy = step
-                self._try_move(dx, dy, chamber)
+                cx, cy = self.cell()
+                self._set_target_cell(cx + dx, cy + dy, chamber)
             else:
                 home_face = chamber.home_face
                 if home_face is not None:
@@ -452,16 +520,6 @@ class LilGuy:
                     self._step_toward_cell(entry, chamber)
                 else:
                     self._persistent_forward_step(chamber)
-
-        # Deposit to_food marker everywhere the gatherer walks — the
-        # trail must extend through the nest so outbound workers can
-        # follow it from the queen all the way to the food source.
-        if self.food_carried > 0:
-            intensity = C.BASE_MARKER_INTENSITY * math.exp(
-                -C.MARKER_STEP_DECAY * self.steps_walked
-            )
-            chamber.deposit_food(self.x, self.y, intensity)
-        self.steps_walked += 1
 
     # ================================================================
     #  Marker sampling — the core engine (JohnBuffer-style)
@@ -490,13 +548,14 @@ class LilGuy:
         walkers stay committed; remaining ties break randomly so
         workers don't all queue into the same cell.
         """
+        cx, cy = self.cell()
         read_fn = (chamber.pheromones.home if layer == 'home'
                    else chamber.pheromones.food)
         neighbours = (
-            ( 1,  0, read_fn(self.x + 1, self.y)),
-            (-1,  0, read_fn(self.x - 1, self.y)),
-            ( 0,  1, read_fn(self.x, self.y + 1)),
-            ( 0, -1, read_fn(self.x, self.y - 1)),
+            ( 1,  0, read_fn(cx + 1, cy)),
+            (-1,  0, read_fn(cx - 1, cy)),
+            ( 0,  1, read_fn(cx, cy + 1)),
+            ( 0, -1, read_fn(cx, cy - 1)),
         )
 
         best_val = 0.0
@@ -513,7 +572,11 @@ class LilGuy:
         if len(best_picks) == 1:
             return best_picks[0]
 
-        facing = (self.facing_dx, self.facing_dy)
+        # Quantize facing to cardinal for tie-break
+        if abs(self.facing_dx) >= abs(self.facing_dy):
+            facing = (1 if self.facing_dx > 0 else -1, 0)
+        else:
+            facing = (0, 1 if self.facing_dy > 0 else -1)
         if facing in best_picks:
             return facing
         return random.choice(best_picks)
@@ -524,13 +587,9 @@ class LilGuy:
 
     def _do_tend_brood(self, chamber):
         """Walk to target larva, deduct from food_store, feed it."""
-        if self.move_cooldown > 0:
-            self.move_cooldown -= 1
-            return
-        self.move_cooldown = self._move_delay(chamber)
-
         tx, ty = self.target
-        if abs(tx - self.x) + abs(ty - self.y) <= 1:
+        cx, cy = self.cell()
+        if abs(tx - cx) + abs(ty - cy) <= 1:
             feed_amt = C.LARVA_FEED_AMOUNT
             store = chamber.colony.food_store
             if store >= feed_amt:
@@ -546,19 +605,16 @@ class LilGuy:
                         break
             self.state         = IDLE
             self.target        = None
+            self.target_cell   = None
             self.idle_cooldown = random.randint(20, 40)
             return
         self._step_toward_cell((tx, ty), chamber)
 
     def _do_tend_queen(self, chamber):
         """Walk to queen, deduct from food_store, reduce her hunger."""
-        if self.move_cooldown > 0:
-            self.move_cooldown -= 1
-            return
-        self.move_cooldown = self._move_delay(chamber)
-
         tx, ty = self.target
-        if abs(tx - self.x) + abs(ty - self.y) <= 1:
+        cx, cy = self.cell()
+        if abs(tx - cx) + abs(ty - cy) <= 1:
             feed_amt = C.LARVA_FEED_AMOUNT
             store = chamber.colony.food_store
             if store >= feed_amt:
@@ -572,25 +628,30 @@ class LilGuy:
                     C.GREETING_DURATION_TICKS)
             self.state         = IDLE
             self.target        = None
+            self.target_cell   = None
             self.idle_cooldown = random.randint(20, 40)
             return
         self._step_toward_cell((tx, ty), chamber)
 
     def _do_idle(self, chamber):
         """Random walk with a gentle pull toward the queen."""
-        if self.move_cooldown > 0:
-            self.move_cooldown -= 1
-            return
-        self.move_cooldown = self._move_delay(chamber)
-
+        cx, cy = self.cell()
         q = chamber.queen
         if q is not None and random.random() < 0.3:
-            dx = 1 if q.x > self.x else (-1 if q.x < self.x else 0)
-            dy = 1 if q.y > self.y else (-1 if q.y < self.y else 0)
+            dx = 1 if q.x > cx else (-1 if q.x < cx else 0)
+            dy = 1 if q.y > cy else (-1 if q.y < cy else 0)
         else:
             dx = random.choice((-1, 0, 1))
             dy = random.choice((-1, 0, 1))
-        self._try_move(dx, dy, chamber)
+        # Resolve diagonals to cardinal
+        if dx != 0 and dy != 0:
+            if random.random() < 0.5:
+                dy = 0
+            else:
+                dx = 0
+        if dx == 0 and dy == 0:
+            return
+        self._set_target_cell(cx + dx, cy + dy, chamber)
 
     # ================================================================
     #  Task validity
@@ -623,13 +684,9 @@ class LilGuy:
     def _do_cannibalize(self, chamber):
         """Walk to target larva and consume it, creating a small
         food pile from recovered energy."""
-        if self.move_cooldown > 0:
-            self.move_cooldown -= 1
-            return
-        self.move_cooldown = self._move_delay(chamber)
-
         tx, ty = self.target
-        if abs(tx - self.x) + abs(ty - self.y) <= 1:
+        cx, cy = self.cell()
+        if abs(tx - cx) + abs(ty - cy) <= 1:
             for b in list(chamber.brood):
                 if ((b.x, b.y) == (tx, ty)
                         and b.stage == brood_mod.LARVA
@@ -644,22 +701,13 @@ class LilGuy:
                     break
             self.state  = IDLE
             self.target = None
+            self.target_cell = None
             return
         self._step_toward_cell((tx, ty), chamber)
 
     # ================================================================
     #  Helpers
     # ================================================================
-
-    def _move_delay(self, chamber):
-        """Movement cooldown, doubled under severe food stress
-        (starvation cascade stage 2 — conserve energy). Gatherers
-        are exempt — they need full speed to find food and save
-        the colony."""
-        if (chamber.colony.food_pressure() > C.FAMINE_SLOWDOWN_PRESSURE
-                and self.state not in (TO_FOOD, TO_HOME)):
-            return self.move_ticks * 2
-        return self.move_ticks
 
     def _brood_present(self, chamber):
         for b in chamber.brood:
@@ -668,6 +716,7 @@ class LilGuy:
         return False
 
     def _nearest_hungry_larva(self, chamber):
+        cx, cy = self.cell()
         best   = None
         best_d = 1_000_000
         for b in chamber.brood:
@@ -675,7 +724,7 @@ class LilGuy:
                 continue
             if not b.needs_feeding():
                 continue
-            d = abs(b.x - self.x) + abs(b.y - self.y)
+            d = abs(b.x - cx) + abs(b.y - cy)
             if d <= self.sense_radius and d < best_d:
                 best   = b
                 best_d = d
@@ -701,14 +750,16 @@ class LilGuy:
         return chamber.food_delivery_signal > 0
 
     def _within_sense(self, tx, ty):
-        return abs(tx - self.x) + abs(ty - self.y) <= self.sense_radius
+        cx, cy = self.cell()
+        return abs(tx - cx) + abs(ty - cy) <= self.sense_radius
 
     def _food_pile_adjacent(self, chamber):
         """Return (x, y) of a food pile on or adjacent to the worker."""
-        if (self.x, self.y) in chamber.food_cells:
-            return (self.x, self.y)
+        cx, cy = self.cell()
+        if (cx, cy) in chamber.food_cells:
+            return (cx, cy)
         for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-            key = (self.x + dx, self.y + dy)
+            key = (cx + dx, cy + dy)
             if key in chamber.food_cells and chamber.food_cells[key] > 0:
                 return key
         return None
@@ -721,6 +772,7 @@ class LilGuy:
         explore outward, not back toward the nest)."""
         if max_dist is None:
             max_dist = C.ENTRY_ATTRACT_RADIUS
+        cx, cy = self.cell()
         best = None
         best_d = max_dist + 1
         for face, pos in C.ENTRY_POINTS.items():
@@ -728,7 +780,7 @@ class LilGuy:
                 continue
             if face == exclude_face:
                 continue
-            d = abs(pos[0] - self.x) + abs(pos[1] - self.y)
+            d = abs(pos[0] - cx) + abs(pos[1] - cy)
             if d < best_d:
                 best_d = d
                 best   = pos
@@ -753,10 +805,15 @@ class LilGuy:
               and chamber.home_face is not None):
             # Just entered a non-home chamber — push a few steps
             # inward to clear the entry cell (prevents re-crossing).
-            dx, dy = self.facing_dx, self.facing_dy
-            if dx == 0 and dy == 0:
-                dx, dy = 1, 0
-            if not self._try_move(dx, dy, chamber):
+            # Quantize facing to cardinal for the push direction.
+            if abs(self.facing_dx) >= abs(self.facing_dy):
+                dx = 1 if self.facing_dx > 0 else -1
+                dy = 0
+            else:
+                dx = 0
+                dy = 1 if self.facing_dy > 0 else -1
+            cx, cy = self.cell()
+            if not self._set_target_cell(cx + dx, cy + dy, chamber):
                 self._persistent_forward_step(chamber)
             return
         elif random.random() < 0.3:
@@ -770,29 +827,35 @@ class LilGuy:
 
     # ---- movement ----
 
-    def _step_toward_cell(self, cell, chamber):
+    def _step_toward_cell(self, target, chamber):
         """Walk one cardinal cell toward a target. Prefer the longer
         axis; if blocked, try the other axis."""
-        tx, ty = cell
-        if (self.x, self.y) == (tx, ty):
+        tx, ty = target
+        cx, cy = self.cell()
+        if (cx, cy) == (tx, ty):
             return
-        dx = 1 if tx > self.x else (-1 if tx < self.x else 0)
-        dy = 1 if ty > self.y else (-1 if ty < self.y else 0)
+        dx = 1 if tx > cx else (-1 if tx < cx else 0)
+        dy = 1 if ty > cy else (-1 if ty < cy else 0)
 
-        if abs(tx - self.x) >= abs(ty - self.y):
-            if not self._try_move(dx, 0, chamber):
-                self._try_move(0, dy, chamber)
+        if abs(tx - cx) >= abs(ty - cy):
+            if not self._set_target_cell(cx + dx, cy, chamber):
+                self._set_target_cell(cx, cy + dy, chamber)
         else:
-            if not self._try_move(0, dy, chamber):
-                self._try_move(dx, 0, chamber)
+            if not self._set_target_cell(cx, cy + dy, chamber):
+                self._set_target_cell(cx + dx, cy, chamber)
 
     def _persistent_forward_step(self, chamber):
         """Momentum-biased random walk: 70% forward, 12% left, 12%
         right, 6% reverse. Heavily biased so scouts make visible
         progress. The occasional reverse prevents infinite wall-hug."""
-        fx, fy = self.facing_dx, self.facing_dy
-        if fx == 0 and fy == 0:
-            fx, fy = 1, 0
+        # Quantize facing to cardinal
+        if abs(self.facing_dx) >= abs(self.facing_dy):
+            fx = 1 if self.facing_dx > 0 else -1
+            fy = 0
+        else:
+            fx = 0
+            fy = 1 if self.facing_dy > 0 else -1
+
         r = random.random()
         if r < 0.70:
             dx, dy = fx, fy
@@ -802,49 +865,14 @@ class LilGuy:
             dx, dy = fy, -fx        # right (90° CW)
         else:
             dx, dy = -fx, -fy       # reverse
-        if not chamber.in_bounds(self.x + dx, self.y + dy):
+
+        cx, cy = self.cell()
+        if not chamber.in_bounds(cx + dx, cy + dy):
             for adx, ady in ((fx, fy), (-fy, fx), (fy, -fx), (-fx, -fy)):
-                if chamber.in_bounds(self.x + adx, self.y + ady):
+                if chamber.in_bounds(cx + adx, cy + ady):
                     dx, dy = adx, ady
                     break
-        self._try_move(dx, dy, chamber)
-
-    def _step_toward(self, tx, ty, chamber):
-        """Step toward target with move cooldown (domestic tasks)."""
-        if self.move_cooldown > 0:
-            self.move_cooldown -= 1
-            return
-        self.move_cooldown = self._move_delay(chamber)
-
-        dx = 1 if tx > self.x else (-1 if tx < self.x else 0)
-        dy = 1 if ty > self.y else (-1 if ty < self.y else 0)
-        if abs(tx - self.x) >= abs(ty - self.y):
-            if not self._try_move(dx, 0, chamber):
-                self._try_move(0, dy, chamber)
-        else:
-            if not self._try_move(0, dy, chamber):
-                self._try_move(dx, 0, chamber)
-
-    def _try_move(self, dx, dy, chamber):
-        """Move one cell. Resolve diagonals to cardinal. Update facing."""
-        if dx != 0 and dy != 0:
-            if random.random() < 0.5:
-                dy = 0
-            else:
-                dx = 0
-        if dx == 0 and dy == 0:
-            return False
-        nx = self.x + dx
-        ny = self.y + dy
-        if not chamber.in_bounds(nx, ny):
-            return False
-        self.x = nx
-        self.y = ny
-        self.facing_dx = dx
-        self.facing_dy = dy
-        self.last_dx   = dx
-        self.last_dy   = dy
-        return True
+        self._set_target_cell(cx + dx, cy + dy, chamber)
 
     def _emit_interaction(self, chamber, kind, duration_hint):
         """Emit a paired interaction_started + interaction_ended event."""

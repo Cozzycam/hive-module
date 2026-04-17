@@ -43,13 +43,14 @@ def _blit_centered(dest, surf, cx, cy, origin_x=0, origin_y=0):
 
 
 def _blit_centered_px(dest, surf, fx, fy, origin_x=0, origin_y=0):
-    """Blit with fractional (pixel-space) grid coordinates for smooth
-    interpolation between ticks."""
+    """Blit with float position (cell centers at cx+0.5, cy+0.5).
+    No CELL_SIZE/2 offset — the +0.5 in float position already
+    places the worker at the pixel center of its cell."""
     px = fx * C.CELL_SIZE
     py = fy * C.CELL_SIZE
     sw, sh = surf.get_size()
-    dest.blit(surf, (origin_x + int(px - sw / 2 + C.CELL_SIZE / 2),
-                     origin_y + int(py - sh / 2 + C.CELL_SIZE / 2)))
+    dest.blit(surf, (origin_x + int(px - sw / 2),
+                     origin_y + int(py - sh / 2)))
 
 
 def draw_chamber(dest, chamber, origin_x=0, origin_y=0, lerp_t=1.0,
@@ -156,21 +157,24 @@ def draw_chamber(dest, chamber, origin_x=0, origin_y=0, lerp_t=1.0,
         _blit_centered_px(dest, surf, fx, fy, origin_x, origin_y)
 
         # Pixel position of this worker (for overlays)
-        apx = origin_x + int(fx * cell + cell / 2)
-        apy = origin_y + int(fy * cell + cell / 2)
+        apx = origin_x + int(fx * cell)
+        apy = origin_y + int(fy * cell)
 
         # Food morsel — bright dot when carrying food
         if w.food_carried > 0:
             # Offset morsel opposite to facing direction (carried on back)
-            mx = apx - w.facing_dx * 2
-            my = apy - w.facing_dy * 2
+            mx = apx - int(w.facing_dx * 2)
+            my = apy - int(w.facing_dy * 2)
             pygame.draw.circle(dest, P.FOOD_CARRY, (mx, my), 2)
 
         # Feeding indicator — small food particle between worker and
         # target when adjacent and actively tending brood or queen.
         if w.state in (TEND_BROOD, TEND_QUEEN) and w.target is not None:
             tx, ty = w.target
-            if abs(tx - w.x) + abs(ty - w.y) <= 1:
+            import math as _m
+            wcx = int(_m.floor(w.x))
+            wcy = int(_m.floor(w.y))
+            if abs(tx - wcx) + abs(ty - wcy) <= 1:
                 tpx = origin_x + tx * cell + cell // 2
                 tpy = origin_y + ty * cell + cell // 2
                 mid_x = (apx + tpx) // 2

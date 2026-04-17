@@ -177,25 +177,29 @@ class Coordinator:
         opp = C.FACE_OPPOSITE[face]
         ex, ey = C.ENTRY_POINTS[opp]
 
-        # Step inward from the entry.
+        # Step inward from the entry — position at cell center (float).
         dcol, drow = C.FACE_DELTAS[opp]
-        lil_guy.x = ex - dcol
-        lil_guy.y = ey - drow
-        if not dest.in_bounds(lil_guy.x, lil_guy.y):
-            lil_guy.x, lil_guy.y = ex, ey
+        target_cx = ex - dcol
+        target_cy = ey - drow
+        if not dest.in_bounds(target_cx, target_cy):
+            target_cx, target_cy = ex, ey
+        lil_guy.x = float(target_cx) + 0.5
+        lil_guy.y = float(target_cy) + 0.5
 
         # Reset interpolation.
         lil_guy.prev_x = lil_guy.x
         lil_guy.prev_y = lil_guy.y
 
         # Face inward — the negative of the outward-pointing delta.
-        lil_guy.facing_dx = -dcol
-        lil_guy.facing_dy = -drow
-        lil_guy.last_dx   = -dcol
-        lil_guy.last_dy   = -drow
+        lil_guy.facing_dx = float(-dcol)
+        lil_guy.facing_dy = float(-drow)
+        lil_guy.last_dx   = float(-dcol)
+        lil_guy.last_dy   = float(-drow)
 
         # Clear stale target (was in old chamber).
         lil_guy.target = None
+        lil_guy.target_cell = None
+        lil_guy.last_cell = (target_cx, target_cy)
 
         # State, food_carried, steps_walked are PRESERVED.
         # The worker continues its mission in the new chamber.
@@ -218,10 +222,12 @@ class Coordinator:
         intensity = C.BASE_MARKER_INTENSITY * math.exp(
             -C.MARKER_STEP_DECAY * effective_steps
         )
+        dep_cx = int(math.floor(lil_guy.x))
+        dep_cy = int(math.floor(lil_guy.y))
         if lil_guy.state == TO_HOME and lil_guy.food_carried > 0:
-            dest.deposit_food(lil_guy.x, lil_guy.y, intensity)
+            dest.deposit_food(dep_cx, dep_cy, intensity)
         elif lil_guy.state == TO_FOOD:
-            dest.deposit_home(lil_guy.x, lil_guy.y, intensity)
+            dest.deposit_home(dep_cx, dep_cy, intensity)
 
         dest.workers.append(lil_guy)
         self.event_bus.emit(events.handoff_incoming(

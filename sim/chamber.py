@@ -13,6 +13,7 @@ neighbour on the same tick.
 """
 
 import random
+import math
 
 import config as C
 from sim.queen import Queen
@@ -304,7 +305,9 @@ class Chamber:
         for w in dead_workers:
             # Drop carried food as a small pile at death location.
             if w.food_carried > 0:
-                self.add_food(w.x, w.y, w.food_carried)
+                cx = int(math.floor(w.x))
+                cy = int(math.floor(w.y))
+                self.add_food(cx, cy, w.food_carried)
             self._emit(events.lil_guy_died(self._tick))
             self.workers.remove(w)
 
@@ -327,7 +330,9 @@ class Chamber:
                 coordinator.handoff(w, self.module_id, neighbour_id, face)
 
     def _check_edge_crossing(self, worker):
-        pos = (worker.x, worker.y)
+        cx = int(math.floor(worker.x))
+        cy = int(math.floor(worker.y))
+        pos = (cx, cy)
         for face, entry_pos in C.ENTRY_POINTS.items():
             if pos == entry_pos and self.entries.get(face) is not None:
                 return face
@@ -354,7 +359,7 @@ class Chamber:
         for i, w in enumerate(self.workers):
             if not w.alive:
                 continue
-            key = (w.x, w.y)
+            key = (int(math.floor(w.x)), int(math.floor(w.y)))
             if key in grid:
                 grid[key].append(i)
             else:

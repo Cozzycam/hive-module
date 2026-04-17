@@ -37,7 +37,7 @@ class PheromoneMap:
         self._food = [0.0] * size
 
     def _idx(self, x, y):
-        return y * self.width + x
+        return int(y) * self.width + int(x)
 
     def _in(self, x, y):
         return 0 <= x < self.width and 0 <= y < self.height

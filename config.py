@@ -100,6 +100,7 @@ GATHERING_TRIP_WEAR       = (10, 20)  # bonus age ticks per completed trip
 ROLE_PARAMS = {
     ROLE_MINOR: {
         'move_ticks':        4,
+        'speed':             0.25,    # cells per tick (= 1/move_ticks)
         'sense_radius':      8,
         'carry_amount':      6.6,      # was 6.0, +10%
         'metabolism':        WORKER_METABOLISM_MINOR,
@@ -109,6 +110,7 @@ ROLE_PARAMS = {
     },
     ROLE_MAJOR: {
         'move_ticks':        6,
+        'speed':             1.0 / 6,  # cells per tick (= 1/move_ticks)
         'sense_radius':      6,
         'carry_amount':      16.5,   # +10% from original 15.0
         'metabolism':        WORKER_METABOLISM_MAJOR,
@@ -142,6 +144,8 @@ PRIO_GATHER     = 1
 # Two layers: to_home (deposited by outbound workers, followed by
 # returning workers) and to_food (deposited by returning workers,
 # followed by outbound workers).
+
+ARRIVAL_THRESHOLD      = 0.05    # snap-to-center distance for sub-cell movement
 
 BASE_MARKER_INTENSITY  = 10.0    # deposit strength at 0 steps from source
 MARKER_STEP_DECAY      = 0.02   # exp coefficient per step walked
