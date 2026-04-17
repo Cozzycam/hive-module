@@ -27,3 +27,6 @@ Thumbs.db
 # Local/user runtime
 *.log
 *.tmp
+
+# PlatformIO
+.pio/
