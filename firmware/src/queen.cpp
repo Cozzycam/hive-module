@@ -134,6 +134,7 @@ void Queen::_lay(Chamber& ch) {
             ch.add_brood(ex, ey, Cfg::DEFAULT_BROOD_ROLE);
             eggs_laid++;
             Event ev; ev.type = EVT_QUEEN_LAID_EGG; ev.tick = ch.tick_num;
+            ev.position = {static_cast<int8_t>(ex), static_cast<int8_t>(ey)};
             ch.emit(ev);
         } else {
             reserves += consumed;

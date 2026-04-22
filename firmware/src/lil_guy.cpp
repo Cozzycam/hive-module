@@ -2,6 +2,7 @@
 #include "lil_guy.h"
 #include "chamber.h"
 #include "rng.h"
+#include "time_of_day.h"
 #include <cmath>
 
 void LilGuy::init(int8_t px, int8_t py, Role c, bool pioneer) {
@@ -32,6 +33,11 @@ void LilGuy::init(int8_t px, int8_t py, Role c, bool pioneer) {
     last_cell_x = px;
     last_cell_y = py;
 
+    idle_ticks_remaining = 0;
+    idle_repoll_tick = 0;
+    idle_microstate = 0;
+    idle_micro_ticks = 0;
+
     role = c;
     is_pioneer = pioneer;
     const auto& p = Cfg::ROLE_PARAMS[c];
@@ -58,6 +64,7 @@ void LilGuy::tick(Chamber& ch) {
     if (age >= max_age) {
         alive = false;
         Event ev; ev.type = EVT_LIL_GUY_DIED; ev.tick = ch.tick_num;
+        ev.position = {static_cast<int8_t>(cell_x()), static_cast<int8_t>(cell_y())};
         ch.emit(ev);
         return;
     }
@@ -76,6 +83,7 @@ void LilGuy::tick(Chamber& ch) {
         if (hunger >= Cfg::WORKER_STARVE_THRESHOLD) {
             alive = false;
             Event ev; ev.type = EVT_LIL_GUY_DIED; ev.tick = ch.tick_num;
+            ev.position = {static_cast<int8_t>(cell_x()), static_cast<int8_t>(cell_y())};
             ch.emit(ev);
             return;
         }
@@ -100,8 +108,12 @@ void LilGuy::tick(Chamber& ch) {
 
     // Decision phase -- only when arrived (no pending target)
     if (state == STATE_IDLE) {
-        if (idle_cooldown > 0) idle_cooldown--;
-        else _pick_task(ch);
+        if (idle_ticks_remaining > 0) {
+            _tick_idle(ch);
+        } else {
+            if (idle_cooldown > 0) idle_cooldown--;
+            else _pick_task(ch);
+        }
     } else if (!_target_still_valid(ch)) {
         _pick_task(ch);
     }
@@ -188,6 +200,9 @@ void LilGuy::_on_enter_cell(int cx, int cy, Chamber& ch) {
 // ================================================================
 
 void LilGuy::_pick_task(Chamber& ch) {
+    speed = Cfg::ROLE_PARAMS[role].speed;
+    idle_ticks_remaining = 0;
+
     if (food_carried > 0) {
         state = STATE_TO_HOME;
         has_target = false;
@@ -206,7 +221,7 @@ void LilGuy::_pick_task(Chamber& ch) {
     float pressure = col->food_pressure();
     bool has_food = col->food_store >= Cfg::LARVA_FEED_AMOUNT;
 
-    // Famine override -- feed queen first
+    // Famine override -- feed queen first (bypasses idle)
     if (pressure > Cfg::FAMINE_SLOWDOWN_PRESSURE
             && ch.queen_obj.alive
             && ch.queen_obj.hunger > Cfg::QUEEN_PRIORITY_HUNGER
@@ -218,6 +233,29 @@ void LilGuy::_pick_task(Chamber& ch) {
         has_target_cell = false;
         return;
     }
+
+    // Idle budget — gates all non-critical tasks.
+    // Returns 0 during famine or founding, so crisis paths still fire.
+    float budget = _colony_idle_budget(ch);
+    if (budget > 0 && g_rng.rand_float() < budget) {
+        state = STATE_IDLE;
+        has_target = false;
+        has_target_cell = false;
+        idle_ticks_remaining = g_rng.rand_int(Cfg::IDLE_REST_MIN_TICKS,
+                                               Cfg::IDLE_REST_MAX_TICKS);
+        idle_repoll_tick = Cfg::IDLE_REPOLL_INTERVAL;
+        if (ch._food_pile_index(cell_x(), cell_y()) >= 0) {
+            idle_microstate = 1;
+            speed = Cfg::IDLE_DRIFT_SPEED;
+            idle_micro_ticks = g_rng.rand_int(Cfg::IDLE_MICROSTATE_MIN_TICKS,
+                                               Cfg::IDLE_MICROSTATE_MAX_TICKS);
+        } else {
+            _pick_idle_microstate(ch);
+        }
+        return;
+    }
+
+    // === Only ~30% of workers reach task selection below ===
 
     // Normal queen feeding
     if (ch.queen_obj.alive && ch.queen_obj.needs_feeding() && has_food
@@ -272,7 +310,7 @@ void LilGuy::_pick_task(Chamber& ch) {
         return;
     }
 
-    // Gatherer regulation
+    // Gatherer regulation — wander briefly then retry
     float target_frac = col->target_gatherer_fraction();
     int total_pop = col->population;
     if (total_pop > 0
@@ -467,6 +505,22 @@ void LilGuy::_do_tend_queen(Chamber& ch) {
 }
 
 void LilGuy::_do_idle(Chamber& ch) {
+    // True rest: only drift needs a new target cell
+    if (idle_ticks_remaining > 0) {
+        if (idle_microstate == 1) {
+            int cx = cell_x(), cy = cell_y();
+            int dx = g_rng.rand_dir();
+            int dy = g_rng.rand_dir();
+            if (dx != 0 && dy != 0) {
+                if (g_rng.rand_float() < 0.5f) dy = 0; else dx = 0;
+            }
+            if (dx == 0 && dy == 0) dx = g_rng.rand_sign();
+            _set_target_cell(cx + dx, cy + dy, ch);
+        }
+        return;
+    }
+
+    // Wander (old behavior)
     int cx = cell_x(), cy = cell_y();
     int dx, dy;
     if (ch.has_queen && g_rng.rand_float() < 0.3f) {
@@ -476,7 +530,6 @@ void LilGuy::_do_idle(Chamber& ch) {
         dx = g_rng.rand_dir();
         dy = g_rng.rand_dir();
     }
-    // Resolve diagonals to cardinal
     if (dx != 0 && dy != 0) {
         if (g_rng.rand_float() < 0.5f) dy = 0; else dx = 0;
     }
@@ -496,7 +549,8 @@ void LilGuy::_do_cannibalize(Chamber& ch) {
                 if (recovered < Cfg::BROOD_CANNIBALISM_MIN_PILE)
                     recovered = Cfg::BROOD_CANNIBALISM_MIN_PILE;
                 ch.colony->food_store += recovered;
-                { Event ev; ev.type = EVT_YOUNG_DIED; ev.tick = ch.tick_num; ch.emit(ev); }
+                { Event ev; ev.type = EVT_YOUNG_DIED; ev.tick = ch.tick_num;
+                  ev.position = {b.x, b.y}; ch.emit(ev); }
                 ch.remove_brood(i);
                 break;
             }
@@ -507,6 +561,81 @@ void LilGuy::_do_cannibalize(Chamber& ch) {
         return;
     }
     _step_toward_cell(target_x, target_y, ch);
+}
+
+// ================================================================
+//  Idle/rest
+// ================================================================
+
+void LilGuy::_tick_idle(Chamber& ch) {
+    idle_ticks_remaining--;
+    idle_micro_ticks--;
+
+    // Timer expired → exit idle
+    if (idle_ticks_remaining <= 0) {
+        speed = Cfg::ROLE_PARAMS[role].speed;
+        has_target_cell = false;
+        _pick_task(ch);
+        return;
+    }
+
+    // Periodic repoll for work
+    idle_repoll_tick--;
+    if (idle_repoll_tick <= 0) {
+        idle_repoll_tick = Cfg::IDLE_REPOLL_INTERVAL;
+
+        int16_t saved_remaining   = idle_ticks_remaining;
+        int16_t saved_micro_ticks = idle_micro_ticks;
+        uint8_t saved_microstate  = idle_microstate;
+        float   saved_speed       = speed;
+
+        _pick_task(ch);
+
+        if (state == STATE_IDLE) {
+            // No work found — stay in current rest period
+            idle_ticks_remaining = saved_remaining;
+            idle_micro_ticks     = saved_micro_ticks;
+            idle_microstate      = saved_microstate;
+            speed                = saved_speed;
+        }
+        return;
+    }
+
+    // Microstate cycling
+    if (idle_micro_ticks <= 0) {
+        _pick_idle_microstate(ch);
+    }
+}
+
+void LilGuy::_pick_idle_microstate(Chamber& ch) {
+    has_target_cell = false;
+
+    float r = g_rng.rand_float();
+    if (r < Cfg::IDLE_HOLD_WEIGHT) {
+        idle_microstate = 0;
+        speed = Cfg::ROLE_PARAMS[role].speed;
+    } else if (r < Cfg::IDLE_HOLD_WEIGHT + Cfg::IDLE_DRIFT_WEIGHT) {
+        idle_microstate = 1;
+        speed = Cfg::IDLE_DRIFT_SPEED;
+    } else {
+        idle_microstate = 2;
+        speed = Cfg::ROLE_PARAMS[role].speed;
+        int d = g_rng.rand_int(0, 3);
+        const float fdx[] = {1.0f, -1.0f, 0.0f, 0.0f};
+        const float fdy[] = {0.0f, 0.0f, 1.0f, -1.0f};
+        facing_dx = fdx[d];
+        facing_dy = fdy[d];
+    }
+    idle_micro_ticks = g_rng.rand_int(Cfg::IDLE_MICROSTATE_MIN_TICKS,
+                                       Cfg::IDLE_MICROSTATE_MAX_TICKS);
+}
+
+float LilGuy::_colony_idle_budget(Chamber& ch) {
+    if (ch.colony->population < Cfg::COLONY_MIN_ACTIVE_FOR_IDLE) return 0.0f;
+    if (ch.colony->food_pressure() > Cfg::FAMINE_SLOWDOWN_PRESSURE) return 0.0f;
+    // Blend idle budget by night_factor: day=0.70, night=0.95
+    float nf = g_tod.night_factor;
+    return Cfg::IDLE_BUDGET_DAY + nf * (Cfg::IDLE_BUDGET_NIGHT - Cfg::IDLE_BUDGET_DAY);
 }
 
 // ================================================================

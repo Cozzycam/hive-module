@@ -19,6 +19,17 @@
 #include "sim.h"
 #include "renderer.h"
 #include "touch.h"
+#include "events.h"
+#include "time_of_day.h"
+#include "hud.h"
+
+// Event type names for serial logging
+static const char* EVT_NAMES[] = {
+    "interaction_started", "interaction_ended",
+    "food_delivered", "food_tapped", "pile_discovered",
+    "queen_laid_egg", "young_hatched", "young_died",
+    "lil_guy_died", "handoff_incoming", "handoff_outgoing",
+};
 
 // -- TCA9554 I/O expander --------------------------------------------
 
@@ -148,11 +159,15 @@ void setup() {
     gfx->setRotation(1);
 
     touch_init();
+    time_of_day_init();
     sim.init();
     renderer.init(gfx);
+    hud_init();
 
     last_tick_ms = millis();
     last_frame_ms = millis();
+
+    renderer.start_boot_splash();
 
     Serial.println("Running.");
 }
@@ -160,19 +175,22 @@ void setup() {
 void loop() {
     unsigned long now = millis();
     unsigned long interval = tick_interval_ms();
+    bool splashing = renderer.is_splash_active();
 
-    handle_serial();
-    sim.handle_touch();
+    if (!splashing) {
+        handle_serial();
+        sim.handle_touch();
 
-    // Sim ticks — run multiple if at high speed
-    while (now - last_tick_ms >= interval) {
-        last_tick_ms += interval;
-        sim.tick();
+        // Sim ticks — run multiple if at high speed
+        while (now - last_tick_ms >= interval) {
+            last_tick_ms += interval;
+            sim.tick();
 
-        // Prevent spiral-of-death
-        if (now - last_tick_ms > interval * 4) {
-            last_tick_ms = now;
-            break;
+            // Prevent spiral-of-death
+            if (now - last_tick_ms > interval * 4) {
+                last_tick_ms = now;
+                break;
+            }
         }
     }
 
@@ -180,13 +198,36 @@ void loop() {
     if (now - last_frame_ms >= 33) {
         last_frame_ms = now;
 
+        static Event evt_buf[64];
+        int evt_count = 0;
+        if (!splashing) {
+            evt_count = sim.event_bus.drain(evt_buf, 64);
+            renderer.receive_events(evt_buf, evt_count, sim.chamber);
+        }
+
         float lerp_t = static_cast<float>(now - last_tick_ms) / interval;
         if (lerp_t < 0.0f) lerp_t = 0.0f;
         if (lerp_t > 1.0f) lerp_t = 1.0f;
 
         renderer.draw(sim.chamber, lerp_t);
+        if (!renderer.is_splash_active()) hud_draw(gfx, sim.chamber);
         renderer.flush();
-        sim.drain_events();
+
+        // Log events to serial (skip noisy interaction pairs)
+        for (int i = 0; i < evt_count; i++) {
+            int t = evt_buf[i].type;
+            if (t == EVT_INTERACTION_STARTED || t == EVT_INTERACTION_ENDED)
+                continue;
+            if (t >= 0 && t <= 10)
+                Serial.printf("[evt t=%6lu] %s\n", evt_buf[i].tick, EVT_NAMES[t]);
+        }
+    }
+
+    // Time of day — once per second
+    static unsigned long last_tod = 0;
+    if (now - last_tod >= 1000) {
+        last_tod = now;
+        time_of_day_tick();
     }
 
     // Periodic status

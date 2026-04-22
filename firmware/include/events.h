@@ -58,6 +58,11 @@ struct FoodTappedData {
 struct YoungHatchedData {
     uint8_t stage_from;  // BroodStage value
     uint8_t stage_to;    // BroodStage value or 0xFF for 'worker'
+    int8_t x, y;         // position of the brood
+};
+
+struct PositionData {
+    int8_t x, y;
 };
 
 // ---- Event struct (tagged union) ----
@@ -71,7 +76,7 @@ struct Event {
         FoodDeliveredData      food_delivered;
         FoodTappedData         food_tapped;
         YoungHatchedData       young_hatched;
-        // queen_laid_egg, young_died, lil_guy_died have no payload
+        PositionData           position;  // queen_laid_egg, young_died, lil_guy_died
     };
 };
 

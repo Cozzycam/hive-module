@@ -43,28 +43,30 @@ void Chamber::tick() {
         switch (result) {
         case BROOD_HATCH: {
             bool pioneer = colony->total_workers_born < Cfg::QUEEN_FOUNDING_EGG_CAP;
-            add_lil_guy(brood[i].x, brood[i].y, brood[i].role, pioneer);
+            int8_t bx = brood[i].x, by = brood[i].y;
+            add_lil_guy(bx, by, brood[i].role, pioneer);
             colony->total_workers_born++;
             Event ev; ev.type = EVT_YOUNG_HATCHED; ev.tick = tick_num;
-            ev.young_hatched = {STAGE_PUPA, 0xFF};  // 0xFF = worker
+            ev.young_hatched = {STAGE_PUPA, 0xFF, bx, by};
             emit(ev);
             remove_brood(i);
             break;
         }
         case BROOD_EGG_TO_LARVA: {
             Event ev; ev.type = EVT_YOUNG_HATCHED; ev.tick = tick_num;
-            ev.young_hatched = {STAGE_EGG, STAGE_LARVA};
+            ev.young_hatched = {STAGE_EGG, STAGE_LARVA, brood[i].x, brood[i].y};
             emit(ev);
             break;
         }
         case BROOD_LARVA_TO_PUPA: {
             Event ev; ev.type = EVT_YOUNG_HATCHED; ev.tick = tick_num;
-            ev.young_hatched = {STAGE_LARVA, STAGE_PUPA};
+            ev.young_hatched = {STAGE_LARVA, STAGE_PUPA, brood[i].x, brood[i].y};
             emit(ev);
             break;
         }
         case BROOD_DIED: {
             Event ev; ev.type = EVT_YOUNG_DIED; ev.tick = tick_num;
+            ev.position = {brood[i].x, brood[i].y};
             emit(ev);
             remove_brood(i);
             break;
@@ -72,6 +74,7 @@ void Chamber::tick() {
         default:
             if (!brood[i].alive()) {
                 Event ev; ev.type = EVT_YOUNG_DIED; ev.tick = tick_num;
+                ev.position = {brood[i].x, brood[i].y};
                 emit(ev);
                 remove_brood(i);
             }
@@ -86,6 +89,7 @@ void Chamber::tick() {
             if (brood[i].stage == STAGE_LARVA && brood[i].alive()
                     && brood[i].hunger > Cfg::FAMINE_BROOD_CULL_HUNGER) {
                 Event ev; ev.type = EVT_YOUNG_DIED; ev.tick = tick_num;
+                ev.position = {brood[i].x, brood[i].y};
                 emit(ev);
                 remove_brood(i);
             }

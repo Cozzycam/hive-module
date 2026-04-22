@@ -100,7 +100,7 @@ constexpr float ARRIVAL_THRESHOLD       = 0.05f;
 // ---- Gathering ----
 constexpr int   SCOUT_PATIENCE_TICKS    = 3000;
 constexpr float FORAGE_DEBUG_PILE_SIZE  = 220.0f;
-constexpr float TAP_FEED_AMOUNT        = 80.0f;   // food placed by player tap
+constexpr float TAP_FEED_AMOUNT        = 200.0f;  // food placed by player tap
 constexpr float FOOD_PILE_CAP           = 55.0f;
 constexpr int   FOOD_DEPOSIT_RADIUS     = 5;
 constexpr int   RETURN_HOME_TICKS       = 960;
@@ -109,6 +109,21 @@ constexpr int   IDLE_RECONSIDER_MAX     = 120;
 constexpr int   STALL_THRESHOLD_TICKS   = 12;
 constexpr int   ENTRY_ATTRACT_RADIUS    = 8;
 constexpr int   CHAMBER_EXPLORE_STEPS   = 150;
+
+// ---- Worker idle/rest ----
+constexpr int   IDLE_REST_MIN_TICKS        = 40;    // ~5s at 8 tps
+constexpr int   IDLE_REST_MAX_TICKS        = 240;   // ~30s
+constexpr int   IDLE_REPOLL_INTERVAL       = 8;     // ~1s between task checks
+constexpr float IDLE_DRIFT_SPEED           = 0.1f;  // cells/tick (vs walk 0.25)
+constexpr float IDLE_HOLD_WEIGHT           = 0.60f;
+constexpr float IDLE_DRIFT_WEIGHT          = 0.25f;
+// reface weight = 1 - hold - drift = 0.15
+constexpr int   IDLE_MICROSTATE_MIN_TICKS  = 16;    // ~2s
+constexpr int   IDLE_MICROSTATE_MAX_TICKS  = 80;    // ~10s
+constexpr int   COLONY_MIN_ACTIVE_FOR_IDLE = 10;    // founding-phase suppression
+constexpr float IDLE_BUDGET_DAY            = 0.70f;
+constexpr float IDLE_BUDGET_TWILIGHT       = 0.85f;
+constexpr float IDLE_BUDGET_NIGHT          = 0.95f;
 
 // ---- Metabolic scaling (3/4-power law) ----
 constexpr float METABOLIC_SCALE_FLOOR = 0.7f;
@@ -168,5 +183,10 @@ constexpr int MAX_FOOD_PILES = 64;
 // ---- Food replenishment (single-board mode) ----
 constexpr int   FOOD_REPLENISH_INTERVAL = TICKS_PER_SIM_DAY;
 constexpr float FOOD_REPLENISH_AMOUNT   = 80.0f;
+
+// ---- Milestone leaves (sprout) ----
+constexpr int MILESTONE_LEAF_INTERVAL = 100;  // workers born per new leaf
+constexpr int MILESTONE_LEAF_BASE     = 3;    // starting leaf count
+constexpr int MILESTONE_LEAF_CAP      = 7;    // max leaves
 
 } // namespace Cfg

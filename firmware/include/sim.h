@@ -11,7 +11,6 @@ public:
     Chamber     chamber;
     EventBus    event_bus;
     uint32_t    tick_count = 0;
-    bool        food_started = false;
 
     void init();
     void tick();

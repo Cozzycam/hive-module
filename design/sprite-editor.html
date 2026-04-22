@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hive Sprite Editor</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: #111; color: #ccc; font-size: 14px;
+}
+#app {
+    display: flex; flex-direction: column;
+    height: 100vh; height: 100dvh;
+}
+
+/* ── Toolbar ── */
+.toolbar {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px; background: #1a1a1a;
+    border-bottom: 1px solid #2a2a2a; flex-shrink: 0;
+}
+
+/* ── Palette bar ── */
+.palette-bar {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px; background: #151515;
+    border-bottom: 1px solid #2a2a2a; flex-shrink: 0;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+}
+.swatches {
+    display: flex; gap: 3px; flex-shrink: 0;
+}
+.swatch {
+    width: 28px; height: 28px; border: 2px solid #333;
+    border-radius: 3px; cursor: pointer; flex-shrink: 0;
+}
+.swatch:hover { border-color: #666; }
+.swatch.active { border-color: #4ecca3; box-shadow: 0 0 4px #4ecca3; }
+.swatch-transparent {
+    background-color: #333;
+    background-image:
+        linear-gradient(45deg, #444 25%, transparent 25%, transparent 75%, #444 75%),
+        linear-gradient(45deg, #444 25%, transparent 25%, transparent 75%, #444 75%);
+    background-size: 12px 12px; background-position: 0 0, 6px 6px;
+}
+.color-info {
+    display: flex; align-items: center; gap: 6px;
+    padding: 0 8px; border-left: 1px solid #2a2a2a;
+    border-right: 1px solid #2a2a2a; white-space: nowrap; flex-shrink: 0;
+}
+.active-preview {
+    width: 24px; height: 24px; border: 1px solid #444; border-radius: 2px;
+}
+#active-name { font-size: 11px; color: #888; }
+#custom-color {
+    width: 34px; height: 28px; border: none; padding: 0;
+    cursor: pointer; background: transparent; flex-shrink: 0;
+}
+
+/* ── Tool bar ── */
+.tool-bar {
+    display: flex; align-items: center; gap: 4px;
+    padding: 4px 10px; background: #1a1a1a;
+    border-bottom: 1px solid #2a2a2a; flex-shrink: 0;
+    overflow-x: auto;
+}
+.tool-bar > * { flex-shrink: 0; }
+#zoom-label { font-size: 12px; color: #888; min-width: 32px; text-align: center; }
+
+/* ── Canvas ── */
+.canvas-wrap {
+    flex: 1; overflow: auto;
+    display: flex; justify-content: center; align-items: flex-start;
+    padding: 16px; background: #0a0a0a;
+}
+#canvas { cursor: crosshair; image-rendering: pixelated; }
+
+/* ── Status bar ── */
+.status-bar {
+    display: flex; justify-content: space-between;
+    padding: 4px 10px; background: #1a1a1a;
+    border-top: 1px solid #2a2a2a; font-size: 12px;
+    color: #666; flex-shrink: 0;
+}
+
+/* ── Common ── */
+.sep { width: 1px; height: 22px; background: #2a2a2a; margin: 0 2px; flex-shrink: 0; }
+button {
+    background: #252525; color: #ccc; border: 1px solid #3a3a3a;
+    padding: 5px 10px; border-radius: 4px; cursor: pointer;
+    font-size: 13px; white-space: nowrap;
+}
+button:hover { background: #333; }
+button:active { background: #4ecca3; color: #111; }
+.tool { padding: 5px 8px; }
+.tool.active { background: #4ecca3; color: #111; border-color: #4ecca3; }
+select {
+    background: #252525; color: #ccc; border: 1px solid #3a3a3a;
+    padding: 5px 8px; border-radius: 4px; font-size: 13px;
+}
+.spacer { flex: 1; }
+
+/* ── Modal ── */
+.modal {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    display: flex; align-items: center; justify-content: center; z-index: 100;
+}
+.modal.hidden { display: none; }
+.modal-body {
+    background: #1a1a1a; border: 1px solid #333; border-radius: 8px;
+    padding: 20px; width: 90%; max-width: 640px; max-height: 80vh;
+    display: flex; flex-direction: column;
+}
+.modal-body h3 { margin-bottom: 12px; color: #eee; }
+.modal-body textarea {
+    flex: 1; background: #111; color: #aaa; border: 1px solid #333;
+    padding: 12px; font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 11px; resize: none; min-height: 240px; border-radius: 4px;
+}
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+
+/* ── Toast ── */
+.toast {
+    position: fixed; bottom: 50px; left: 50%; transform: translateX(-50%);
+    background: #4ecca3; color: #111; padding: 8px 20px; border-radius: 4px;
+    font-size: 13px; font-weight: 600; z-index: 200;
+    animation: toast-fade 2.2s ease forwards;
+}
+@keyframes toast-fade { 0%,70% { opacity: 1; } 100% { opacity: 0; } }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+    button { padding: 5px 7px; font-size: 12px; }
+    .toolbar { gap: 4px; padding: 4px 8px; }
+    .swatch { width: 26px; height: 26px; }
+    .color-info { padding: 0 4px; }
+    #active-name { max-width: 80px; overflow: hidden; text-overflow: ellipsis; }
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+    <header class="toolbar">
+        <select id="sprite-select"></select>
+        <button onclick="newSprite()" title="New sprite">+ New</button>
+        <span class="spacer"></span>
+        <button onclick="saveToServer()" title="Save to server">Save</button>
+        <button onclick="downloadJSON()" title="Download as JSON">JSON</button>
+        <button onclick="loadJSONClick()" title="Load a JSON sprite">Load</button>
+        <button onclick="showExportC()" title="Export as C array">C Code</button>
+    </header>
+
+    <div class="palette-bar">
+        <div class="swatches" id="swatches"></div>
+        <span class="sep"></span>
+        <div class="color-info">
+            <div id="active-swatch" class="active-preview"></div>
+            <span id="active-name">TRANSPARENT</span>
+        </div>
+        <input type="color" id="custom-color" value="#4ecca3" title="Pick custom color">
+        <button onclick="addCustomColor()" title="Add custom color to palette">+</button>
+    </div>
+
+    <div class="tool-bar">
+        <button class="tool active" data-tool="paint" title="Paint (P)">Paint</button>
+        <button class="tool" data-tool="erase" title="Erase (E)">Erase</button>
+        <button class="tool" data-tool="fill" title="Flood fill (F)">Fill</button>
+        <button class="tool" data-tool="pick" title="Eyedropper (I)">Pick</button>
+        <span class="sep"></span>
+        <button onclick="undo()" title="Undo (Ctrl+Z)">Undo</button>
+        <span class="sep"></span>
+        <button onclick="zoomOut()" title="Zoom out (-)">&#8722;</button>
+        <span id="zoom-label">12px</span>
+        <button onclick="zoomIn()" title="Zoom in (+)">+</button>
+        <button onclick="toggleGrid()" id="btn-grid" title="Toggle grid (G)">Grid</button>
+    </div>
+
+    <div class="canvas-wrap" id="canvas-wrap">
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <footer class="status-bar">
+        <span id="sprite-info"></span>
+        <span id="cursor-pos"></span>
+    </footer>
+</div>
+
+<div id="modal" class="modal hidden" onclick="if(event.target===this)closeModal()">
+    <div class="modal-body">
+        <h3 id="modal-title"></h3>
+        <textarea id="modal-text" readonly></textarea>
+        <div class="modal-actions">
+            <button onclick="copyModalText()">Copy</button>
+            <button onclick="closeModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<input type="file" id="file-input" accept=".json" style="display:none">
+
+<script>
+// ── Constants & State ──────────────────────────────────
+const T = 'F81F'; // transparent marker
+const state = {
+    sprites: {},
+    current: null,
+    palette: [],
+    customColors: [],
+    color: T,
+    colorName: 'TRANSPARENT',
+    tool: 'paint',
+    cellSize: 12,
+    grid: true,
+    painting: false,
+    lastG: null,
+    undoStack: [],
+};
+
+// ── DOM ────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const canvas = $('canvas');
+const ctx = canvas.getContext('2d');
+
+// ── Color Helpers ──────────────────────────────────────
+function h2rgb(h) {
+    const v = parseInt(h, 16);
+    return [((v>>11)&0x1F)*255/31|0, ((v>>5)&0x3F)*255/63|0, (v&0x1F)*255/31|0];
+}
+function h2css(h) { const [r,g,b] = h2rgb(h); return `rgb(${r},${g},${b})`; }
+function rgb2h(r,g,b) {
+    return (((r&0xF8)<<8)|((g&0xFC)<<3)|(b>>3)).toString(16).toUpperCase().padStart(4,'0');
+}
+function css2h(c) {
+    return rgb2h(parseInt(c.substr(1,2),16), parseInt(c.substr(3,2),16), parseInt(c.substr(5,2),16));
+}
+
+// ── Sprite Access ──────────────────────────────────────
+function sp() { return state.sprites[state.current] || null; }
+
+// ── Toast ──────────────────────────────────────────────
+function toast(msg) {
+    const el = document.createElement('div');
+    el.className = 'toast'; el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2400);
+}
+
+// ── Rendering ──────────────────────────────────────────
+function render() {
+    const s = sp();
+    if (!s) return;
+    const {width:sw, height:sh, pixels} = s;
+    const cs = state.cellSize;
+    const cw = sw * cs, ch = sh * cs;
+
+    canvas.width = cw; canvas.height = ch;
+    canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
+    ctx.imageSmoothingEnabled = false;
+
+    for (let y = 0; y < sh; y++) {
+        for (let x = 0; x < sw; x++) {
+            const hex = pixels[y * sw + x];
+            const px = x * cs, py = y * cs;
+            if (hex === T) {
+                ctx.fillStyle = (x + y) % 2 === 0 ? '#383838' : '#282828';
+            } else {
+                ctx.fillStyle = h2css(hex);
+            }
+            ctx.fillRect(px, py, cs, cs);
+        }
+    }
+
+    if (state.grid && cs >= 6) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let x = 0; x <= sw; x++) { ctx.moveTo(x*cs+0.5, 0); ctx.lineTo(x*cs+0.5, ch); }
+        for (let y = 0; y <= sh; y++) { ctx.moveTo(0, y*cs+0.5); ctx.lineTo(cw, y*cs+0.5); }
+        ctx.stroke();
+    }
+
+    $('sprite-info').textContent = `${s.name}  ${sw} \u00d7 ${sh}`;
+}
+
+// ── Tools ──────────────────────────────────────────────
+function setPixel(gx, gy, color) {
+    const s = sp();
+    if (!s || gx < 0 || gx >= s.width || gy < 0 || gy >= s.height) return;
+    s.pixels[gy * s.width + gx] = color;
+}
+
+function floodFill(sx, sy, nc) {
+    const s = sp();
+    if (!s) return;
+    const {width:w, height:h, pixels:p} = s;
+    const tc = p[sy * w + sx];
+    if (tc === nc) return;
+    const stack = [[sx, sy]];
+    const seen = new Set();
+    while (stack.length) {
+        const [x, y] = stack.pop();
+        const k = y * w + x;
+        if (seen.has(k) || x < 0 || x >= w || y < 0 || y >= h || p[k] !== tc) continue;
+        seen.add(k);
+        p[k] = nc;
+        stack.push([x+1,y],[x-1,y],[x,y+1],[x,y-1]);
+    }
+}
+
+function applyTool(gx, gy) {
+    const s = sp();
+    if (!s || gx < 0 || gx >= s.width || gy < 0 || gy >= s.height) return;
+    switch (state.tool) {
+        case 'paint': setPixel(gx, gy, state.color); break;
+        case 'erase': setPixel(gx, gy, T); break;
+        case 'fill': floodFill(gx, gy, state.color); break;
+        case 'pick':
+            selectColor(s.pixels[gy * s.width + gx]);
+            setTool('paint');
+            break;
+    }
+    render();
+}
+
+// Bresenham line for smooth strokes
+function plotLine(x0, y0, x1, y1, fn) {
+    const dx = Math.abs(x1-x0), dy = Math.abs(y1-y0);
+    const sx = x0<x1?1:-1, sy = y0<y1?1:-1;
+    let err = dx - dy;
+    while (true) {
+        fn(x0, y0);
+        if (x0===x1 && y0===y1) break;
+        const e2 = 2*err;
+        if (e2 > -dy) { err -= dy; x0 += sx; }
+        if (e2 < dx) { err += dx; y0 += sy; }
+    }
+}
+
+// ── Undo ───────────────────────────────────────────────
+function pushUndo() {
+    const s = sp(); if (!s) return;
+    state.undoStack.push([...s.pixels]);
+    if (state.undoStack.length > 50) state.undoStack.shift();
+}
+function undo() {
+    if (!state.undoStack.length) return;
+    const s = sp(); if (!s) return;
+    s.pixels = state.undoStack.pop();
+    render();
+}
+
+// ── Canvas Events ──────────────────────────────────────
+function c2g(cx, cy) {
+    const r = canvas.getBoundingClientRect();
+    return { x: Math.floor((cx-r.left)/state.cellSize), y: Math.floor((cy-r.top)/state.cellSize) };
+}
+
+canvas.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    const g = c2g(e.clientX, e.clientY);
+    pushUndo();
+    state.painting = true;
+    state.lastG = g;
+    applyTool(g.x, g.y);
+});
+
+canvas.addEventListener('mousemove', e => {
+    const g = c2g(e.clientX, e.clientY);
+    $('cursor-pos').textContent = `${g.x}, ${g.y}`;
+    if (!state.painting || !state.lastG) return;
+    if (state.tool === 'paint' || state.tool === 'erase') {
+        const col = state.tool === 'erase' ? T : state.color;
+        plotLine(state.lastG.x, state.lastG.y, g.x, g.y, (px,py) => setPixel(px,py,col));
+        render();
+    }
+    state.lastG = g;
+});
+
+window.addEventListener('mouseup', () => { state.painting = false; state.lastG = null; });
+
+canvas.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1) return;
+    e.preventDefault();
+    const t = e.touches[0], g = c2g(t.clientX, t.clientY);
+    pushUndo();
+    state.painting = true;
+    state.lastG = g;
+    applyTool(g.x, g.y);
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+    if (!state.painting || e.touches.length !== 1) return;
+    e.preventDefault();
+    const t = e.touches[0], g = c2g(t.clientX, t.clientY);
+    $('cursor-pos').textContent = `${g.x}, ${g.y}`;
+    if (state.lastG && (state.tool === 'paint' || state.tool === 'erase')) {
+        const col = state.tool === 'erase' ? T : state.color;
+        plotLine(state.lastG.x, state.lastG.y, g.x, g.y, (px,py) => setPixel(px,py,col));
+        render();
+    }
+    state.lastG = g;
+}, { passive: false });
+
+canvas.addEventListener('touchend', () => { state.painting = false; state.lastG = null; });
+
+// ── Keyboard Shortcuts ─────────────────────────────────
+document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); return; }
+    if (e.key === 'p') setTool('paint');
+    if (e.key === 'e') setTool('erase');
+    if (e.key === 'f') setTool('fill');
+    if (e.key === 'i') setTool('pick');
+    if (e.key === 'g') toggleGrid();
+    if (e.key === '=' || e.key === '+') zoomIn();
+    if (e.key === '-') zoomOut();
+});
+
+// ── UI Controls ────────────────────────────────────────
+function setTool(name) {
+    state.tool = name;
+    document.querySelectorAll('.tool').forEach(el =>
+        el.classList.toggle('active', el.dataset.tool === name));
+}
+document.querySelectorAll('.tool').forEach(el =>
+    el.addEventListener('click', () => setTool(el.dataset.tool)));
+
+function selectColor(hex565, name) {
+    state.color = hex565;
+    state.colorName = name || findName(hex565);
+    const swatch = $('active-swatch');
+    if (hex565 === T) {
+        swatch.style.background = '';
+        swatch.className = 'active-preview swatch-transparent';
+    } else {
+        swatch.className = 'active-preview';
+        swatch.style.background = h2css(hex565);
+    }
+    $('active-name').textContent = state.colorName;
+    document.querySelectorAll('.swatch').forEach(el =>
+        el.classList.toggle('active', el.dataset.hex === hex565));
+}
+
+function findName(hex) {
+    if (hex === T) return 'TRANSPARENT';
+    const e = state.palette.find(p => p.hex565 === hex);
+    return e ? e.name : '#' + hex;
+}
+
+function buildPalette() {
+    const el = $('swatches');
+    el.innerHTML = '';
+
+    // Transparent
+    const te = document.createElement('div');
+    te.className = 'swatch swatch-transparent';
+    te.dataset.hex = T; te.title = 'TRANSPARENT';
+    te.addEventListener('click', () => selectColor(T, 'TRANSPARENT'));
+    el.appendChild(te);
+
+    // Palette colors
+    state.palette.forEach(c => {
+        if (c.name === 'TRANSPARENT') return;
+        const s = document.createElement('div');
+        s.className = 'swatch';
+        s.style.background = `rgb(${c.r},${c.g},${c.b})`;
+        s.dataset.hex = c.hex565; s.title = c.name;
+        s.addEventListener('click', () => selectColor(c.hex565, c.name));
+        el.appendChild(s);
+    });
+}
+
+function addSwatchEl(hex) {
+    const s = document.createElement('div');
+    s.className = 'swatch';
+    s.style.background = h2css(hex);
+    s.dataset.hex = hex; s.title = 'Custom #' + hex;
+    s.addEventListener('click', () => selectColor(hex, 'Custom #' + hex));
+    $('swatches').appendChild(s);
+}
+
+function addCustomColor() {
+    const hex = css2h($('custom-color').value);
+    if (state.customColors.includes(hex) || state.palette.some(p => p.hex565 === hex)) {
+        selectColor(hex);
+        return;
+    }
+    state.customColors.push(hex);
+    addSwatchEl(hex);
+    selectColor(hex, 'Custom #' + hex);
+}
+
+$('custom-color').addEventListener('input', e => {
+    const hex = css2h(e.target.value);
+    selectColor(hex, 'Custom #' + hex);
+});
+
+// Sprite selector
+function updateSelect() {
+    const sel = $('sprite-select');
+    const names = Object.keys(state.sprites);
+    sel.innerHTML = names.map(n =>
+        `<option value="${n}"${n===state.current?' selected':''}>${n}</option>`
+    ).join('');
+}
+
+$('sprite-select').addEventListener('change', e => loadSprite(e.target.value));
+
+function loadSprite(name) {
+    state.current = name;
+    state.undoStack = [];
+    autoZoom();
+    render();
+    updateSelect();
+}
+
+function autoZoom() {
+    const s = sp(); if (!s) return;
+    const wrap = $('canvas-wrap');
+    const maxW = (wrap ? wrap.clientWidth : window.innerWidth) - 40;
+    const maxH = (wrap ? wrap.clientHeight : window.innerHeight - 200);
+    const maxDim = Math.max(s.width, s.height);
+    let cs = Math.floor(Math.min(maxW, maxH) / maxDim);
+    state.cellSize = Math.max(4, Math.min(cs, 32));
+    $('zoom-label').textContent = state.cellSize + 'px';
+}
+
+function zoomIn() {
+    state.cellSize = Math.min(state.cellSize + 2, 48);
+    $('zoom-label').textContent = state.cellSize + 'px';
+    render();
+}
+function zoomOut() {
+    state.cellSize = Math.max(state.cellSize - 2, 2);
+    $('zoom-label').textContent = state.cellSize + 'px';
+    render();
+}
+function toggleGrid() {
+    state.grid = !state.grid;
+    $('btn-grid').classList.toggle('active', state.grid);
+    render();
+}
+
+// ── New Sprite ─────────────────────────────────────────
+function newSprite() {
+    const raw = prompt('Sprite name (e.g. MY_SPRITE):');
+    if (!raw) return;
+    const name = raw.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+    const w = parseInt(prompt('Width (pixels):', '16'));
+    const h = parseInt(prompt('Height (pixels):', '16'));
+    if (!w || !h || w < 1 || h < 1 || w > 128 || h > 128) { toast('Invalid size'); return; }
+    state.sprites[name] = { name, width: w, height: h, pixels: new Array(w*h).fill(T) };
+    loadSprite(name);
+    toast(`Created ${name} (${w}\u00d7${h})`);
+}
+
+// ── I/O ────────────────────────────────────────────────
+async function saveToServer() {
+    const s = sp(); if (!s) return;
+    try {
+        const res = await fetch('/api/save', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(s),
+        });
+        const d = await res.json();
+        if (d.ok) toast('Saved ' + s.name);
+        else toast('Error: ' + d.error);
+    } catch(e) { toast('Save failed \u2014 server running?'); }
+}
+
+function downloadJSON() {
+    const s = sp(); if (!s) return;
+    const blob = new Blob([JSON.stringify(s, null, 2)], {type: 'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = s.name + '.json';
+    a.click(); URL.revokeObjectURL(a.href);
+    toast('Downloaded ' + s.name + '.json');
+}
+
+function loadJSONClick() { $('file-input').click(); }
+
+$('file-input').addEventListener('change', e => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+        try {
+            const d = JSON.parse(reader.result);
+            if (!d.name || !d.width || !d.height || !d.pixels) throw new Error('Invalid format');
+            state.sprites[d.name] = d;
+            loadSprite(d.name);
+            toast('Loaded ' + d.name);
+        } catch(err) { toast('Load failed: ' + err.message); }
+    };
+    reader.readAsText(file);
+    $('file-input').value = '';
+});
+
+function showExportC() {
+    const s = sp(); if (!s) return;
+    const {name, width:w, height:h, pixels} = s;
+    const lines = [`#define ${name}_W ${w}`, `#define ${name}_H ${h}`,
+        `static const uint16_t ${name}[${w*h}] PROGMEM = {`];
+    for (let y = 0; y < h; y++) {
+        const row = pixels.slice(y*w, (y+1)*w).map(p => '0x'+p).join(', ');
+        lines.push('    ' + row + (y < h-1 ? ',' : ''));
+    }
+    lines.push('};');
+    $('modal-title').textContent = 'Export: ' + name;
+    $('modal-text').value = lines.join('\n');
+    $('modal').classList.remove('hidden');
+}
+
+function copyModalText() {
+    navigator.clipboard.writeText($('modal-text').value).then(() => toast('Copied!'));
+}
+function closeModal() { $('modal').classList.add('hidden'); }
+
+// ── Init ───────────────────────────────────────────────
+async function init() {
+    try {
+        const res = await fetch('/api/data');
+        const data = await res.json();
+        state.palette = data.palette || [];
+        (data.sprites || []).forEach(s => { state.sprites[s.name] = s; });
+        (data.saved || []).forEach(s => { state.sprites[s.name] = s; }); // saved override built-in
+    } catch(e) {
+        console.warn('No server data:', e);
+        state.palette = [{name:'TRANSPARENT', hex565:T, r:255, g:0, b:255}];
+    }
+
+    buildPalette();
+    selectColor(T, 'TRANSPARENT');
+    $('btn-grid').classList.add('active');
+
+    const names = Object.keys(state.sprites);
+    if (names.length) {
+        updateSelect();
+        loadSprite(names[0]);
+    }
+}
+init();
+</script>
+</body>
+</html>

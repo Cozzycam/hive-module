@@ -44,6 +44,12 @@ struct LilGuy {
     uint16_t chamber_steps  = 0;
     float    hunger         = 0.0f;
 
+    // Idle/rest state
+    int16_t  idle_ticks_remaining = 0;  // >0 = truly resting
+    int16_t  idle_repoll_tick     = 0;  // countdown to next _pick_task poll
+    uint8_t  idle_microstate      = 0;  // 0=hold, 1=drift, 2=reface
+    int16_t  idle_micro_ticks     = 0;  // current microstate duration
+
     int8_t   last_cell_x, last_cell_y;     // for pheromone deposit gating
 
     // Helper: current grid cell from float position
@@ -65,6 +71,9 @@ struct LilGuy {
     void _do_tend_brood(Chamber& ch);
     void _do_tend_queen(Chamber& ch);
     void _do_idle(Chamber& ch);
+    void _tick_idle(Chamber& ch);
+    void _pick_idle_microstate(Chamber& ch);
+    float _colony_idle_budget(Chamber& ch);
     void _do_cannibalize(Chamber& ch);
     bool _target_still_valid(Chamber& ch);
 

@@ -1,12 +1,13 @@
-/* Touch input abstraction.
+/* Touch input — AXS15231B integrated capacitive touch over I2C.
  *
  * touch_poll() returns true when a tap event is available. The
  * caller converts display coordinates to chamber grid cells and
  * feeds the result into the sim via chamber.add_food().
  *
  * On the Waveshare ESP32-S3-Touch-LCD-3.5B the touch controller is
- * the same AXS15231B IC used for the display, accessed over I2C.
- * Until the hardware driver is filled in, touch_poll() returns false.
+ * the same AXS15231B IC used for the display, accessed over I2C
+ * at address 0x3B. Touch coordinates arrive in native (portrait)
+ * orientation and are rotated here to match setRotation(1).
  */
 #pragma once
 
@@ -17,7 +18,8 @@ struct TouchEvent {
     int16_t y;   // display pixel y (0..319 after rotation)
 };
 
-/* Initialise the touch controller. Call once in setup(). */
+/* Initialise the touch controller. Call once in setup(),
+ * after Wire.begin() and the TCA9554 LCD reset sequence. */
 void touch_init();
 
 /* Poll for a tap event (press-release on a single point, not drag).

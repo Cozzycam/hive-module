@@ -15,7 +15,6 @@ void Sim::init() {
     chamber.init(&colony, true);
     event_bus.init();
     tick_count = 0;
-    food_started = false;
 }
 
 void Sim::tick() {
@@ -52,16 +51,7 @@ void Sim::tick() {
 
     colony.update_recovery_boost();
 
-    // Single-board food replenishment: add food once workers hatch
-    if (!food_started && colony.population > 0) {
-        food_started = true;
-        chamber.add_food(Cfg::GRID_WIDTH / 2, Cfg::GRID_HEIGHT - 5,
-                         Cfg::FOOD_REPLENISH_AMOUNT);
-    }
-    if (food_started && tick_count % Cfg::FOOD_REPLENISH_INTERVAL == 0) {
-        chamber.add_food(Cfg::GRID_WIDTH / 2, Cfg::GRID_HEIGHT - 5,
-                         Cfg::FOOD_REPLENISH_AMOUNT);
-    }
+    // Food is manual only (tap-to-feed)
 }
 
 void Sim::handle_touch() {
