@@ -570,7 +570,7 @@ void LilGuy::_do_idle(Chamber& ch) {
     // True rest: drift and huddle need new target cells
     if (idle_ticks_remaining > 0) {
         if (idle_microstate == 1) {
-            // Random drift with queen bias
+            // Random drift with queen bias + comfort zone
             int cx = cell_x(), cy = cell_y();
             int dx, dy;
             if (ch.has_queen && g_rng.rand_float() < 0.5f) {
@@ -584,6 +584,20 @@ void LilGuy::_do_idle(Chamber& ch) {
                 if (g_rng.rand_float() < 0.5f) dy = 0; else dx = 0;
             }
             if (dx == 0 && dy == 0) dx = g_rng.rand_sign();
+
+            // Queen comfort zone: if already close, don't drift closer
+            if (ch.has_queen && ch.queen_obj.alive) {
+                int qd_now  = abs(ch.queen_obj.x - cx) + abs(ch.queen_obj.y - cy);
+                int qd_next = abs(ch.queen_obj.x - (cx+dx)) + abs(ch.queen_obj.y - (cy+dy));
+                if (qd_now <= 10 && qd_next < qd_now) {
+                    // Deflect: move away from queen instead
+                    dx = (cx > ch.queen_obj.x) ? 1 : ((cx < ch.queen_obj.x) ? -1 : g_rng.rand_sign());
+                    dy = (cy > ch.queen_obj.y) ? 1 : ((cy < ch.queen_obj.y) ? -1 : 0);
+                    if (dx != 0 && dy != 0) {
+                        if (g_rng.rand_float() < 0.5f) dy = 0; else dx = 0;
+                    }
+                }
+            }
             _set_target_cell(cx + dx, cy + dy, ch);
         } else if (idle_microstate == 3) {
             // Huddle: drift toward nearest idle neighbor or queen,
@@ -617,7 +631,7 @@ void LilGuy::_do_idle(Chamber& ch) {
             }
 
             // Close enough? Orbit tangentially instead of piling on
-            int comfort = target_is_queen ? 4 : 2;  // queen is big, keep wider ring
+            int comfort = target_is_queen ? 10 : 2;  // queen is big, keep wider ring
             if (best_dist <= comfort) {
                 // Tangential drift: perpendicular to the approach direction
                 int dx = (tx > cx) ? 1 : ((tx < cx) ? -1 : 0);
@@ -656,6 +670,19 @@ void LilGuy::_do_idle(Chamber& ch) {
         if (g_rng.rand_float() < 0.5f) dy = 0; else dx = 0;
     }
     if (dx == 0 && dy == 0) return;
+
+    // Queen comfort zone
+    if (ch.has_queen && ch.queen_obj.alive) {
+        int qd_now  = abs(ch.queen_obj.x - cx) + abs(ch.queen_obj.y - cy);
+        int qd_next = abs(ch.queen_obj.x - (cx+dx)) + abs(ch.queen_obj.y - (cy+dy));
+        if (qd_now <= 10 && qd_next < qd_now) {
+            dx = (cx > ch.queen_obj.x) ? 1 : ((cx < ch.queen_obj.x) ? -1 : g_rng.rand_sign());
+            dy = (cy > ch.queen_obj.y) ? 1 : ((cy < ch.queen_obj.y) ? -1 : 0);
+            if (dx != 0 && dy != 0) {
+                if (g_rng.rand_float() < 0.5f) dy = 0; else dx = 0;
+            }
+        }
+    }
     _set_target_cell(cx + dx, cy + dy, ch);
 }
 
