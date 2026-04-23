@@ -1,6 +1,7 @@
 /* Fast xorshift32 PRNG for the sim. Seed from hardware RNG at boot. */
 #pragma once
 #include <cstdint>
+#include <cmath>
 
 struct Rng {
     uint32_t state;
@@ -31,6 +32,15 @@ struct Rng {
 
     // Pick from {-1, 0, 1}
     int rand_dir() { return static_cast<int>(next() % 3) - 1; }
+
+    // Box-Muller gaussian
+    float rand_gaussian(float mean, float sd) {
+        float u1 = rand_float();
+        float u2 = rand_float();
+        if (u1 < 1e-7f) u1 = 1e-7f;
+        float z = sqrtf(-2.0f * logf(u1)) * cosf(2.0f * 3.14159265f * u2);
+        return mean + sd * z;
+    }
 };
 
 // Global RNG instance

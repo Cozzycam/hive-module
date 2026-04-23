@@ -24,7 +24,7 @@ void Chamber::init(ColonyState* col, bool with_queen) {
     }
 }
 
-void Chamber::tick() {
+void Chamber::tick(float dt) {
     // Pheromone decay
     pheromones.decay();
 
@@ -35,17 +35,18 @@ void Chamber::tick() {
     }
 
     // Queen tick
-    if (has_queen) queen_obj.tick(*this);
+    if (has_queen) queen_obj.tick(*this, dt);
 
     // Brood tick — with transition events
     for (int i = brood_count - 1; i >= 0; i--) {
-        BroodTransition result = brood[i].tick();
+        BroodTransition result = brood[i].tick(dt);
         switch (result) {
         case BROOD_HATCH: {
-            bool pioneer = colony->total_workers_born < Cfg::QUEEN_FOUNDING_EGG_CAP;
+            bool pioneer = colony->total_workers_born < Cfg::FOUNDING_EGG_COUNT;
             int8_t bx = brood[i].x, by = brood[i].y;
             add_lil_guy(bx, by, brood[i].role, pioneer);
             colony->total_workers_born++;
+            if (!queen_obj.founding_done) queen_obj.founding_done = true;
             Event ev; ev.type = EVT_YOUNG_HATCHED; ev.tick = tick_num;
             ev.young_hatched = {STAGE_PUPA, 0xFF, bx, by};
             emit(ev);
@@ -116,7 +117,7 @@ void Chamber::tick() {
 
     // Worker ticks + death
     for (int i = lil_guy_count - 1; i >= 0; i--) {
-        lil_guys[i].tick(*this);
+        lil_guys[i].tick(*this, dt);
         if (!lil_guys[i].alive) {
             if (lil_guys[i].food_carried > 0)
                 add_food(lil_guys[i].cell_x(), lil_guys[i].cell_y(),

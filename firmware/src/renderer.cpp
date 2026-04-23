@@ -15,6 +15,7 @@
 #include "sprites.h"
 #include "time_of_day.h"
 #include <pgmspace.h>
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -178,6 +179,17 @@ static void _update_night_palette() {
     _pal_ui_alert     = tint_night(PAL_UI_ALERT,      _nf, 0.3f);
     _pal_ui_dim       = tint_night(PAL_UI_DIM,        _nf, 0.5f);
 }
+
+// ---- Sprite scale factors ----
+// Biologically accurate ratios, queen = reference
+// Queen at 2.0x (88px) is the 1.00 anchor; others derived from mass^(1/3)
+static constexpr float SCALE_QUEEN          = 2.0f;   // 44x44 base → 88px  (1.00)
+static constexpr float SCALE_WORKER_MAJOR   = 4.6f;   // 10x10 base → 46px  (0.52)
+static constexpr float SCALE_WORKER_MINOR   = 3.2f;   // 10x10 base → 32px  (0.36)
+static constexpr float SCALE_WORKER_PIONEER = 2.3f;   // 10x10 base → 23px  (0.26)
+static constexpr float SCALE_EGG            = 3.5f;   //  4x4  base → 14px  (0.16)
+static constexpr float SCALE_LARVA          = 4.4f;   //  6x6  base → 26px  (0.30)
+static constexpr float SCALE_PUPA           = 3.2f;   //  8x8  base → 26px  (0.29)
 
 // ---- Seeded RNG for grain specks ----
 static uint32_t _grain_rng(uint32_t seed) {
@@ -387,10 +399,14 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
     // Sprout overlay (per-frame, on top of floor, below entities)
     _draw_sprout_overlay();
 
-    _draw_food_piles(ch);
-    _draw_brood(ch);
-    if (ch.has_queen) _draw_queen(ch);
-    _draw_workers(ch, lerp_t);
+    // Layer 2: floor-level sprites (food, brood) — Y-sorted
+    _build_floor_sprites(ch);
+    _draw_sorted_sprites(_floor_sprites, _floor_sprite_count, ch);
+
+    // Layer 3: living agents (workers, queen) — Y-sorted, queen +2 cell bias
+    _build_agent_sprites(ch, lerp_t);
+    _draw_sorted_sprites(_agent_sprites, _agent_sprite_count, ch);
+
     _draw_anims();
 
     // Check for milestone leaf growth
@@ -856,103 +872,65 @@ void Renderer::_dim_framebuffer(float brightness) {
 }
 
 // ================================================================
-//  Food piles
+//  Z-sorted sprite rendering
 // ================================================================
 
-void Renderer::_draw_food_piles(const Chamber& ch) {
+static bool _sprite_cmp(const SpriteDraw& a, const SpriteDraw& b) {
+    if (a.sort_y != b.sort_y) return a.sort_y < b.sort_y;  // smaller Y = further back
+    return a.size_px > b.size_px;  // larger sprite on top at same Y
+}
+
+void Renderer::_build_floor_sprites(const Chamber& ch) {
+    _floor_sprite_count = 0;
+
+    // Food piles
     for (int i = 0; i < ch.food_pile_count; i++) {
-        int cx = ch.food_piles[i].x * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
-        int cy = ch.food_piles[i].y * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
-        float amt = ch.food_piles[i].amount;
-        if (amt <= 0) continue;
-
-        _mark_dirty(cx - 6, cy - 4, 12, 8);
-
-        if (amt <= 15) {
-            _gfx->fillRect(cx - 2, cy - 1, 4, 3, _pal_food_light);
-        } else if (amt <= 50) {
-            _gfx->fillRect(cx - 4, cy - 2, 4, 3, _pal_food_dark);
-            _gfx->fillRect(cx,     cy,     4, 3, _pal_food_light);
-        } else {
-            _gfx->fillRect(cx - 4, cy - 2, 4, 3, _pal_food_dark);
-            _gfx->fillRect(cx,     cy,     4, 3, _pal_food_light);
-            _gfx->fillRect(cx + 2, cy - 2, 4, 3, _pal_food_dark);
-            _gfx->fillRect(cx - 2, cy + 2, 4, 3, _pal_food_light);
-        }
+        if (ch.food_piles[i].amount <= 0) continue;
+        auto& sd = _floor_sprites[_floor_sprite_count++];
+        sd.sort_y   = ch.food_piles[i].y * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
+        sd.render_x = ch.food_piles[i].x * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
+        sd.render_y = static_cast<int16_t>(sd.sort_y);
+        sd.size_px  = 8;
+        sd.kind     = SK_FOOD_PILE;
+        sd.flags    = 0;
+        sd.entity_idx = i;
     }
-}
 
-// ================================================================
-//  Sprites (1:1, no scaling)
-// ================================================================
-
-void Renderer::_draw_sprite(int cx, int cy, const uint16_t* data,
-                            int sw, int sh, bool flip_h) {
-    int ox = cx - sw / 2;
-    int oy = cy - sh / 2;
-
-    _mark_dirty(ox, oy, sw, sh);
-
-    for (int y = 0; y < sh; y++) {
-        for (int x = 0; x < sw; x++) {
-            int src_x = flip_h ? (sw - 1 - x) : x;
-            uint16_t c = pgm_read_word(&data[y * sw + src_x]);
-            if (c == SPRITE_TRANSPARENT) continue;
-            if (_nf > 0.01f) c = tint_night(c, _nf, 0.4f);
-            int px = ox + x;
-            int py = oy + y;
-            if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H)
-                _gfx->drawPixel(px, py, c);
-        }
-    }
-}
-
-void Renderer::_draw_brood(const Chamber& ch) {
+    // Brood
     for (int i = 0; i < ch.brood_count; i++) {
         auto& b = ch.brood[i];
         if (!b.alive()) continue;
-        int px = b.x * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
-        int py = b.y * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
+        auto& sd = _floor_sprites[_floor_sprite_count++];
+        sd.render_x = b.x * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
+        sd.render_y = b.y * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
+        sd.sort_y   = sd.render_y;
+        sd.flags    = 0;
+        sd.entity_idx = i;
         switch (b.stage) {
-            case STAGE_EGG:   _draw_sprite(px, py, EGG,   EGG_W,   EGG_H);   break;
-            case STAGE_LARVA: _draw_sprite(px, py, LARVA, LARVA_W, LARVA_H); break;
-            case STAGE_PUPA:  _draw_sprite(px, py, PUPA,  PUPA_W,  PUPA_H);  break;
-            default: break;
+            case STAGE_EGG:
+                sd.kind = SK_EGG;
+                sd.size_px = static_cast<uint16_t>(EGG_W * SCALE_EGG + 0.5f);
+                break;
+            case STAGE_LARVA:
+                sd.kind = SK_LARVA;
+                sd.size_px = static_cast<uint16_t>(LARVA_W * SCALE_LARVA + 0.5f);
+                break;
+            case STAGE_PUPA:
+                sd.kind = SK_PUPA;
+                sd.size_px = static_cast<uint16_t>(PUPA_W * SCALE_PUPA + 0.5f);
+                break;
+            default: _floor_sprite_count--; break;
         }
     }
+
+    std::stable_sort(_floor_sprites, _floor_sprites + _floor_sprite_count, _sprite_cmp);
 }
 
-void Renderer::_draw_queen(const Chamber& ch) {
-    if (!ch.queen_obj.alive) return;
-    int px = ch.queen_obj.x * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
-    int py = ch.queen_obj.y * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
-
-    int breath_phase = _frame % 60;
-    int bob = (breath_phase < 30) ? 0 : -1;
-    py += bob;
-
-    _draw_sprite(px, py, QUEEN, QUEEN_W, QUEEN_H);
-
-    int pulse_phase = _frame % 90;
-    if (pulse_phase < 3) {
-        _gfx->fillRect(px - 2, py + 6, 5, 3, _pal_glow_warm);
-        _mark_dirty(px - 2, py + 6, 5, 3);
-    }
-
-    int ant_phase = (_frame / 8) % 4;
-    int ant_lx = px - 8, ant_rx = px + 7;
-    int ant_y  = py - QUEEN_H / 2 - 1;
-    int la_dx = (ant_phase == 1) ? -1 : ((ant_phase == 3) ? 1 : 0);
-    _gfx->drawPixel(ant_lx + la_dx, ant_y, _pal_queen_head);
-    _gfx->drawPixel(ant_lx + la_dx - 1, ant_y - 1, _pal_queen_head);
-    int ra_dx = (ant_phase == 2) ? 1 : ((ant_phase == 0) ? -1 : 0);
-    _gfx->drawPixel(ant_rx + ra_dx, ant_y, _pal_queen_head);
-    _gfx->drawPixel(ant_rx + ra_dx + 1, ant_y - 1, _pal_queen_head);
-    _mark_dirty(ant_lx - 2, ant_y - 2, ant_rx - ant_lx + 5, 4);
-}
-
-void Renderer::_draw_workers(const Chamber& ch, float lerp_t) {
+void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
+    _agent_sprite_count = 0;
     float t = (lerp_t < 0.0f) ? 0.0f : ((lerp_t > 1.0f) ? 1.0f : lerp_t);
+
+    // Workers
     for (int i = 0; i < ch.lil_guy_count; i++) {
         auto& w = ch.lil_guys[i];
         if (!w.alive) continue;
@@ -976,22 +954,165 @@ void Renderer::_draw_workers(const Chamber& ch, float lerp_t) {
             py += bob;
         }
 
-        bool flip = (w.facing_dx < -0.1f);
+        float scale = SCALE_WORKER_MINOR;
+        if (w.role == ROLE_MAJOR)  scale = SCALE_WORKER_MAJOR;
+        else if (w.is_pioneer)     scale = SCALE_WORKER_PIONEER;
 
-        if (w.role == ROLE_MAJOR)
-            _draw_sprite(px, py, MAJOR, MAJOR_W, MAJOR_H, flip);
-        else if (w.is_pioneer)
-            _draw_sprite(px, py, WORKER_PIONEER, WORKER_PIONEER_W, WORKER_PIONEER_H, flip);
-        else
-            _draw_sprite(px, py, WORKER_MINOR, WORKER_MINOR_W, WORKER_MINOR_H, flip);
+        auto& sd = _agent_sprites[_agent_sprite_count++];
+        sd.sort_y    = static_cast<float>(py);
+        sd.render_x  = px;
+        sd.render_y  = py;
+        sd.size_px   = static_cast<uint16_t>(WORKER_PIONEER_W * scale + 0.5f);
+        sd.kind      = SK_WORKER;
+        sd.flags     = (w.facing_dx < -0.1f) ? 1 : 0;
+        sd.entity_idx = i;
+    }
 
-        if (w.food_carried > 0) {
-            int mx = px - static_cast<int>(w.facing_dx * 4);
-            int my = py - static_cast<int>(w.facing_dy * 4);
-            _gfx->fillRect(mx - 1, my - 1, 3, 3, _pal_food_carry);
-            _mark_dirty(mx - 1, my - 1, 3, 3);
+    // Queen
+    if (ch.has_queen && ch.queen_obj.alive) {
+        int px = ch.queen_obj.x * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
+        int py = ch.queen_obj.y * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
+        int breath_phase = _frame % 60;
+        int bob = (breath_phase < 30) ? 0 : -1;
+        py += bob;
+
+        auto& sd = _agent_sprites[_agent_sprite_count++];
+        sd.sort_y    = static_cast<float>(py) + 2.0f * Cfg::CELL_SIZE; // +2 cell bias
+        sd.render_x  = px;
+        sd.render_y  = py;
+        sd.size_px   = static_cast<uint16_t>(QUEEN_W * SCALE_QUEEN + 0.5f);
+        sd.kind      = SK_QUEEN;
+        sd.flags     = 0;
+        sd.entity_idx = -1;
+    }
+
+    std::stable_sort(_agent_sprites, _agent_sprites + _agent_sprite_count, _sprite_cmp);
+}
+
+void Renderer::_draw_sorted_sprites(SpriteDraw* list, int count, const Chamber& ch) {
+    for (int i = 0; i < count; i++) {
+        _draw_one_sprite(list[i], ch);
+    }
+}
+
+void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
+    bool flip = (sd.flags & 1);
+    switch (sd.kind) {
+        case SK_FOOD_PILE: {
+            int cx = sd.render_x, cy = sd.render_y;
+            float amt = ch.food_piles[sd.entity_idx].amount;
+            _mark_dirty(cx - 6, cy - 4, 12, 8);
+            if (amt <= 15) {
+                _gfx->fillRect(cx - 2, cy - 1, 4, 3, _pal_food_light);
+            } else if (amt <= 50) {
+                _gfx->fillRect(cx - 4, cy - 2, 4, 3, _pal_food_dark);
+                _gfx->fillRect(cx,     cy,     4, 3, _pal_food_light);
+            } else {
+                _gfx->fillRect(cx - 4, cy - 2, 4, 3, _pal_food_dark);
+                _gfx->fillRect(cx,     cy,     4, 3, _pal_food_light);
+                _gfx->fillRect(cx + 2, cy - 2, 4, 3, _pal_food_dark);
+                _gfx->fillRect(cx - 2, cy + 2, 4, 3, _pal_food_light);
+            }
+            break;
+        }
+        case SK_EGG:
+            _draw_sprite_scaled(sd.render_x, sd.render_y, EGG, EGG_W, EGG_H, SCALE_EGG);
+            break;
+        case SK_LARVA:
+            _draw_sprite_scaled(sd.render_x, sd.render_y, LARVA, LARVA_W, LARVA_H, SCALE_LARVA);
+            break;
+        case SK_PUPA:
+            _draw_sprite_scaled(sd.render_x, sd.render_y, PUPA, PUPA_W, PUPA_H, SCALE_PUPA);
+            break;
+        case SK_QUEEN:
+            _draw_sprite_scaled(sd.render_x, sd.render_y, QUEEN, QUEEN_W, QUEEN_H, SCALE_QUEEN);
+            break;
+        case SK_WORKER: {
+            auto& w = ch.lil_guys[sd.entity_idx];
+            float scale = SCALE_WORKER_MINOR;
+            if (w.role == ROLE_MAJOR)  scale = SCALE_WORKER_MAJOR;
+            else if (w.is_pioneer)     scale = SCALE_WORKER_PIONEER;
+
+            _draw_sprite_scaled(sd.render_x, sd.render_y, WORKER_PIONEER,
+                                WORKER_PIONEER_W, WORKER_PIONEER_H, scale, flip);
+
+            if (w.food_carried > 0) {
+                int mx = sd.render_x - static_cast<int>(w.facing_dx * 4);
+                int my = sd.render_y - static_cast<int>(w.facing_dy * 4);
+                _gfx->fillRect(mx - 1, my - 1, 3, 3, _pal_food_carry);
+                _mark_dirty(mx - 1, my - 1, 3, 3);
+            }
+            break;
         }
     }
+}
+
+// ================================================================
+//  Sprites — scanline-buffered with optional nearest-neighbor scaling
+// ================================================================
+
+static constexpr int MAX_SCALED_DIM = 96;
+
+void Renderer::_draw_sprite_scaled(int cx, int cy, const uint16_t* data,
+                                   int sw, int sh, float scale,
+                                   bool flip_h) {
+    int dw = static_cast<int>(sw * scale + 0.5f);
+    int dh = static_cast<int>(sh * scale + 0.5f);
+    if (dw > MAX_SCALED_DIM) dw = MAX_SCALED_DIM;
+    if (dh > MAX_SCALED_DIM) dh = MAX_SCALED_DIM;
+
+    int ox = cx - dw / 2;
+    int oy = cy - dh / 2;
+    _mark_dirty(ox, oy, dw, dh);
+
+    bool tint = (_nf > 0.01f);
+    uint16_t row_buf[MAX_SCALED_DIM];
+
+    for (int dy = 0; dy < dh; dy++) {
+        int py = oy + dy;
+        if (py < 0 || py >= SCREEN_H) continue;
+        int sy = dy * sh / dh;
+
+        // Clamp horizontal span to screen
+        int dx_start = (ox < 0) ? -ox : 0;
+        int dx_end   = (ox + dw > SCREEN_W) ? (SCREEN_W - ox) : dw;
+
+        // Build scanline and blit contiguous opaque runs
+        // Uses draw16bitRGBBitmap which respects display rotation
+        int run_start = -1;
+        for (int dx = dx_start; dx < dx_end; dx++) {
+            int sx = flip_h ? (sw - 1 - dx * sw / dw) : (dx * sw / dw);
+            uint16_t c = pgm_read_word(&data[sy * sw + sx]);
+            if (c == SPRITE_TRANSPARENT) {
+                if (run_start >= 0) {
+                    _gfx->draw16bitRGBBitmap(ox + run_start, py,
+                        &row_buf[run_start], dx - run_start, 1);
+                    run_start = -1;
+                }
+                continue;
+            }
+            if (tint) c = tint_night(c, _nf, 0.4f);
+            row_buf[dx] = c;
+            if (run_start < 0) run_start = dx;
+        }
+        if (run_start >= 0) {
+            _gfx->draw16bitRGBBitmap(ox + run_start, py,
+                &row_buf[run_start], dx_end - run_start, 1);
+        }
+    }
+}
+
+void Renderer::_draw_sprite(int cx, int cy, const uint16_t* data,
+                            int sw, int sh, bool flip_h) {
+    _draw_sprite_scaled(cx, cy, data, sw, sh, 1.0f, flip_h);
+}
+
+// Boot splash queen draw (simple, unsorted)
+void Renderer::_draw_queen(const Chamber& ch) {
+    if (!ch.queen_obj.alive) return;
+    int px = ch.queen_obj.x * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
+    int py = ch.queen_obj.y * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
+    _draw_sprite_scaled(px, py, QUEEN, QUEEN_W, QUEEN_H, SCALE_QUEEN);
 }
 
 // ================================================================

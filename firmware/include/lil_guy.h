@@ -21,16 +21,15 @@ struct LilGuy {
     bool     has_target     = false;
     int8_t   target_cell_x, target_cell_y; // next cell to walk toward
     bool     has_target_cell = false;
-    uint32_t age            = 0;
+    uint32_t born_at_ms     = 0;
     bool     alive          = true;
 
     Role     role           = ROLE_MINOR;
     uint8_t  move_ticks;                   // kept for reference
     uint8_t  sense_radius;
     float    carry_amount;
-    float    metabolism;
     float    speed;                        // cells per tick
-    uint32_t max_age;
+    uint32_t lifespan_ms;
     bool     is_pioneer     = false;
 
     float    facing_dx, facing_dy;         // normalized velocity direction
@@ -57,7 +56,7 @@ struct LilGuy {
     int cell_y() const { return static_cast<int>(floorf(y)); }
 
     void init(int8_t px, int8_t py, Role c = ROLE_MINOR, bool pioneer = false);
-    void tick(Chamber& chamber);
+    void tick(Chamber& chamber, float dt);
 
     // Movement methods
     bool _set_target_cell(int cx, int cy, Chamber& ch);

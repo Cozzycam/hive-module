@@ -15,9 +15,16 @@
 // No esp_random on desktop — use a fixed seed for reproducibility
 Rng g_rng(42);
 
+// millis() shim for desktop builds
+#ifndef ARDUINO
+static uint32_t _fake_millis = 0;
+uint32_t millis() { return _fake_millis; }
+#endif
+
 static const int DAYS = 365;
-static const int TICKS = DAYS * Cfg::TICKS_PER_SIM_DAY;
-static const int SAMPLE_EVERY = Cfg::TICKS_PER_SIM_DAY;
+static const int TPS  = 8;
+static const int TOTAL_TICKS = DAYS * static_cast<int>(Cfg::SECS_PER_DAY) * TPS;
+static const int SAMPLE_EVERY = static_cast<int>(Cfg::SECS_PER_DAY) * TPS;
 
 int main() {
     Sim sim;
@@ -31,11 +38,15 @@ int main() {
     float min_food_post = 999999;
     int peak_pop = 0;
 
-    for (int tick = 1; tick <= TICKS; tick++) {
-        sim.tick();
+    float dt = 1.0f / TPS;
+
+    for (int tick = 1; tick <= TOTAL_TICKS; tick++) {
+        _fake_millis += 125;  // 125ms per tick at 8 tps
+        sim.tick(dt);
 
         auto& col = sim.colony;
-        int day = tick / Cfg::TICKS_PER_SIM_DAY;
+        float elapsed_days = tick * dt / Cfg::SECS_PER_DAY;
+        int day = static_cast<int>(elapsed_days);
 
         if (tick % SAMPLE_EVERY == 0) {
             float food = col.food_total;

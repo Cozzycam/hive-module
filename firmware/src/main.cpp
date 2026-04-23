@@ -91,11 +91,10 @@ static unsigned long last_frame_ms = 0;
 // -- Serial command handling -----------------------------------------
 
 static void print_status() {
-    int day = sim.tick_count / Cfg::TICKS_PER_SIM_DAY;
     Serial.printf(
-        "Day %d | Pop %d | Food %.0f | E%d L%d P%d | "
+        "Pop %d | Food %.0f | E%d L%d P%d | "
         "Pressure %.2f | Speed %d tps\n",
-        day, sim.colony.population, sim.colony.food_total,
+        sim.colony.population, sim.colony.food_total,
         sim.colony.brood_egg, sim.colony.brood_larva, sim.colony.brood_pupa,
         sim.colony.food_pressure(),
         SPEED_LEVELS[speed_index]);
@@ -177,6 +176,9 @@ void loop() {
     unsigned long interval = tick_interval_ms();
     bool splashing = renderer.is_splash_active();
 
+    static uint32_t last_sim_ms = 0;
+    if (last_sim_ms == 0) last_sim_ms = millis();
+
     if (!splashing) {
         handle_serial();
         sim.handle_touch();
@@ -184,7 +186,13 @@ void loop() {
         // Sim ticks — run multiple if at high speed
         while (now - last_tick_ms >= interval) {
             last_tick_ms += interval;
-            sim.tick();
+
+            uint32_t sim_now = millis();
+            float dt = (sim_now - last_sim_ms) / 1000.0f;
+            if (dt > 1.0f) dt = 1.0f;  // cap dt to avoid jumps
+            last_sim_ms = sim_now;
+
+            sim.tick(dt);
 
             // Prevent spiral-of-death
             if (now - last_tick_ms > interval * 4) {

@@ -36,10 +36,10 @@ public:
     int8_t  home_face = -1;         // face toward queen chamber, -1 = is queen chamber
 
     uint8_t food_delivery_signal = 0;
-    uint8_t cannibalism_cooldown = 0;
+    int     cannibalism_cooldown = 0;
 
     void init(ColonyState* col, bool with_queen);
-    void tick();
+    void tick(float dt);
 
     bool in_bounds(int x, int y) const {
         return x >= 0 && x < Cfg::GRID_WIDTH && y >= 0 && y < Cfg::GRID_HEIGHT;

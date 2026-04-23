@@ -3,6 +3,7 @@
 #include "chamber.h"
 #include "rng.h"
 #include "time_of_day.h"
+#include <Arduino.h>
 #include <cmath>
 
 void LilGuy::init(int8_t px, int8_t py, Role c, bool pioneer) {
@@ -15,7 +16,7 @@ void LilGuy::init(int8_t px, int8_t py, Role c, bool pioneer) {
     has_target_cell = false;
     target_cell_x = 0;
     target_cell_y = 0;
-    age = 0;
+    born_at_ms = millis();
     alive = true;
 
     facing_dx = float(g_rng.rand_sign());
@@ -44,24 +45,25 @@ void LilGuy::init(int8_t px, int8_t py, Role c, bool pioneer) {
     move_ticks   = p.move_ticks;
     sense_radius = p.sense_radius;
     carry_amount = p.carry_amount;
-    metabolism   = p.metabolism;
     speed        = p.speed;
 
+    float lifespan_days;
     if (pioneer)
-        max_age = g_rng.rand_int(p.lifespan_pioneer_lo, p.lifespan_pioneer_hi);
+        lifespan_days = g_rng.rand_gaussian(Cfg::PIONEER_LIFESPAN_MEAN, Cfg::PIONEER_LIFESPAN_SD);
     else
-        max_age = g_rng.rand_int(p.lifespan_lo, p.lifespan_hi);
+        lifespan_days = g_rng.rand_gaussian(Cfg::WORKER_LIFESPAN_MEAN, Cfg::WORKER_LIFESPAN_SD);
+    if (lifespan_days < 1.0f) lifespan_days = 1.0f;  // clamp minimum
+    lifespan_ms = static_cast<uint32_t>(lifespan_days * Cfg::SECS_PER_DAY * 1000.0f);
 }
 
 // ================================================================
 //  Per-tick entry point -- two-phase architecture
 // ================================================================
 
-void LilGuy::tick(Chamber& ch) {
+void LilGuy::tick(Chamber& ch, float dt) {
     if (!alive) return;
-    age++;
 
-    if (age >= max_age) {
+    if (millis() - born_at_ms >= lifespan_ms) {
         alive = false;
         Event ev; ev.type = EVT_LIL_GUY_DIED; ev.tick = ch.tick_num;
         ev.position = {static_cast<int8_t>(cell_x()), static_cast<int8_t>(cell_y())};
@@ -69,18 +71,15 @@ void LilGuy::tick(Chamber& ch) {
         return;
     }
 
-    // Metabolism
-    float scale = Cfg::metabolic_scale_factor(ch.colony->population);
-    float drain = metabolism * scale;
-    if (ch.colony->food_store >= drain) {
-        ch.colony->food_store -= drain;
-        if (hunger > 0) hunger = fmaxf(0.0f, hunger - drain);
-    } else if (food_carried >= drain) {
-        food_carried -= drain;
-        if (hunger > 0) hunger = fmaxf(0.0f, hunger - drain);
+    // Metabolism — centralized in sim.cpp via daily_burn()
+    // Here we only manage hunger
+    if (ch.colony->food_store > 0 || food_carried > 0) {
+        if (hunger > 0.0f) {
+            hunger = fmaxf(0.0f, hunger - dt / (Cfg::WORKER_SURVIVAL_DAYS * Cfg::SECS_PER_DAY));
+        }
     } else {
-        hunger += Cfg::WORKER_HUNGER_RATE;
-        if (hunger >= Cfg::WORKER_STARVE_THRESHOLD) {
+        hunger += dt / (Cfg::WORKER_SURVIVAL_DAYS * Cfg::SECS_PER_DAY);
+        if (hunger >= 1.0f) {
             alive = false;
             Event ev; ev.type = EVT_LIL_GUY_DIED; ev.tick = ch.tick_num;
             ev.position = {static_cast<int8_t>(cell_x()), static_cast<int8_t>(cell_y())};
@@ -219,7 +218,8 @@ void LilGuy::_pick_task(Chamber& ch) {
 
     auto* col = ch.colony;
     float pressure = col->food_pressure();
-    bool has_food = col->food_store >= Cfg::LARVA_FEED_AMOUNT;
+    float feed_per_visit = Cfg::LARVA_FOOD_PER_DAY / 10.0f;
+    bool has_food = col->food_store >= feed_per_visit;
 
     // Famine override -- feed queen first (bypasses idle)
     if (pressure > Cfg::FAMINE_SLOWDOWN_PRESSURE
@@ -270,7 +270,7 @@ void LilGuy::_pick_task(Chamber& ch) {
     // Severe famine -- cannibalism or skip brood tending
     if (pressure > Cfg::FAMINE_SLOWDOWN_PRESSURE) {
         if (pressure >= Cfg::BROOD_CANNIBALISM_PRESSURE
-                && col->food_store < Cfg::LARVA_FEED_AMOUNT
+                && col->food_store < feed_per_visit
                 && ch.cannibalism_cooldown <= 0) {
             int vi = _least_invested_larva(ch);
             if (vi >= 0) {
@@ -278,7 +278,7 @@ void LilGuy::_pick_task(Chamber& ch) {
                 target_x = ch.brood[vi].x; target_y = ch.brood[vi].y;
                 has_target = true;
                 has_target_cell = false;
-                ch.cannibalism_cooldown = Cfg::BROOD_CANNIBALISM_COOLDOWN;
+                ch.cannibalism_cooldown = static_cast<int>(Cfg::CANNIBALISM_COOLDOWN_SECS * 8);
                 return;
             }
         }
@@ -416,7 +416,11 @@ void LilGuy::_do_to_home(Chamber& ch) {
             has_target = false;
             has_target_cell = false;
             steps_walked = 0;
-            age += g_rng.rand_int(Cfg::GATHERING_TRIP_WEAR_LO, Cfg::GATHERING_TRIP_WEAR_HI);
+            {
+                uint32_t wear_ms = static_cast<uint32_t>(g_rng.rand_float() * 0.2f * Cfg::SECS_PER_DAY * 1000.0f);
+                if (born_at_ms > wear_ms) born_at_ms -= wear_ms;
+                else born_at_ms = 0;
+            }
             facing_dx = -facing_dx;
             facing_dy = -facing_dy;
             return;
@@ -444,7 +448,7 @@ void LilGuy::_do_tend_brood(Chamber& ch) {
     if (!has_target) { state = STATE_IDLE; has_target_cell = false; return; }
     int cx = cell_x(), cy = cell_y();
     if (abs(target_x - cx) + abs(target_y - cy) <= 1) {
-        float feed_amt = Cfg::LARVA_FEED_AMOUNT;
+        float feed_amt = Cfg::LARVA_FOOD_PER_DAY / 10.0f;
         if (ch.colony->food_store >= feed_amt) {
             for (int i = 0; i < ch.brood_count; i++) {
                 auto& b = ch.brood[i];
@@ -480,10 +484,10 @@ void LilGuy::_do_tend_queen(Chamber& ch) {
     if (!has_target) { state = STATE_IDLE; has_target_cell = false; return; }
     int cx = cell_x(), cy = cell_y();
     if (abs(target_x - cx) + abs(target_y - cy) <= 1) {
-        float feed_amt = Cfg::LARVA_FEED_AMOUNT;
+        float feed_amt = Cfg::QUEEN_FOOD_PER_DAY / 10.0f;
         if (ch.colony->food_store >= feed_amt) {
             ch.colony->food_store -= feed_amt;
-            ch.queen_obj.hunger = fmaxf(0.0f, ch.queen_obj.hunger - feed_amt);
+            ch.queen_obj.hunger = fmaxf(0.0f, ch.queen_obj.hunger - 0.1f);
             if (ch.event_bus) {
                 uint16_t pid = ch.event_bus->next_pair_id();
                 Event es; es.type = EVT_INTERACTION_STARTED; es.tick = ch.tick_num;
@@ -545,7 +549,7 @@ void LilGuy::_do_cannibalize(Chamber& ch) {
             auto& b = ch.brood[i];
             if (b.x == target_x && b.y == target_y
                     && b.stage == STAGE_LARVA && b.alive()) {
-                float recovered = b.fed_total * Cfg::BROOD_CANNIBALISM_RECOVERY;
+                float recovered = b.food_invested * Cfg::BROOD_CANNIBALISM_RECOVERY;
                 if (recovered < Cfg::BROOD_CANNIBALISM_MIN_PILE)
                     recovered = Cfg::BROOD_CANNIBALISM_MIN_PILE;
                 ch.colony->food_store += recovered;
@@ -826,7 +830,7 @@ int LilGuy::_least_invested_larva(Chamber& ch) {
     for (int i = 0; i < ch.brood_count; i++) {
         auto& b = ch.brood[i];
         if (b.stage != STAGE_LARVA || !b.alive()) continue;
-        if (b.fed_total < best_fed) { best = i; best_fed = b.fed_total; }
+        if (b.food_invested < best_fed) { best = i; best_fed = b.food_invested; }
     }
     return best;
 }

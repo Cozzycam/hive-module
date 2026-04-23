@@ -1,8 +1,7 @@
-/* Single-board sim coordinator. */
+/* Single-board sim coordinator — real-time lifecycle. */
 #include <Arduino.h>
 #include "sim.h"
 
-// Event type names for serial logging
 static const char* EVT_NAMES[] = {
     "interaction_started", "interaction_ended",
     "food_delivered", "food_tapped", "pile_discovered",
@@ -15,18 +14,56 @@ void Sim::init() {
     chamber.init(&colony, true);
     event_bus.init();
     tick_count = 0;
+    last_lifecycle_ms = millis();
+
+    // Debug: spawn one of each entity type for visual testing
+    int qx = Cfg::QUEEN_SPAWN_X, qy = Cfg::QUEEN_SPAWN_Y;
+    chamber.add_brood(qx - 3, qy - 2, ROLE_MINOR);                  // egg
+    chamber.brood[chamber.brood_count - 1].stage = STAGE_EGG;
+    chamber.add_brood(qx - 2, qy + 2, ROLE_MINOR);                  // larva
+    chamber.brood[chamber.brood_count - 1].stage = STAGE_LARVA;
+    chamber.add_brood(qx + 3, qy - 2, ROLE_MINOR);                  // pupa
+    chamber.brood[chamber.brood_count - 1].stage = STAGE_PUPA;
+    chamber.add_lil_guy(qx + 4, qy + 2, ROLE_MINOR, true);          // pioneer
+    chamber.add_lil_guy(qx - 5, qy,     ROLE_MINOR, false);         // minor
+    chamber.add_lil_guy(qx + 5, qy,     ROLE_MAJOR, false);         // major
+    colony.population = chamber.lil_guy_count;
 }
 
-void Sim::tick() {
+void Sim::tick(float dt) {
     tick_count++;
 
-    // Bind event bus to chamber for this tick
     chamber.event_bus = &event_bus;
     chamber.tick_num = tick_count;
 
-    chamber.tick();
+    // ---- Centralized food drain (real-time) ----
+    float burn_this_tick = colony.daily_burn() / Cfg::SECS_PER_DAY * dt;
 
-    // Aggregate colony-wide stats
+    // During founding, queen eats from reserves
+    if (!chamber.queen_obj.founding_done && chamber.queen_obj.reserves > 0) {
+        float queen_portion = Cfg::QUEEN_FOOD_PER_DAY / Cfg::SECS_PER_DAY * dt;
+        float from_reserves = fminf(queen_portion, chamber.queen_obj.reserves);
+        chamber.queen_obj.reserves -= from_reserves;
+        burn_this_tick -= from_reserves;
+        if (burn_this_tick < 0) burn_this_tick = 0;
+    }
+
+    colony.food_store = fmaxf(0.0f, colony.food_store - burn_this_tick);
+
+    // ---- Credit larva food investment ----
+    if (colony.food_store > 0.0f || (!chamber.queen_obj.founding_done && chamber.queen_obj.reserves > 0)) {
+        float per_larva = Cfg::LARVA_FOOD_PER_DAY / Cfg::SECS_PER_DAY * dt;
+        for (int i = 0; i < chamber.brood_count; i++) {
+            if (chamber.brood[i].stage == STAGE_LARVA && chamber.brood[i].alive()) {
+                chamber.brood[i].food_invested += per_larva;
+            }
+        }
+    }
+
+    // ---- Chamber tick (movement, behavior, lifecycle events) ----
+    chamber.tick(dt);
+
+    // ---- Aggregate colony stats ----
     colony.population = chamber.lil_guy_count;
 
     int gatherers = 0;
@@ -43,38 +80,28 @@ void Sim::tick() {
     colony.brood_larva = larvae;
     colony.brood_pupa  = pupae;
 
-    // food_total = food_store + queen reserves
     float queen_reserves = 0.0f;
     if (chamber.has_queen && chamber.queen_obj.alive)
         queen_reserves = chamber.queen_obj.reserves;
     colony.food_total = colony.food_store + queen_reserves;
 
     colony.update_recovery_boost();
-
-    // Food is manual only (tap-to-feed)
 }
 
 void Sim::handle_touch() {
     TouchEvent te;
     if (!touch_poll(&te))
         return;
-
-    // Convert display pixels (480x320 after rotation) to grid cells.
     int cx = te.x / Cfg::CELL_SIZE;
     int cy = te.y / Cfg::CELL_SIZE;
-
     if (cx < 0 || cx >= Cfg::GRID_WIDTH || cy < 0 || cy >= Cfg::GRID_HEIGHT)
         return;
-
     chamber.add_food(cx, cy, Cfg::TAP_FEED_AMOUNT);
-
-    // Emit food_tapped event
     Event ev;
     ev.type = EVT_FOOD_TAPPED;
     ev.tick = tick_count;
     ev.food_tapped = {static_cast<int8_t>(cx), static_cast<int8_t>(cy)};
     event_bus.emit(ev);
-
     Serial.printf("[touch] fed (%d,%d) +%.0f\n", cx, cy, Cfg::TAP_FEED_AMOUNT);
 }
 

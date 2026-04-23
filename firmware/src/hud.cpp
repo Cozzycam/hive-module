@@ -83,19 +83,23 @@ static ColonyPhase _get_phase(int population) {
 static Preferences _prefs;
 static uint32_t _colony_founded_unix = 0;
 static bool     _founded_stored      = false;
+static bool     _founded_reliable    = false;  // stored from NTP/RTC, not simulated clock
 
 static void _load_founded() {
     _prefs.begin("hive", false);
     _colony_founded_unix = _prefs.getULong("founded", 0);
+    _founded_reliable    = _prefs.getBool("founded_ok", false);
     _prefs.end();
     _founded_stored = (_colony_founded_unix != 0);
 }
 
-static void _store_founded(uint32_t t) {
+static void _store_founded(uint32_t t, bool reliable) {
     _colony_founded_unix = t;
     _founded_stored = true;
+    _founded_reliable = reliable;
     _prefs.begin("hive", false);
     _prefs.putULong("founded", t);
+    _prefs.putBool("founded_ok", reliable);
     _prefs.end();
 }
 
@@ -106,31 +110,12 @@ static uint32_t _colony_age_days() {
 }
 
 // ================================================================
-//  Burn rate (food days remaining)
+//  Food reserves (real-life days remaining)
 // ================================================================
-static float _daily_burn(const Chamber& ch) {
-    float scale = Cfg::metabolic_scale_factor(ch.colony->population);
-    float burn = Cfg::QUEEN_METABOLISM * Cfg::TICKS_PER_SIM_DAY;
-
-    for (int i = 0; i < ch.lil_guy_count; i++) {
-        if (!ch.lil_guys[i].alive) continue;
-        burn += Cfg::ROLE_PARAMS[ch.lil_guys[i].role].metabolism
-              * scale * Cfg::TICKS_PER_SIM_DAY;
-    }
-
-    if (ch.colony->brood_larva > 0) {
-        float feed_interval = 0.5f / Cfg::LARVA_HUNGER_RATE;
-        float feeds_per_day = (float)Cfg::TICKS_PER_SIM_DAY / feed_interval;
-        burn += ch.colony->brood_larva * feeds_per_day * Cfg::LARVA_FEED_AMOUNT;
-    }
-
-    return burn;
-}
-
 static float _food_days_remaining(const Chamber& ch) {
     float store = ch.colony->food_store;
     if (store < 0.01f) return 0.0f;
-    float burn = _daily_burn(ch);
+    float burn = ch.colony->daily_burn();
     if (burn < 0.001f) return 99.0f;
     float days = store / burn;
     return (days > 99.0f) ? 99.0f : days;
@@ -385,9 +370,15 @@ void hud_init() {
 }
 
 void hud_draw(Arduino_Canvas* gfx, const Chamber& ch) {
-    // Record founding time on first tick with valid time
-    if (!_founded_stored && g_tod.unix_time > 1000000) {
-        _store_founded(g_tod.unix_time);
+    // Record founding time — only with a reliable clock (NTP/RTC).
+    // Re-record if previously stored from simulated fallback clock.
+    if (g_tod.unix_time > 1000000) {
+        bool have_clock = g_tod.ntp_synced || g_tod.rtc_valid;
+        if (!_founded_stored && have_clock) {
+            _store_founded(g_tod.unix_time, true);
+        } else if (_founded_stored && !_founded_reliable && have_clock) {
+            _store_founded(g_tod.unix_time, true);
+        }
     }
 
     unsigned long now = millis();

@@ -1,4 +1,4 @@
-/* Queen behavior — ported from sim/queen.py. */
+/* Queen behavior — real-time lifecycle. */
 #include "queen.h"
 #include "chamber.h"
 #include "events.h"
@@ -7,46 +7,42 @@
 
 void Queen::init(int8_t px, int8_t py) {
     x = px; y = py;
-    lay_cooldown = Cfg::QUEEN_LAY_INTERVAL_FOUNDING;
     eggs_laid = 0;
     hunger = 0.0f;
     alive = true;
     reserves = Cfg::FOOD_STORE_START;
+    founding_done = false;
+    egg_accum = 0.0f;
 }
 
-void Queen::tick(Chamber& ch) {
+void Queen::tick(Chamber& ch, float dt) {
     if (!alive) return;
 
-    // Metabolism
-    float consumed = _consume(ch, Cfg::QUEEN_METABOLISM);
-    if (consumed > 0) {
-        if (hunger > 0) hunger = fmaxf(0.0f, hunger - Cfg::QUEEN_METABOLISM);
-    } else {
-        hunger += Cfg::QUEEN_HUNGER_RATE;
-        if (hunger >= Cfg::QUEEN_STARVE_THRESHOLD) { alive = false; return; }
+    // ---- Metabolism ----
+    // Food consumption is centralized in sim.cpp via daily_burn().
+    // During founding, queen eats from reserves (handled in sim.cpp).
+    // Here we only manage hunger when food_store is empty.
+    if (ch.colony->food_store <= 0.0f && reserves <= 0.0f) {
+        hunger += dt / (Cfg::QUEEN_SURVIVAL_DAYS * Cfg::SECS_PER_DAY);
+        if (hunger >= 1.0f) { alive = false; return; }
+    } else if (hunger > 0.0f) {
+        hunger = fmaxf(0.0f, hunger - dt / (Cfg::QUEEN_SURVIVAL_DAYS * Cfg::SECS_PER_DAY));
     }
 
-    // Founding brood care
-    if (ch.colony->population == 0) {
-        _tend_founding_brood(ch);
-    } else if (reserves > 0) {
+    // ---- Founding brood care ----
+    if (!founding_done) {
+        _tend_founding_brood(ch, dt);
+    } else if (reserves > 0.0f) {
+        // Dump remaining reserves into food store on transition
         ch.colony->food_store += reserves;
         reserves = 0.0f;
     }
 
-    // Egg laying
-    if (lay_cooldown > 0) { lay_cooldown--; return; }
-
-    bool founding = ch.colony->population == 0;
-    if (_can_lay(ch)) {
-        _lay(ch);
-        if (founding)
-            lay_cooldown = Cfg::QUEEN_LAY_INTERVAL_FOUNDING;
-        else {
-            float pressure = ch.colony->food_pressure();
-            int base = Cfg::QUEEN_LAY_INTERVAL_NORMAL;
-            lay_cooldown = (pressure > Cfg::QUEEN_LAY_SLOWDOWN) ? base * 2 : base;
-        }
+    // ---- Egg laying ----
+    if (!founding_done) {
+        _lay_founding(ch, dt);
+    } else {
+        _lay_established(ch, dt);
     }
 }
 
@@ -64,68 +60,51 @@ float Queen::_consume(Chamber& ch, float amount) {
     return from_reserves + store;
 }
 
-void Queen::_tend_founding_brood(Chamber& ch) {
+void Queen::_tend_founding_brood(Chamber& ch, float dt) {
+    // Queen feeds larvae from her reserves during founding
+    float feed_per_larva = Cfg::LARVA_FOOD_PER_DAY / Cfg::SECS_PER_DAY * dt;
     for (int i = 0; i < ch.brood_count; i++) {
         auto& b = ch.brood[i];
         if (b.stage != STAGE_LARVA || !b.alive()) continue;
-        if (b.fed_total >= b.food_needed) continue;
+        if (b.food_invested >= Cfg::LARVA_TOTAL_FOOD) continue;
         if (!b.needs_feeding()) continue;
-        if (abs(b.x - x) + abs(b.y - y) <= 3) {
-            float consumed = _consume(ch, Cfg::LARVA_FEED_AMOUNT);
-            if (consumed > 0) b.feed(consumed);
-            return;
+        float consumed = _consume(ch, feed_per_larva);
+        if (consumed > 0) {
+            b.hunger = 0.0f;
+            b.food_invested += consumed;
         }
     }
 }
 
 bool Queen::_can_lay(Chamber& ch) {
-    float pressure = ch.colony->food_pressure();
-    if (pressure > Cfg::QUEEN_LAY_PRESSURE_MAX) return false;
     if (ch.colony->food_total < Cfg::QUEEN_LAY_FOOD_FLOOR) return false;
 
-    bool founding = ch.colony->population == 0;
-    if (founding && eggs_laid >= Cfg::QUEEN_FOUNDING_EGG_CAP) return false;
-
-    if (!founding) {
+    int pop = ch.colony->population;
+    if (pop > 0) {
         int pending = ch.colony->brood_egg + ch.colony->brood_larva;
-        int cap = ch.colony->population * Cfg::QUEEN_MAX_BROOD_RATIO;
+        int cap = pop * Cfg::QUEEN_MAX_BROOD_RATIO;
         if (cap < 4) cap = 4;
         if (pending >= cap) return false;
-
-        int batch = ch.colony->population / 5;
-        if (batch < 1) batch = 1;
-        if (batch > 6) batch = 6;
-        float brood_cost = batch * Cfg::ROLE_PARAMS[Cfg::DEFAULT_BROOD_ROLE].larva_food_needed;
-        if (ch.colony->food_total < brood_cost + Cfg::QUEEN_LAY_FOOD_FLOOR)
-            return false;
     }
     return true;
 }
 
-void Queen::_lay(Chamber& ch) {
-    int max_batch;
-    if (ch.colony->population == 0) {
-        max_batch = 6;
-    } else {
-        int base_batch = ch.colony->population / 5;
-        if (base_batch < 1) base_batch = 1;
-        if (base_batch > 6) base_batch = 6;
-        float pressure = ch.colony->food_pressure();
-        float comfort = Cfg::QUEEN_LAY_PRESSURE_MAX * 0.33f;
-        if (pressure <= comfort) {
-            max_batch = base_batch;
-        } else {
-            float t = (pressure - comfort) / (Cfg::QUEEN_LAY_PRESSURE_MAX - comfort);
-            max_batch = static_cast<int>(roundf(base_batch * (1.0f - t)));
-            if (max_batch < 1) max_batch = 1;
-        }
+void Queen::_lay_founding(Chamber& ch, float dt) {
+    if (eggs_laid >= Cfg::FOUNDING_EGG_COUNT) {
+        // All founding eggs laid, pause until first worker
+        return;
     }
 
-    for (int i = 0; i < max_batch; i++) {
-        float consumed = _consume(ch, Cfg::QUEEN_EGG_FOOD_COST);
-        if (consumed < Cfg::QUEEN_EGG_FOOD_COST) {
+    float lay_rate = static_cast<float>(Cfg::FOUNDING_EGG_COUNT)
+                   / (Cfg::FOUNDING_EGG_WINDOW_DAYS * Cfg::SECS_PER_DAY);
+    egg_accum += lay_rate * dt;
+
+    while (egg_accum >= 1.0f && eggs_laid < Cfg::FOUNDING_EGG_COUNT) {
+        if (ch.brood_count >= Cfg::MAX_BROOD) break;
+        float consumed = _consume(ch, Cfg::EGG_FOOD_COST);
+        if (consumed < Cfg::EGG_FOOD_COST) {
             if (consumed > 0) reserves += consumed;
-            return;
+            break;
         }
         int dx = g_rng.rand_int(-2, 2);
         int dy = g_rng.rand_int(-2, 2);
@@ -139,5 +118,48 @@ void Queen::_lay(Chamber& ch) {
         } else {
             reserves += consumed;
         }
+        egg_accum -= 1.0f;
+    }
+}
+
+void Queen::_lay_established(Chamber& ch, float dt) {
+    if (!_can_lay(ch)) return;
+    if (ch.colony->food_store < Cfg::EGG_FOOD_COST) return;
+
+    int pop = ch.colony->population;
+    float pop_factor = fminf(1.0f, static_cast<float>(pop) / Cfg::LAY_RATE_POP_SCALE);
+    float base_rate = Cfg::ESTABLISHED_LAY_RATE_BASE
+                    + (Cfg::ESTABLISHED_LAY_RATE_MAX - Cfg::ESTABLISHED_LAY_RATE_BASE) * pop_factor;
+
+    float pressure = ch.colony->food_pressure();
+    float pressure_mult = 1.0f;
+    if (pressure > Cfg::QUEEN_LAY_PRESSURE_MAX) {
+        float t = (pressure - Cfg::QUEEN_LAY_PRESSURE_MAX)
+                / (1.0f - Cfg::QUEEN_LAY_PRESSURE_MAX);
+        pressure_mult = 1.0f - t * (1.0f - Cfg::LAY_PRESSURE_FLOOR);
+    }
+
+    float effective_rate = base_rate * pressure_mult;
+    egg_accum += effective_rate / Cfg::SECS_PER_DAY * dt;
+
+    while (egg_accum >= 1.0f) {
+        if (ch.brood_count >= Cfg::MAX_BROOD) break;
+        if (ch.colony->food_store < Cfg::EGG_FOOD_COST) break;
+
+        ch.colony->food_store -= Cfg::EGG_FOOD_COST;
+
+        int dx = g_rng.rand_int(-2, 2);
+        int dy = g_rng.rand_int(-2, 2);
+        int ex = x + dx, ey = y + dy;
+        if (ch.in_bounds(ex, ey) && (dx != 0 || dy != 0)) {
+            ch.add_brood(ex, ey, Cfg::DEFAULT_BROOD_ROLE);
+            eggs_laid++;
+            Event ev; ev.type = EVT_QUEEN_LAID_EGG; ev.tick = ch.tick_num;
+            ev.position = {static_cast<int8_t>(ex), static_cast<int8_t>(ey)};
+            ch.emit(ev);
+        } else {
+            ch.colony->food_store += Cfg::EGG_FOOD_COST; // refund
+        }
+        egg_accum -= 1.0f;
     }
 }

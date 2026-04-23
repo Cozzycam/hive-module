@@ -1,4 +1,4 @@
-/* Brood lifecycle: egg -> larva -> pupa -> hatch. Ported from sim/brood.py. */
+/* Brood lifecycle: egg -> larva -> pupa -> hatch. Real-time wall-clock. */
 #pragma once
 #include "config.h"
 
@@ -15,25 +15,21 @@ struct Brood {
     int8_t     x, y;
     BroodStage stage        = STAGE_EGG;
     Role       role         = ROLE_MINOR;
-    uint16_t   age          = 0;
+    uint32_t   stage_start_ms = 0;
     float      hunger       = 0.0f;
-    float      fed_total    = 0.0f;
-    int        larva_duration;
-    float      food_needed;
+    float      food_invested = 0.0f;
 
     void init(int8_t px, int8_t py, Role c = ROLE_MINOR);
-
-    // Returns transition signal (BROOD_HATCH, BROOD_EGG_TO_LARVA, etc.)
-    BroodTransition tick();
+    BroodTransition tick(float dt);
 
     bool needs_feeding() const {
-        return stage == STAGE_LARVA && hunger > 0.5f;
+        return stage == STAGE_LARVA && hunger > 0.3f;
     }
 
     void feed(float amount) {
         if (stage != STAGE_LARVA) return;
         hunger = 0.0f;
-        fed_total += amount;
+        food_invested += amount;
     }
 
     bool alive() const { return stage != STAGE_DEAD; }

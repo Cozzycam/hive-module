@@ -14,6 +14,7 @@ struct ColonyState {
     float    peak_pressure       = 0.0f;
     int      recovery_boost_remaining = 0;
 
+    float daily_burn() const;
     float food_pressure() const;
     float target_gatherer_fraction() const;
     void  update_recovery_boost();

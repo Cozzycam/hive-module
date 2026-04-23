@@ -54,6 +54,26 @@ struct GrainSpeck {
     uint8_t radius_x10;  // radius * 10 (6–18 = 0.6–1.8px)
 };
 
+// ---- Sprite z-ordering ----
+enum SpriteKind : uint8_t {
+    SK_FOOD_PILE = 0,
+    SK_EGG,
+    SK_LARVA,
+    SK_PUPA,
+    SK_WORKER,
+    SK_QUEEN,
+};
+
+struct SpriteDraw {
+    float    sort_y;      // Y for depth sorting (may include bias)
+    int16_t  render_x;    // screen pixel center
+    int16_t  render_y;
+    uint16_t size_px;     // rendered size after scaling (for tiebreaker)
+    SpriteKind kind;
+    uint8_t  flags;       // bit 0 = flip_h
+    int16_t  entity_idx;  // index into sim array
+};
+
 class Renderer {
 public:
     void init(Arduino_Canvas* canvas);
@@ -100,6 +120,14 @@ private:
     bool _boot_splash_active = false;
     unsigned long _boot_splash_start_ms = 0;
 
+    // Z-sorted sprite draw lists (static buffers, reused each frame)
+    static constexpr int MAX_FLOOR_SPRITES = Cfg::MAX_BROOD + Cfg::MAX_FOOD_PILES;
+    static constexpr int MAX_AGENT_SPRITES = Cfg::MAX_LIL_GUYS + 1; // +1 queen
+    SpriteDraw _floor_sprites[MAX_FLOOR_SPRITES];
+    int _floor_sprite_count = 0;
+    SpriteDraw _agent_sprites[MAX_AGENT_SPRITES];
+    int _agent_sprite_count = 0;
+
     void _mark_dirty(int sx, int sy, int sw, int sh);
     void _clear_dirty();
 
@@ -123,12 +151,20 @@ private:
     bool _tick_boot_splash(const Chamber& ch);
     void _dim_framebuffer(float brightness);
 
-    void _draw_food_piles(const Chamber& ch);
-    void _draw_brood(const Chamber& ch);
-    void _draw_queen(const Chamber& ch);
-    void _draw_workers(const Chamber& ch, float lerp_t);
+    // Z-sorted entity rendering
+    void _build_floor_sprites(const Chamber& ch);
+    void _build_agent_sprites(const Chamber& ch, float lerp_t);
+    void _draw_sorted_sprites(SpriteDraw* list, int count, const Chamber& ch);
+    void _draw_one_sprite(const SpriteDraw& sd, const Chamber& ch);
+
     void _draw_sprite(int cx, int cy, const uint16_t* data,
                       int sw, int sh, bool flip_h = false);
+    void _draw_sprite_scaled(int cx, int cy, const uint16_t* data,
+                             int sw, int sh, float scale,
+                             bool flip_h = false);
+
+    // Kept for boot splash compatibility
+    void _draw_queen(const Chamber& ch);
 
     // Animations
     void _spawn_anim(AnimType type, int px, int py, uint8_t duration);

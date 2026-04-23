@@ -11,9 +11,10 @@ public:
     Chamber     chamber;
     EventBus    event_bus;
     uint32_t    tick_count = 0;
+    uint32_t    last_lifecycle_ms = 0;
 
     void init();
-    void tick();
+    void tick(float dt);
     void handle_touch();
 
     /* Drain events and log to serial. Called from main loop at

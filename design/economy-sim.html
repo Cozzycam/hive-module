@@ -1,0 +1,1549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hive Economy Simulator</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: #111; color: #ccc; font-size: 14px;
+    overflow-y: auto;
+}
+
+/* ── Top Bar ── */
+.top-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+    padding: 10px 16px; background: #1a1a1a;
+    border-bottom: 1px solid #2a2a2a;
+}
+.top-bar h1 {
+    font-size: 18px; font-weight: 600; color: #4ecca3;
+    margin-right: 12px; white-space: nowrap;
+}
+.param-group {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 8px; background: #222; border-radius: 4px;
+    white-space: nowrap;
+}
+.param-group label {
+    font-size: 12px; color: #888;
+}
+.param-group input[type="range"] {
+    width: 100px; accent-color: #4ecca3;
+}
+.param-group select {
+    background: #333; color: #ccc; border: 1px solid #444;
+    border-radius: 3px; padding: 2px 6px; font-size: 12px;
+}
+.param-value {
+    font-size: 12px; color: #4ecca3; min-width: 40px; text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+#btn-run {
+    padding: 8px 20px; background: #4ecca3; color: #111;
+    border: none; border-radius: 4px; font-weight: 600;
+    font-size: 14px; cursor: pointer; white-space: nowrap;
+}
+#btn-run:hover { background: #3dbb92; }
+#btn-run:disabled { background: #555; color: #888; cursor: not-allowed; }
+
+/* ── Progress ── */
+.progress-wrap {
+    width: 100%; height: 6px; background: #222; border-radius: 3px;
+    overflow: hidden; display: none;
+}
+.progress-wrap.active { display: block; }
+.progress-bar {
+    height: 100%; background: #4ecca3; width: 0%;
+    transition: width 0.1s linear;
+}
+
+/* ── Summary ── */
+.summary-panel {
+    display: none; padding: 12px 16px; background: #1a1a1a;
+    border-bottom: 1px solid #2a2a2a;
+}
+.summary-panel.active { display: block; }
+.summary-section-title {
+    font-size: 12px; color: #4ecca3; text-transform: uppercase;
+    letter-spacing: 0.5px; margin: 12px 0 6px; font-weight: 600;
+}
+.summary-section-title:first-child { margin-top: 0; }
+.summary-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 8px;
+}
+.stat-card {
+    background: #222; border-radius: 4px; padding: 8px 12px;
+    border-left: 3px solid #4ecca3;
+}
+.stat-card .label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+.stat-card .value { font-size: 18px; color: #eee; font-weight: 600; margin-top: 2px; }
+.stat-card .value.good { color: #4ecca3; }
+.stat-card .value.bad { color: #e55; }
+
+/* ── Validation ── */
+.validation-panel {
+    display: none; padding: 12px 16px; background: #1a1a1a;
+    border-bottom: 1px solid #2a2a2a;
+}
+.validation-panel.active { display: block; }
+.validation-title {
+    font-size: 12px; color: #4ecca3; text-transform: uppercase;
+    letter-spacing: 0.5px; margin-bottom: 8px; font-weight: 600;
+}
+.validation-list {
+    list-style: none; padding: 0;
+}
+.validation-list li {
+    font-size: 13px; padding: 4px 0; color: #ccc;
+}
+.validation-list li .check { margin-right: 6px; }
+.validation-list li .check.pass { color: #4ecca3; }
+.validation-list li .check.fail { color: #e55; }
+
+/* ── Charts ── */
+.charts-container {
+    padding: 16px; display: none;
+}
+.charts-container.active { display: block; }
+.chart-row {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 16px; margin-bottom: 16px;
+}
+.chart-box {
+    background: #1a1a1a; border: 1px solid #2a2a2a;
+    border-radius: 6px; padding: 12px;
+}
+.chart-box.full-width {
+    grid-column: 1 / -1;
+}
+.chart-box h3 {
+    font-size: 13px; color: #888; margin-bottom: 8px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+}
+.chart-canvas-wrap {
+    position: relative; height: 260px;
+}
+.chart-canvas-wrap canvas {
+    width: 100% !important; height: 100% !important;
+}
+
+/* ── Event Log ── */
+.event-log-wrap {
+    background: #1a1a1a; border: 1px solid #2a2a2a;
+    border-radius: 6px; padding: 12px; margin: 0 16px 16px;
+    display: none;
+}
+.event-log-wrap.active { display: block; }
+.event-log-wrap h3 {
+    font-size: 13px; color: #888; margin-bottom: 8px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+}
+#event-log {
+    height: 200px; overflow-y: auto; font-family: 'Consolas', 'SF Mono', monospace;
+    font-size: 12px; line-height: 1.6; color: #aaa;
+    background: #151515; border-radius: 4px; padding: 8px;
+}
+#event-log .ev-time { color: #666; }
+#event-log .ev-food { color: #d4a; }
+#event-log .ev-birth { color: #4ecca3; }
+#event-log .ev-death { color: #e55; }
+#event-log .ev-queen { color: #fc5; }
+#event-log .ev-warn { color: #f80; }
+#event-log .ev-info { color: #8af; }
+#event-log .ev-stress { color: #f0f; }
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+    .chart-row { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+    <h1>Hive Economy Simulator</h1>
+
+    <div class="param-group">
+        <label>Feeds/Day</label>
+        <input type="range" id="param-feeds" min="0" max="5" value="1" step="1">
+        <span class="param-value" id="val-feeds">1</span>
+    </div>
+
+    <div class="param-group">
+        <label>Food/Feed</label>
+        <input type="range" id="param-food-per-feed" min="50" max="500" value="200" step="10">
+        <span class="param-value" id="val-food-per-feed">200</span>
+    </div>
+
+    <div class="param-group">
+        <label>Duration</label>
+        <select id="param-duration">
+            <option value="7">1 week</option>
+            <option value="14">2 weeks</option>
+            <option value="30" selected>1 month</option>
+            <option value="60">2 months</option>
+        </select>
+    </div>
+
+    <div class="param-group">
+        <label>Stress Test</label>
+        <select id="param-stress">
+            <option value="none">None</option>
+            <option value="skip1">Skip 1 feed (day 20)</option>
+            <option value="skip3">Skip 3 feeds (day 20-22)</option>
+        </select>
+    </div>
+
+    <button id="btn-run">Run Simulation</button>
+</div>
+
+<div class="progress-wrap" id="progress-wrap">
+    <div class="progress-bar" id="progress-bar"></div>
+</div>
+
+<div class="summary-panel" id="summary-panel"></div>
+
+<div class="validation-panel" id="validation-panel">
+    <div class="validation-title">Validation Checklist</div>
+    <ul class="validation-list" id="validation-list"></ul>
+</div>
+
+<div class="charts-container" id="charts-container">
+    <div class="chart-row">
+        <div class="chart-box">
+            <h3>Population &amp; Deaths</h3>
+            <div class="chart-canvas-wrap"><canvas id="chart-pop"></canvas></div>
+        </div>
+        <div class="chart-box">
+            <h3>Food Economy</h3>
+            <div class="chart-canvas-wrap"><canvas id="chart-food"></canvas></div>
+        </div>
+    </div>
+    <div class="chart-row">
+        <div class="chart-box">
+            <h3>Food Pressure &amp; Lay Rate</h3>
+            <div class="chart-canvas-wrap"><canvas id="chart-pressure"></canvas></div>
+        </div>
+        <div class="chart-box">
+            <h3>Brood Pipeline</h3>
+            <div class="chart-canvas-wrap"><canvas id="chart-brood"></canvas></div>
+        </div>
+    </div>
+</div>
+
+<div class="event-log-wrap" id="event-log-wrap">
+    <h3>Event Log</h3>
+    <div id="event-log"></div>
+</div>
+
+<script>
+// ================================================================
+//  Parameter UI wiring
+// ================================================================
+const paramFeeds       = document.getElementById('param-feeds');
+const paramFoodPerFeed = document.getElementById('param-food-per-feed');
+const paramDuration    = document.getElementById('param-duration');
+const paramStress      = document.getElementById('param-stress');
+const valFeeds         = document.getElementById('val-feeds');
+const valFoodPerFeed   = document.getElementById('val-food-per-feed');
+const btnRun           = document.getElementById('btn-run');
+const progressWrap     = document.getElementById('progress-wrap');
+const progressBar      = document.getElementById('progress-bar');
+const summaryPanel     = document.getElementById('summary-panel');
+const validationPanel  = document.getElementById('validation-panel');
+const validationList   = document.getElementById('validation-list');
+const chartsContainer  = document.getElementById('charts-container');
+const eventLogWrap     = document.getElementById('event-log-wrap');
+const eventLogEl       = document.getElementById('event-log');
+
+paramFeeds.addEventListener('input', () => valFeeds.textContent = paramFeeds.value);
+paramFoodPerFeed.addEventListener('input', () => valFoodPerFeed.textContent = paramFoodPerFeed.value);
+
+// ================================================================
+//  Simple seeded PRNG (xoshiro128**)
+// ================================================================
+class RNG {
+    constructor(seed) {
+        let s = seed >>> 0;
+        const sm = () => { s = (s + 0x9e3779b9) >>> 0; let z = s; z = (z ^ (z >>> 16)) >>> 0; z = Math.imul(z, 0x85ebca6b); z = (z ^ (z >>> 13)) >>> 0; z = Math.imul(z, 0xc2b2ae35); z = (z ^ (z >>> 16)) >>> 0; return z; };
+        this.s = [sm(), sm(), sm(), sm()];
+    }
+    _rotl(x, k) { return ((x << k) | (x >>> (32 - k))) >>> 0; }
+    _next() {
+        const s = this.s;
+        const result = Math.imul(this._rotl(Math.imul(s[1], 5) >>> 0, 7), 9) >>> 0;
+        const t = (s[1] << 9) >>> 0;
+        s[2] = (s[2] ^ s[0]) >>> 0;
+        s[3] = (s[3] ^ s[1]) >>> 0;
+        s[1] = (s[1] ^ s[2]) >>> 0;
+        s[0] = (s[0] ^ s[3]) >>> 0;
+        s[2] = (s[2] ^ t) >>> 0;
+        s[3] = this._rotl(s[3], 11);
+        return result;
+    }
+    rand_float() { return (this._next() >>> 0) / 4294967296; }
+    rand_int(lo, hi) { return lo + ((this._next() >>> 0) % (hi - lo + 1)); }
+}
+
+// ================================================================
+//  Simulation Engine — dual-clock real-time lifecycle
+// ================================================================
+
+function runSimulation(params) {
+    const {
+        feedsPerDay,
+        foodPerFeed,
+        durationDays,
+        stressTest,
+    } = params;
+
+    // ---- Lifecycle Constants (all in per-day real-time units) ----
+    const WORKER_LIFESPAN_MEAN = 21;
+    const WORKER_LIFESPAN_SD = 3;
+    const PIONEER_LIFESPAN_MEAN = 14;
+    const PIONEER_LIFESPAN_SD = 2;
+
+    const EGG_DURATION_DAYS = 1.0;
+    const LARVA_DURATION_DAYS = 2.0;
+    const PUPA_DURATION_DAYS = 1.0;
+
+    const QUEEN_FOOD_PER_DAY = 3.0;
+    const WORKER_FOOD_PER_DAY = 2.0;
+    const LARVA_FOOD_PER_DAY = 1.5;
+    const EGG_FOOD_COST = 1.0;
+
+    const FOUNDING_EGG_COUNT = 10;
+    const FOUNDING_EGG_WINDOW = 0.5;
+    const ESTABLISHED_LAY_RATE_BASE = 6;
+    const ESTABLISHED_LAY_RATE_MAX = 10;
+    const LAY_RATE_POP_SCALE = 100;
+
+    const QUEEN_LAY_PRESSURE_MAX = 0.35;
+    const LAY_PRESSURE_FLOOR = 0.20;
+    const QUEEN_LAY_FOOD_FLOOR = 50.0;
+
+    const FOOD_STORE_START = 80.0;
+    const FOOD_PRESSURE_BUFFER_DAYS = 2.0;
+    const TAP_FEED_AMOUNT = foodPerFeed;
+
+    const MAX_WORKERS = 200;
+    const MAX_BROOD = 100;
+    const PIONEER_COUNT = 12;
+
+    const WORKER_STARVE_THRESHOLD = 30.0;
+    const QUEEN_STARVE_THRESHOLD = 50.0;
+    const WORKER_SURVIVAL_DAYS = 1.5;
+    const QUEEN_SURVIVAL_DAYS = 2.0;
+
+    const METABOLIC_SCALE_FLOOR = 0.7;
+    const METABOLIC_SCALE_ONSET = 10;
+
+    const FAMINE_BROOD_CULL_PRESSURE = 0.8;
+    const BROOD_CANNIBALISM_PRESSURE = 0.95;
+    const BROOD_CANNIBALISM_RECOVERY = 0.4;
+    const BROOD_CANNIBALISM_MIN_PILE = 2.0;
+    const CANNIBALISM_COOLDOWN_DAYS = 0.25;
+
+    // ---- Time stepping ----
+    const dt = 1.0 / 1440.0; // 1 minute in days
+    const TOTAL_STEPS = Math.round(durationDays / dt);
+    const SAMPLE_INTERVAL = 60; // every 60 steps = 1 hour
+    const STEPS_PER_DAY = 1440;
+    const COMPACT_INTERVAL = STEPS_PER_DAY; // compact dead workers every sim-day
+
+    // ---- Stress test config ----
+    let stressSkipStart = -1;
+    let stressSkipEnd = -1;
+    if (stressTest === 'skip1') {
+        stressSkipStart = 20.0;
+        stressSkipEnd = 21.0;
+    } else if (stressTest === 'skip3') {
+        stressSkipStart = 20.0;
+        stressSkipEnd = 23.0;
+    }
+    let stressLoggedStart = false;
+    let stressLoggedEnd = false;
+    let preStressPop = -1;
+    let minStressPop = Infinity;
+    let stressRecoveryDay = -1;
+    let stressColonySurvived = true;
+
+    // ---- Helper: metabolic scale factor ----
+    function metabolic_scale_factor(pop) {
+        if (pop <= METABOLIC_SCALE_ONSET) return 1.0;
+        const factor = Math.pow(pop / METABOLIC_SCALE_ONSET, -0.10);
+        return Math.max(METABOLIC_SCALE_FLOOR, Math.min(1.0, factor));
+    }
+
+    // ---- Helper: gaussian via Box-Muller ----
+    function gaussian(mean, sd) {
+        const u1 = rng.rand_float();
+        const u2 = rng.rand_float();
+        const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+        return mean + z * sd;
+    }
+
+    // ---- State ----
+    const rng = new RNG(42);
+
+    let food_store = 0.0;
+    let queen_reserves = FOOD_STORE_START;
+    let queen_alive = true;
+    let queen_hunger = 0.0;
+
+    let queen_established = false;
+    let founding_eggs_laid = 0;
+    let founding_paused = false;
+    let colony_collapsed = false;
+
+    const broods = [];
+    const workers = [];
+
+    let total_births = 0;
+    let total_deaths = 0;
+    let total_eggs_laid = 0;
+    let total_food_deposited = 0.0;
+    let total_food_consumed = 0.0;
+    let egg_accumulator = 0.0;
+    let founding_egg_accumulator = 0.0;
+
+    let peak_population = 0;
+    let last_cannibalism_at = -999.0;
+    let last_pressure_warn_at = -999.0;
+    let time_to_first_worker = -1;
+
+    let first_larva_logged = false;
+    let first_pupa_logged = false;
+    let first_worker_logged = false;
+    let founding_eggs_log_pending = false;
+    let founding_eggs_log_start = -1;
+    let reserves_at_eclosion = 0.0;
+    let founding_peak_brood = 0;
+
+    // Track last lay time for gap detection
+    let last_lay_day = 0.0;
+    let max_lay_gap = 0.0;
+
+    // ---- Data series for charts ----
+    const data_labels = [];
+    const data_population = [];
+    const data_cum_births = [];
+    const data_cum_deaths = [];
+    const data_food_store = [];
+    const data_pressure = [];
+    const data_brood_eggs = [];
+    const data_brood_larvae = [];
+    const data_brood_pupae = [];
+    const data_lay_rate = [];
+    const data_food_deposits = [];
+    const data_days_remaining = [];
+
+    // ---- Event log ----
+    const events = [];
+    function logEvent(day, cls, msg) {
+        const dayStr = day.toFixed(1);
+        events.push({ day, cls, text: '[Day ' + dayStr + '] ' + msg });
+    }
+
+    // ---- Derived helpers ----
+    function live_population() {
+        let count = 0;
+        for (let i = 0; i < workers.length; i++) {
+            if (workers[i].alive) count++;
+        }
+        return count;
+    }
+
+    // Maintain a cached live pop count for performance
+    let cached_pop = 0;
+
+    function brood_counts() {
+        let eggs = 0, larvae = 0, pupae = 0;
+        for (let i = 0; i < broods.length; i++) {
+            if (!broods[i].alive) continue;
+            if (broods[i].stage === 'egg') eggs++;
+            else if (broods[i].stage === 'larva') larvae++;
+            else if (broods[i].stage === 'pupa') pupae++;
+        }
+        return { eggs, larvae, pupae };
+    }
+
+    function compute_daily_burn(pop, num_larvae) {
+        const scale = metabolic_scale_factor(pop);
+        return QUEEN_FOOD_PER_DAY
+             + pop * WORKER_FOOD_PER_DAY * scale
+             + num_larvae * LARVA_FOOD_PER_DAY;
+    }
+
+    function food_pressure_from_burn(daily_burn) {
+        const target = daily_burn * FOOD_PRESSURE_BUFFER_DAYS;
+        if (target <= 0) return 0.5;
+        const ratio = food_store / target;
+        return Math.max(0, 1.0 - Math.min(1.0, ratio / 2.0));
+    }
+
+    // ---- Steady-state tracking (day 14+) ----
+    let ss_pop_sum = 0;
+    let ss_pop_count = 0;
+    let ss_deaths_at_14 = 0;
+    let ss_lay_rate_sum = 0;
+    let ss_lay_rate_count = 0;
+    let ss_pressure_sum = 0;
+    let ss_pressure_count = 0;
+    let ss_days_remaining_sum = 0;
+    let ss_days_remaining_count = 0;
+    let ss_low_food_steps = 0; // steps where days_remaining < 0.5
+    let ss_current_low_stretch = 0;
+    let ss_longest_low_stretch = 0;
+    let ss_started = false;
+
+    // ---- Current effective lay rate for sampling ----
+    let current_effective_lay_rate = 0.0;
+
+    // ---- Feed schedule ----
+    const feedIntervalDays = feedsPerDay > 0 ? 1.0 / feedsPerDay : Infinity;
+    let nextFeedDay = feedsPerDay > 0 ? feedIntervalDays : Infinity;
+
+    // ---- Main simulation loop (returns all results) ----
+    let now = 0.0;
+    let step = 0;
+
+    function simStep() {
+        now += dt;
+        step++;
+
+        const pop = cached_pop;
+        const bc = brood_counts();
+        const num_larvae = bc.larvae;
+        const total_brood = bc.eggs + bc.larvae + bc.pupae;
+
+        if (pop > peak_population) peak_population = pop;
+
+        // Track founding peak brood
+        if (!queen_established && total_brood > founding_peak_brood) {
+            founding_peak_brood = total_brood;
+        }
+
+        // ---- Stress test: check if we're in skip window ----
+        let feedsBlocked = false;
+        if (stressSkipStart >= 0 && now >= stressSkipStart && now < stressSkipEnd) {
+            feedsBlocked = true;
+            if (!stressLoggedStart) {
+                preStressPop = pop;
+                logEvent(now, 'ev-stress', 'Stress test: feed skipped starting day ' + stressSkipStart.toFixed(0));
+                stressLoggedStart = true;
+            }
+            if (pop < minStressPop) minStressPop = pop;
+        }
+        if (stressSkipStart >= 0 && now >= stressSkipEnd && !stressLoggedEnd) {
+            logEvent(now, 'ev-stress', 'Stress test: feeds resumed on day ' + stressSkipEnd.toFixed(0));
+            stressLoggedEnd = true;
+        }
+        // Track min pop and recovery after stress
+        if (stressLoggedStart && now >= stressSkipStart) {
+            if (pop < minStressPop) minStressPop = pop;
+            if (pop === 0 && queen_established) stressColonySurvived = false;
+            if (stressLoggedEnd && stressRecoveryDay < 0 && preStressPop > 0 && pop >= preStressPop) {
+                stressRecoveryDay = now;
+            }
+        }
+
+        // ---- Food deposits ----
+        if (!feedsBlocked && now >= nextFeedDay && feedsPerDay > 0) {
+            food_store += TAP_FEED_AMOUNT;
+            total_food_deposited += TAP_FEED_AMOUNT;
+            data_food_deposits.push(now);
+            logEvent(now, 'ev-food', 'Food deposited: +' + TAP_FEED_AMOUNT.toFixed(0) + ' (store: ' + food_store.toFixed(1) + ')');
+            nextFeedDay += feedIntervalDays;
+        } else if (feedsBlocked && now >= nextFeedDay && feedsPerDay > 0) {
+            // Skip this feed, advance schedule
+            nextFeedDay += feedIntervalDays;
+        }
+
+        // ---- Food consumption ----
+        const scale = metabolic_scale_factor(pop);
+        let burn = QUEEN_FOOD_PER_DAY * dt;
+
+        // During founding, queen eats from reserves first
+        if (!queen_established && queen_reserves > 0) {
+            const queen_eat = Math.min(QUEEN_FOOD_PER_DAY * dt, queen_reserves);
+            queen_reserves -= queen_eat;
+            burn -= queen_eat;
+            if (burn < 0) burn = 0;
+        }
+
+        burn += pop * WORKER_FOOD_PER_DAY * scale * dt;
+        burn += num_larvae * LARVA_FOOD_PER_DAY * dt;
+
+        let food_sufficient = false;
+        if (food_store >= burn) {
+            food_store -= burn;
+            total_food_consumed += burn;
+            food_sufficient = true;
+
+            // Recover hunger for workers
+            for (let i = 0; i < workers.length; i++) {
+                const w = workers[i];
+                if (!w.alive) continue;
+                if (w.hunger > 0) {
+                    w.hunger = Math.max(0, w.hunger - WORKER_FOOD_PER_DAY * scale * dt);
+                }
+            }
+            // Recover queen hunger
+            if (queen_hunger > 0) {
+                queen_hunger = Math.max(0, queen_hunger - QUEEN_FOOD_PER_DAY * dt);
+            }
+        } else {
+            total_food_consumed += food_store;
+            food_store = 0;
+            food_sufficient = false;
+
+            // Accumulate hunger
+            if (queen_alive) {
+                queen_hunger += (QUEEN_STARVE_THRESHOLD / QUEEN_SURVIVAL_DAYS) * dt;
+                if (queen_hunger >= QUEEN_STARVE_THRESHOLD) {
+                    queen_alive = false;
+                    logEvent(now, 'ev-death', 'QUEEN DIED from starvation!');
+                }
+            }
+            for (let i = 0; i < workers.length; i++) {
+                const w = workers[i];
+                if (!w.alive) continue;
+                w.hunger += (WORKER_STARVE_THRESHOLD / WORKER_SURVIVAL_DAYS) * dt;
+            }
+        }
+
+        // ---- Larva food investment tracking ----
+        if (food_sufficient) {
+            for (let i = 0; i < broods.length; i++) {
+                const b = broods[i];
+                if (!b.alive || b.stage !== 'larva') continue;
+                b.food_invested += LARVA_FOOD_PER_DAY * dt;
+            }
+        }
+
+        // ---- Queen founding mode ----
+        if (!queen_established && queen_alive && !founding_paused) {
+            if (founding_eggs_laid < FOUNDING_EGG_COUNT) {
+                const founding_lay_rate = FOUNDING_EGG_COUNT / FOUNDING_EGG_WINDOW;
+                founding_egg_accumulator += founding_lay_rate * dt;
+
+                if (founding_eggs_log_start < 0) founding_eggs_log_start = now;
+
+                while (founding_egg_accumulator >= 1.0 && founding_eggs_laid < FOUNDING_EGG_COUNT && broods.length < MAX_BROOD) {
+                    broods.push({ stage: 'egg', stage_start: now, food_invested: 0, alive: true });
+                    founding_eggs_laid++;
+                    total_eggs_laid++;
+                    founding_egg_accumulator -= 1.0;
+                }
+
+                if (founding_eggs_laid >= FOUNDING_EGG_COUNT && !founding_eggs_log_pending) {
+                    founding_eggs_log_pending = true;
+                    logEvent(now, 'ev-queen', 'Queen laid ' + FOUNDING_EGG_COUNT + ' founding eggs over ' + (FOUNDING_EGG_WINDOW * 24).toFixed(0) + ' hours');
+                    founding_paused = true;
+                }
+            }
+        }
+
+        // ---- Queen established laying ----
+        current_effective_lay_rate = 0.0;
+        if (queen_established && !colony_collapsed && queen_alive) {
+            const pop_factor = Math.min(1.0, pop / LAY_RATE_POP_SCALE);
+            const base_rate = ESTABLISHED_LAY_RATE_BASE + (ESTABLISHED_LAY_RATE_MAX - ESTABLISHED_LAY_RATE_BASE) * pop_factor;
+
+            const daily_burn = compute_daily_burn(pop, num_larvae);
+            const pressure = food_pressure_from_burn(daily_burn);
+            let pressure_mult = 1.0;
+            if (pressure > QUEEN_LAY_PRESSURE_MAX) {
+                const t = (pressure - QUEEN_LAY_PRESSURE_MAX) / (1.0 - QUEEN_LAY_PRESSURE_MAX);
+                pressure_mult = 1.0 - t * (1.0 - LAY_PRESSURE_FLOOR);
+            }
+
+            if (food_store < QUEEN_LAY_FOOD_FLOOR) pressure_mult = LAY_PRESSURE_FLOOR;
+
+            const effective_rate = base_rate * pressure_mult;
+            current_effective_lay_rate = effective_rate;
+            egg_accumulator += effective_rate * dt;
+
+            while (egg_accumulator >= 1.0 && broods.length < MAX_BROOD) {
+                if (food_store < EGG_FOOD_COST) break;
+                food_store -= EGG_FOOD_COST;
+                total_food_consumed += EGG_FOOD_COST;
+
+                broods.push({ stage: 'egg', stage_start: now, food_invested: 0, alive: true });
+                total_eggs_laid++;
+                egg_accumulator -= 1.0;
+                last_lay_day = now;
+            }
+        }
+
+        // Track max lay gap in steady state
+        if (queen_established && now > 14.0 && !colony_collapsed) {
+            const gap = now - last_lay_day;
+            if (gap > max_lay_gap) max_lay_gap = gap;
+        }
+
+        // ---- Brood development ----
+        for (let i = broods.length - 1; i >= 0; i--) {
+            const b = broods[i];
+            if (!b.alive) continue;
+
+            if (b.stage === 'egg') {
+                if (now - b.stage_start >= EGG_DURATION_DAYS) {
+                    b.stage = 'larva';
+                    b.stage_start = now;
+                    if (!first_larva_logged) {
+                        logEvent(now, 'ev-info', 'First egg hatched into larva');
+                        first_larva_logged = true;
+                    }
+                }
+            } else if (b.stage === 'larva') {
+                const larva_age = now - b.stage_start;
+                const food_required = LARVA_FOOD_PER_DAY * LARVA_DURATION_DAYS;
+                if (larva_age >= LARVA_DURATION_DAYS && b.food_invested >= food_required) {
+                    b.stage = 'pupa';
+                    b.stage_start = now;
+                    if (!first_pupa_logged) {
+                        logEvent(now, 'ev-info', 'First larva pupated');
+                        first_pupa_logged = true;
+                    }
+                }
+            } else if (b.stage === 'pupa') {
+                if (now - b.stage_start >= PUPA_DURATION_DAYS) {
+                    // Hatch as worker
+                    if (cached_pop >= MAX_WORKERS) continue;
+
+                    const is_pioneer = total_births < PIONEER_COUNT;
+                    let lifespan;
+                    if (is_pioneer) {
+                        lifespan = gaussian(PIONEER_LIFESPAN_MEAN, PIONEER_LIFESPAN_SD);
+                    } else {
+                        lifespan = gaussian(WORKER_LIFESPAN_MEAN, WORKER_LIFESPAN_SD);
+                    }
+                    lifespan = Math.max(lifespan * 0.5, Math.min(lifespan * 1.5, lifespan));
+
+                    workers.push({ born_at: now, lifespan_days: lifespan, hunger: 0, alive: true, is_pioneer: is_pioneer });
+                    cached_pop++;
+                    total_births++;
+
+                    // Remove brood
+                    broods.splice(i, 1);
+
+                    // Check if this is first eclosion => queen established
+                    if (!queen_established) {
+                        queen_established = true;
+                        reserves_at_eclosion = queen_reserves;
+                        time_to_first_worker = now;
+
+                        if (queen_reserves > 0) {
+                            food_store += queen_reserves;
+                            logEvent(now, 'ev-info', 'Queen dumped ' + queen_reserves.toFixed(1) + ' reserves into food store');
+                            queen_reserves = 0;
+                        }
+                        logEvent(now, 'ev-queen', 'Queen established! First worker ecloses.');
+                        last_lay_day = now; // reset lay gap tracking
+                    }
+
+                    if (!first_worker_logged) {
+                        logEvent(now, 'ev-birth', 'First worker hatched! (' + (is_pioneer ? 'pioneer' : 'worker') + ', lifespan: ' + lifespan.toFixed(1) + ' days)');
+                        first_worker_logged = true;
+                    } else if (total_births <= 12 || total_births % 10 === 0) {
+                        logEvent(now, 'ev-birth', 'Worker #' + total_births + ' hatched (pop: ' + cached_pop + ')');
+                    }
+                }
+            }
+        }
+
+        // ---- Worker death check ----
+        for (let i = 0; i < workers.length; i++) {
+            const w = workers[i];
+            if (!w.alive) continue;
+
+            // Old age
+            if (now - w.born_at >= w.lifespan_days) {
+                w.alive = false;
+                cached_pop--;
+                total_deaths++;
+                if (total_deaths <= 5 || total_deaths % 10 === 0) {
+                    logEvent(now, 'ev-death', 'Worker died of old age (deaths: ' + total_deaths + ', pop: ' + cached_pop + ')');
+                }
+                continue;
+            }
+
+            // Starvation
+            if (w.hunger >= WORKER_STARVE_THRESHOLD) {
+                w.alive = false;
+                cached_pop--;
+                total_deaths++;
+                logEvent(now, 'ev-death', 'Worker STARVED (deaths: ' + total_deaths + ', pop: ' + cached_pop + ')');
+                continue;
+            }
+        }
+
+        // ---- Colony collapse check ----
+        if (queen_established && !colony_collapsed && cached_pop === 0) {
+            colony_collapsed = true;
+            logEvent(now, 'ev-death', 'COLONY COLLAPSED! All workers dead.');
+        }
+
+        // ---- Famine brood cull (pressure > 0.8) ----
+        {
+            const daily_burn = compute_daily_burn(cached_pop, brood_counts().larvae);
+            const pressure = food_pressure_from_burn(daily_burn);
+            if (pressure > FAMINE_BROOD_CULL_PRESSURE) {
+                // Kill youngest larvae (least food_invested)
+                let culled = false;
+                for (let i = broods.length - 1; i >= 0; i--) {
+                    if (broods[i].alive && broods[i].stage === 'larva' && broods[i].food_invested < 0.5) {
+                        logEvent(now, 'ev-death', 'Larva culled (famine, invested: ' + broods[i].food_invested.toFixed(2) + ', pressure: ' + pressure.toFixed(3) + ')');
+                        broods.splice(i, 1);
+                        culled = true;
+                    }
+                }
+            }
+        }
+
+        // ---- Cannibalism (pressure > 0.95) ----
+        {
+            const daily_burn_c = compute_daily_burn(cached_pop, brood_counts().larvae);
+            const pressure_c = food_pressure_from_burn(daily_burn_c);
+            if (pressure_c >= BROOD_CANNIBALISM_PRESSURE && food_store < 1.0 && (now - last_cannibalism_at) >= CANNIBALISM_COOLDOWN_DAYS) {
+                let bestIdx = -1;
+                let bestFed = Infinity;
+                for (let i = 0; i < broods.length; i++) {
+                    if (broods[i].alive && broods[i].stage === 'larva' && broods[i].food_invested < bestFed) {
+                        bestIdx = i;
+                        bestFed = broods[i].food_invested;
+                    }
+                }
+                if (bestIdx >= 0) {
+                    let recovered = broods[bestIdx].food_invested * BROOD_CANNIBALISM_RECOVERY;
+                    if (recovered < BROOD_CANNIBALISM_MIN_PILE) recovered = BROOD_CANNIBALISM_MIN_PILE;
+                    food_store += recovered;
+                    broods.splice(bestIdx, 1);
+                    last_cannibalism_at = now;
+                    logEvent(now, 'ev-warn', 'Brood cannibalized! Recovered ' + recovered.toFixed(2) + ' food (pressure: ' + pressure_c.toFixed(3) + ')');
+                }
+            }
+        }
+
+        // ---- Pressure warning (every 6 hours = 0.25 days) ----
+        {
+            const daily_burn_p = compute_daily_burn(cached_pop, brood_counts().larvae);
+            const pressure_p = food_pressure_from_burn(daily_burn_p);
+            if (pressure_p > QUEEN_LAY_PRESSURE_MAX && (now - last_pressure_warn_at) > 0.25) {
+                logEvent(now, 'ev-warn', 'High food pressure: ' + pressure_p.toFixed(3) + ' (>' + QUEEN_LAY_PRESSURE_MAX + ')');
+                last_pressure_warn_at = now;
+            }
+        }
+
+        // ---- Compact dead workers every sim-day ----
+        if (step % COMPACT_INTERVAL === 0 && workers.length > cached_pop * 2 + 50) {
+            let writeIdx = 0;
+            for (let i = 0; i < workers.length; i++) {
+                if (workers[i].alive) {
+                    workers[writeIdx++] = workers[i];
+                }
+            }
+            workers.length = writeIdx;
+        }
+
+        // ---- Steady-state tracking (day 14+) ----
+        if (now >= 14.0) {
+            if (!ss_started) {
+                ss_deaths_at_14 = total_deaths;
+                ss_started = true;
+            }
+
+            const daily_burn_ss = compute_daily_burn(cached_pop, brood_counts().larvae);
+            const pressure_ss = food_pressure_from_burn(daily_burn_ss);
+            const days_remaining_ss = daily_burn_ss > 0 ? food_store / daily_burn_ss : 999;
+
+            ss_pop_sum += cached_pop;
+            ss_pop_count++;
+            ss_lay_rate_sum += current_effective_lay_rate;
+            ss_lay_rate_count++;
+            ss_pressure_sum += pressure_ss;
+            ss_pressure_count++;
+            ss_days_remaining_sum += days_remaining_ss;
+            ss_days_remaining_count++;
+
+            if (days_remaining_ss < 0.5) {
+                ss_current_low_stretch++;
+                if (ss_current_low_stretch > ss_longest_low_stretch) {
+                    ss_longest_low_stretch = ss_current_low_stretch;
+                }
+            } else {
+                ss_current_low_stretch = 0;
+            }
+        }
+
+        // ---- Sample data (every hour = every 60 steps) ----
+        if (step % SAMPLE_INTERVAL === 0) {
+            const bc2 = brood_counts();
+            const dayLabel = (now).toFixed(2);
+            data_labels.push(dayLabel);
+            data_population.push(cached_pop);
+            data_cum_births.push(total_births);
+            data_cum_deaths.push(total_deaths);
+            data_food_store.push(food_store);
+
+            const daily_burn_sample = compute_daily_burn(cached_pop, bc2.larvae);
+            const pressure_sample = food_pressure_from_burn(daily_burn_sample);
+            const days_remaining_sample = daily_burn_sample > 0 ? food_store / daily_burn_sample : 0;
+
+            data_pressure.push(pressure_sample);
+            data_brood_eggs.push(bc2.eggs);
+            data_brood_larvae.push(bc2.larvae);
+            data_brood_pupae.push(bc2.pupae);
+            data_lay_rate.push(current_effective_lay_rate);
+            data_days_remaining.push(days_remaining_sample);
+        }
+    }
+
+    // Run all steps
+    function runAllSteps(onBatch, onDone) {
+        const BATCH_SIZE = 4320; // 3 days worth of steps
+        let stepsDone = 0;
+
+        function processBatch() {
+            const batchEnd = Math.min(stepsDone + BATCH_SIZE, TOTAL_STEPS);
+            while (stepsDone < batchEnd) {
+                simStep();
+                stepsDone++;
+            }
+
+            if (onBatch) onBatch(stepsDone / TOTAL_STEPS);
+
+            if (stepsDone < TOTAL_STEPS) {
+                setTimeout(processBatch, 0);
+            } else {
+                if (onDone) onDone();
+            }
+        }
+
+        setTimeout(processBatch, 0);
+    }
+
+    // Build results
+    function getResults() {
+        const ss_mean_pop = ss_pop_count > 0 ? ss_pop_sum / ss_pop_count : 0;
+        const ss_deaths_total = total_deaths - ss_deaths_at_14;
+        const ss_days_count = ss_pop_count > 0 ? (ss_pop_count * dt) : 1;
+        const ss_mean_deaths_per_day = ss_days_count > 0 ? ss_deaths_total / ss_days_count : 0;
+        const ss_mean_lay_rate = ss_lay_rate_count > 0 ? ss_lay_rate_sum / ss_lay_rate_count : 0;
+        const ss_mean_pressure = ss_pressure_count > 0 ? ss_pressure_sum / ss_pressure_count : 0;
+        const ss_mean_days_remaining = ss_days_remaining_count > 0 ? ss_days_remaining_sum / ss_days_remaining_count : 0;
+        const ss_longest_low_days = ss_longest_low_stretch * dt;
+
+        // Check for boom-bust: did pop ever drop below 50% of mean in steady state?
+        let ss_min_pop = Infinity;
+        let ss_samples_started = false;
+        for (let i = 0; i < data_labels.length; i++) {
+            const dayVal = parseFloat(data_labels[i]);
+            if (dayVal >= 14.0) {
+                ss_samples_started = true;
+                if (data_population[i] < ss_min_pop) ss_min_pop = data_population[i];
+            }
+        }
+        const no_boom_bust = !ss_samples_started || ss_min_pop >= ss_mean_pop * 0.5;
+
+        return {
+            labels: data_labels,
+            population: data_population,
+            cumBirths: data_cum_births,
+            cumDeaths: data_cum_deaths,
+            foodStore: data_food_store,
+            foodDeposits: data_food_deposits,
+            pressure: data_pressure,
+            broodEggs: data_brood_eggs,
+            broodLarvae: data_brood_larvae,
+            broodPupae: data_brood_pupae,
+            layRate: data_lay_rate,
+            daysRemaining: data_days_remaining,
+            events: events,
+            summary: {
+                // Founding
+                timeToFirstWorker: time_to_first_worker,
+                foundingPeakBrood: founding_peak_brood,
+                reservesAtEclosion: reserves_at_eclosion,
+
+                // Steady-state (day 14+)
+                ssMeanPop: ss_mean_pop,
+                ssMeanDeathsPerDay: ss_mean_deaths_per_day,
+                ssMeanLayRate: ss_mean_lay_rate,
+                ssMeanPressure: ss_mean_pressure,
+                ssMeanDaysRemaining: ss_mean_days_remaining,
+                ssLongestLowDays: ss_longest_low_days,
+                peakPopulation: peak_population,
+                finalPopulation: cached_pop,
+
+                // General
+                totalBirths: total_births,
+                totalDeaths: total_deaths,
+                totalEggsLaid: total_eggs_laid,
+                totalFoodDeposited: total_food_deposited,
+                totalFoodConsumed: total_food_consumed,
+                queenAlive: queen_alive,
+                colonyCollapsed: colony_collapsed,
+
+                // Validation
+                firstWorkerDay: time_to_first_worker,
+                maxLayGap: max_lay_gap,
+                noBoomBust: no_boom_bust,
+                ssMinPop: ss_samples_started ? ss_min_pop : 0,
+
+                // Stress test
+                stressTest: stressTest,
+                stressColonySurvived: stressColonySurvived,
+                stressMinPop: minStressPop === Infinity ? -1 : minStressPop,
+                stressPrePop: preStressPop,
+                stressRecoveryDay: stressRecoveryDay,
+                stressSkipStart: stressSkipStart,
+                stressSkipEnd: stressSkipEnd,
+            }
+        };
+    }
+
+    return {
+        runAllSteps: runAllSteps,
+        getResults: getResults,
+        totalSteps: TOTAL_STEPS,
+    };
+}
+
+// ================================================================
+//  Chart instances
+// ================================================================
+let chartPop = null;
+let chartFood = null;
+let chartPressure = null;
+let chartBrood = null;
+
+const chartDefaults = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    plugins: {
+        legend: {
+            labels: { color: '#aaa', font: { size: 11 } }
+        }
+    },
+    scales: {
+        x: {
+            ticks: { color: '#666', font: { size: 10 }, maxTicksLimit: 16, maxRotation: 0 },
+            grid: { color: '#222' }
+        },
+        y: {
+            ticks: { color: '#666', font: { size: 10 } },
+            grid: { color: '#222' },
+            beginAtZero: true
+        }
+    }
+};
+
+function destroyCharts() {
+    if (chartPop) { chartPop.destroy(); chartPop = null; }
+    if (chartFood) { chartFood.destroy(); chartFood = null; }
+    if (chartPressure) { chartPressure.destroy(); chartPressure = null; }
+    if (chartBrood) { chartBrood.destroy(); chartBrood = null; }
+}
+
+function makeDayLabels(rawLabels) {
+    return rawLabels.map(l => {
+        const d = parseFloat(l);
+        if (d === Math.floor(d)) return 'Day ' + d.toFixed(0);
+        return '';
+    });
+}
+
+function buildCharts(results) {
+    destroyCharts();
+
+    const rawLabels = results.labels;
+    // Use day numbers for display, but show labels only at whole days
+    const displayLabels = rawLabels.map(l => {
+        const d = parseFloat(l);
+        return 'Day ' + d.toFixed(2);
+    });
+
+    // ---- Population & Deaths ----
+    chartPop = new Chart(document.getElementById('chart-pop'), {
+        type: 'line',
+        data: {
+            labels: displayLabels,
+            datasets: [
+                {
+                    label: 'Live Workers',
+                    data: results.population,
+                    borderColor: '#4ecca3',
+                    backgroundColor: 'rgba(78,204,163,0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    pointRadius: 0,
+                    tension: 0.2,
+                },
+                {
+                    label: 'Cumulative Births',
+                    data: results.cumBirths,
+                    borderColor: '#5599ff',
+                    borderWidth: 1.5,
+                    borderDash: [6, 3],
+                    pointRadius: 0,
+                    fill: false,
+                    tension: 0.2,
+                },
+                {
+                    label: 'Cumulative Deaths',
+                    data: results.cumDeaths,
+                    borderColor: '#e55',
+                    borderWidth: 1.5,
+                    borderDash: [6, 3],
+                    pointRadius: 0,
+                    fill: false,
+                    tension: 0.2,
+                },
+            ]
+        },
+        options: {
+            ...JSON.parse(JSON.stringify(chartDefaults)),
+            scales: {
+                x: {
+                    ticks: {
+                        color: '#666', font: { size: 10 }, maxTicksLimit: 16, maxRotation: 0,
+                        callback: function(value, index) {
+                            const d = parseFloat(rawLabels[index]);
+                            if (d === Math.floor(d)) return 'Day ' + d.toFixed(0);
+                            return null;
+                        }
+                    },
+                    grid: { color: '#222' }
+                },
+                y: {
+                    ticks: { color: '#666', font: { size: 10 } },
+                    grid: { color: '#222' },
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+
+    // ---- Food Economy ----
+    // Build food deposit markers
+    const foodDepositMarkers = results.labels.map(() => null);
+    for (const depositDay of results.foodDeposits) {
+        // Find closest sample index
+        let bestIdx = 0;
+        let bestDist = Infinity;
+        for (let i = 0; i < rawLabels.length; i++) {
+            const dist = Math.abs(parseFloat(rawLabels[i]) - depositDay);
+            if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+        }
+        if (bestIdx < foodDepositMarkers.length) {
+            foodDepositMarkers[bestIdx] = results.foodStore[bestIdx] || 0;
+        }
+    }
+
+    chartFood = new Chart(document.getElementById('chart-food'), {
+        type: 'line',
+        data: {
+            labels: displayLabels,
+            datasets: [
+                {
+                    label: 'Food Store',
+                    data: results.foodStore,
+                    borderColor: '#d4a017',
+                    backgroundColor: 'rgba(212,160,23,0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    pointRadius: 0,
+                    tension: 0.2,
+                    yAxisID: 'y',
+                },
+                {
+                    label: 'Days Food Remaining',
+                    data: results.daysRemaining,
+                    borderColor: '#0cf',
+                    backgroundColor: 'transparent',
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    fill: false,
+                    tension: 0.2,
+                    yAxisID: 'y1',
+                },
+                {
+                    label: 'Food Deposits',
+                    data: foodDepositMarkers,
+                    borderColor: 'transparent',
+                    backgroundColor: '#f06',
+                    pointRadius: foodDepositMarkers.map(v => v !== null ? 5 : 0),
+                    pointStyle: 'triangle',
+                    showLine: false,
+                    fill: false,
+                    yAxisID: 'y',
+                },
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            plugins: {
+                legend: {
+                    labels: { color: '#aaa', font: { size: 11 } }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: {
+                        color: '#666', font: { size: 10 }, maxTicksLimit: 16, maxRotation: 0,
+                        callback: function(value, index) {
+                            const d = parseFloat(rawLabels[index]);
+                            if (d === Math.floor(d)) return 'Day ' + d.toFixed(0);
+                            return null;
+                        }
+                    },
+                    grid: { color: '#222' }
+                },
+                y: {
+                    type: 'linear',
+                    position: 'left',
+                    ticks: { color: '#d4a017', font: { size: 10 } },
+                    grid: { color: '#222' },
+                    beginAtZero: true,
+                    title: { display: true, text: 'Food Store', color: '#d4a017', font: { size: 10 } },
+                },
+                y1: {
+                    type: 'linear',
+                    position: 'right',
+                    ticks: { color: '#0cf', font: { size: 10 } },
+                    grid: { drawOnChartArea: false },
+                    beginAtZero: true,
+                    title: { display: true, text: 'Days Remaining', color: '#0cf', font: { size: 10 } },
+                }
+            }
+        }
+    });
+
+    // ---- Food Pressure & Lay Rate ----
+    chartPressure = new Chart(document.getElementById('chart-pressure'), {
+        type: 'line',
+        data: {
+            labels: displayLabels,
+            datasets: [
+                {
+                    label: 'Food Pressure',
+                    data: results.pressure,
+                    borderColor: '#e55',
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0.2,
+                    fill: false,
+                    yAxisID: 'y',
+                    segment: {
+                        borderColor: ctx => {
+                            const val = ctx.p1.parsed.y;
+                            return val > 0.35 ? '#e55' : '#4ecca3';
+                        }
+                    }
+                },
+                {
+                    label: 'Lay Threshold (0.35)',
+                    data: results.labels.map(() => 0.35),
+                    borderColor: '#555',
+                    borderWidth: 1,
+                    borderDash: [4, 4],
+                    pointRadius: 0,
+                    fill: false,
+                    yAxisID: 'y',
+                },
+                {
+                    label: 'Lay Rate (eggs/day)',
+                    data: results.layRate,
+                    borderColor: '#5599ff',
+                    backgroundColor: 'transparent',
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    fill: false,
+                    tension: 0.2,
+                    yAxisID: 'y1',
+                },
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            plugins: {
+                legend: {
+                    labels: { color: '#aaa', font: { size: 11 } }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: {
+                        color: '#666', font: { size: 10 }, maxTicksLimit: 16, maxRotation: 0,
+                        callback: function(value, index) {
+                            const d = parseFloat(rawLabels[index]);
+                            if (d === Math.floor(d)) return 'Day ' + d.toFixed(0);
+                            return null;
+                        }
+                    },
+                    grid: { color: '#222' }
+                },
+                y: {
+                    type: 'linear',
+                    position: 'left',
+                    min: 0,
+                    max: 1,
+                    ticks: { color: '#e55', font: { size: 10 } },
+                    grid: { color: '#222' },
+                    title: { display: true, text: 'Pressure', color: '#e55', font: { size: 10 } },
+                },
+                y1: {
+                    type: 'linear',
+                    position: 'right',
+                    beginAtZero: true,
+                    ticks: { color: '#5599ff', font: { size: 10 } },
+                    grid: { drawOnChartArea: false },
+                    title: { display: true, text: 'Eggs/Day', color: '#5599ff', font: { size: 10 } },
+                }
+            }
+        }
+    });
+
+    // ---- Brood Pipeline ----
+    chartBrood = new Chart(document.getElementById('chart-brood'), {
+        type: 'line',
+        data: {
+            labels: displayLabels,
+            datasets: [
+                {
+                    label: 'Eggs',
+                    data: results.broodEggs,
+                    borderColor: '#ddd',
+                    backgroundColor: 'rgba(220,220,220,0.2)',
+                    borderWidth: 1.5,
+                    fill: true,
+                    pointRadius: 0,
+                    tension: 0.2,
+                },
+                {
+                    label: 'Larvae',
+                    data: results.broodLarvae,
+                    borderColor: '#fc5',
+                    backgroundColor: 'rgba(255,204,85,0.2)',
+                    borderWidth: 1.5,
+                    fill: true,
+                    pointRadius: 0,
+                    tension: 0.2,
+                },
+                {
+                    label: 'Pupae',
+                    data: results.broodPupae,
+                    borderColor: '#a67c52',
+                    backgroundColor: 'rgba(166,124,82,0.2)',
+                    borderWidth: 1.5,
+                    fill: true,
+                    pointRadius: 0,
+                    tension: 0.2,
+                },
+            ]
+        },
+        options: {
+            ...JSON.parse(JSON.stringify(chartDefaults)),
+            scales: {
+                x: {
+                    ticks: {
+                        color: '#666', font: { size: 10 }, maxTicksLimit: 16, maxRotation: 0,
+                        callback: function(value, index) {
+                            const d = parseFloat(rawLabels[index]);
+                            if (d === Math.floor(d)) return 'Day ' + d.toFixed(0);
+                            return null;
+                        }
+                    },
+                    grid: { color: '#222' }
+                },
+                y: {
+                    ticks: { color: '#666', font: { size: 10 } },
+                    grid: { color: '#222' },
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+}
+
+// ================================================================
+//  Summary Panel
+// ================================================================
+function buildSummary(summary) {
+    let html = '';
+
+    // Row 1: Founding
+    html += '<div class="summary-section-title">Founding</div>';
+    html += '<div class="summary-grid">';
+    const foundingItems = [
+        { label: 'Time to First Worker', value: summary.timeToFirstWorker >= 0 ? summary.timeToFirstWorker.toFixed(1) + ' days' : 'N/A', cls: summary.timeToFirstWorker >= 0 ? 'good' : 'bad' },
+        { label: 'Founding Peak Brood', value: summary.foundingPeakBrood, cls: '' },
+        { label: 'Reserves at Eclosion', value: summary.reservesAtEclosion.toFixed(1), cls: '' },
+    ];
+    html += foundingItems.map(it => '<div class="stat-card"><div class="label">' + it.label + '</div><div class="value ' + it.cls + '">' + it.value + '</div></div>').join('');
+    html += '</div>';
+
+    // Row 2: Steady-state (day 14+)
+    html += '<div class="summary-section-title">Steady State (Day 14+)</div>';
+    html += '<div class="summary-grid">';
+    const ssItems = [
+        { label: 'Mean Population', value: summary.ssMeanPop.toFixed(1), cls: summary.ssMeanPop > 50 ? 'good' : 'bad' },
+        { label: 'Mean Deaths/Day', value: summary.ssMeanDeathsPerDay.toFixed(2), cls: '' },
+        { label: 'Mean Lay Rate (eggs/day)', value: summary.ssMeanLayRate.toFixed(2), cls: '' },
+        { label: 'Mean Food Pressure', value: summary.ssMeanPressure.toFixed(3), cls: summary.ssMeanPressure > 0.35 ? 'bad' : 'good' },
+        { label: 'Mean Days Food Remaining', value: summary.ssMeanDaysRemaining.toFixed(2), cls: '' },
+        { label: 'Longest Low-Food Stretch', value: summary.ssLongestLowDays.toFixed(2) + ' days', cls: summary.ssLongestLowDays > 1.0 ? 'bad' : '' },
+        { label: 'Peak Population', value: summary.peakPopulation, cls: 'good' },
+        { label: 'Final Population', value: summary.finalPopulation, cls: summary.finalPopulation > 0 ? 'good' : 'bad' },
+    ];
+    html += ssItems.map(it => '<div class="stat-card"><div class="label">' + it.label + '</div><div class="value ' + it.cls + '">' + it.value + '</div></div>').join('');
+    html += '</div>';
+
+    // Stress test results (if applicable)
+    if (summary.stressTest && summary.stressTest !== 'none') {
+        html += '<div class="summary-section-title">Stress Test Results</div>';
+        html += '<div class="summary-grid">';
+        const stressItems = [
+            { label: 'Colony Survived?', value: summary.stressColonySurvived ? 'Yes' : 'No', cls: summary.stressColonySurvived ? 'good' : 'bad' },
+            { label: 'Min Pop During Stress', value: summary.stressMinPop >= 0 ? summary.stressMinPop : 'N/A', cls: '' },
+            { label: 'Recovery Time', value: summary.stressRecoveryDay >= 0 ? (summary.stressRecoveryDay - summary.stressSkipEnd).toFixed(1) + ' days' : 'Not recovered', cls: summary.stressRecoveryDay >= 0 ? 'good' : 'bad' },
+        ];
+        html += stressItems.map(it => '<div class="stat-card"><div class="label">' + it.label + '</div><div class="value ' + it.cls + '">' + it.value + '</div></div>').join('');
+        html += '</div>';
+    }
+
+    summaryPanel.innerHTML = html;
+}
+
+// ================================================================
+//  Validation Checklist
+// ================================================================
+function buildValidation(summary, durationDays) {
+    const checks = [];
+
+    // 1. First pioneer ecloses around day 4-5
+    const firstWorkerOk = summary.firstWorkerDay >= 3.5 && summary.firstWorkerDay <= 5.5;
+    checks.push({
+        pass: firstWorkerOk,
+        text: 'First pioneer ecloses around day 4-5 (actual: ' + (summary.firstWorkerDay >= 0 ? summary.firstWorkerDay.toFixed(1) : 'never') + ')'
+    });
+
+    // 2. Steady-state pop 100-150 (day 14-30 mean) — only if sim >= 14 days
+    if (durationDays >= 14) {
+        const ssPopOk = summary.ssMeanPop >= 100 && summary.ssMeanPop <= 150;
+        checks.push({
+            pass: ssPopOk,
+            text: 'Steady-state pop 100-150 (actual mean: ' + summary.ssMeanPop.toFixed(1) + ')'
+        });
+    }
+
+    // 3. Days-food-remaining oscillates 0.5-2.0 range
+    if (durationDays >= 14) {
+        const daysRemOk = summary.ssMeanDaysRemaining >= 0.5 && summary.ssMeanDaysRemaining <= 2.0;
+        checks.push({
+            pass: daysRemOk,
+            text: 'Days-food-remaining in 0.5-2.0 range (actual mean: ' + summary.ssMeanDaysRemaining.toFixed(2) + ')'
+        });
+    }
+
+    // 4. Queen laying continuously (no gaps > 2 days in steady state)
+    if (durationDays >= 14) {
+        const layGapOk = summary.maxLayGap < 2.0;
+        checks.push({
+            pass: layGapOk,
+            text: 'Queen laying continuously, no gaps > 2 days (max gap: ' + summary.maxLayGap.toFixed(2) + ' days)'
+        });
+    }
+
+    // 5. No boom-bust crashes
+    if (durationDays >= 14) {
+        checks.push({
+            pass: summary.noBoomBust,
+            text: 'No boom-bust crashes (pop never < 50% of mean in steady state, min: ' + summary.ssMinPop + ')'
+        });
+    }
+
+    validationList.innerHTML = checks.map(c => {
+        const icon = c.pass ? '&#10003;' : '&#10007;';
+        const cls = c.pass ? 'pass' : 'fail';
+        return '<li><span class="check ' + cls + '">' + icon + '</span>' + c.text + '</li>';
+    }).join('');
+}
+
+// ================================================================
+//  Event Log
+// ================================================================
+function buildEventLog(events) {
+    eventLogEl.innerHTML = events.map(ev => {
+        const parts = ev.text.split(']');
+        const timePart = parts[0] + ']';
+        const msgPart = parts.slice(1).join(']');
+        return '<div><span class="ev-time">' + timePart + '</span> <span class="' + ev.cls + '">' + msgPart + '</span></div>';
+    }).join('');
+    eventLogEl.scrollTop = eventLogEl.scrollHeight;
+}
+
+// ================================================================
+//  Run button handler
+// ================================================================
+btnRun.addEventListener('click', () => {
+    btnRun.disabled = true;
+
+    const params = {
+        feedsPerDay: parseInt(paramFeeds.value),
+        foodPerFeed: parseInt(paramFoodPerFeed.value),
+        durationDays: parseInt(paramDuration.value),
+        stressTest: paramStress.value,
+    };
+
+    const sim = runSimulation(params);
+
+    progressWrap.classList.add('active');
+    progressBar.style.width = '0%';
+    summaryPanel.classList.remove('active');
+    validationPanel.classList.remove('active');
+    chartsContainer.classList.remove('active');
+    eventLogWrap.classList.remove('active');
+
+    sim.runAllSteps(
+        // onBatch progress callback
+        function(progress) {
+            const pct = (progress * 100).toFixed(1);
+            progressBar.style.width = pct + '%';
+        },
+        // onDone callback
+        function() {
+            const results = sim.getResults();
+
+            buildCharts(results);
+            buildSummary(results.summary);
+            buildValidation(results.summary, params.durationDays);
+            buildEventLog(results.events);
+
+            chartsContainer.classList.add('active');
+            summaryPanel.classList.add('active');
+            validationPanel.classList.add('active');
+            eventLogWrap.classList.add('active');
+            progressWrap.classList.remove('active');
+            btnRun.disabled = false;
+        }
+    );
+});
+</script>
+</body>
+</html>

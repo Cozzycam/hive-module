@@ -16,12 +16,6 @@ enum AntState : uint8_t {
 
 namespace Cfg {
 
-// ---- Time ----
-constexpr int TICKS_PER_SIM_DAY = 200;
-constexpr int SIM_TPS           = 8;     // sim ticks per second
-
-inline constexpr int days(float n) { return static_cast<int>(n * TICKS_PER_SIM_DAY); }
-
 // ---- Grid ----
 constexpr int CHAMBER_WIDTH_PX  = 480;
 constexpr int CHAMBER_HEIGHT_PX = 320;
@@ -31,61 +25,57 @@ constexpr int GRID_HEIGHT       = CHAMBER_HEIGHT_PX / CELL_SIZE;  // 40
 constexpr int GRID_CELLS        = GRID_WIDTH * GRID_HEIGHT;       // 2400
 
 // ---- Founding biology ----
-constexpr float FOOD_STORE_START = 550.0f;
+constexpr float FOOD_STORE_START = 80.0f;
+
+// ---- Lifecycle timing (real-time days) ----
+constexpr float SECS_PER_DAY = 86400.0f;
+constexpr float WORKER_LIFESPAN_MEAN  = 21.0f;   // days
+constexpr float WORKER_LIFESPAN_SD    = 3.0f;    // days
+constexpr float PIONEER_LIFESPAN_MEAN = 14.0f;   // days
+constexpr float PIONEER_LIFESPAN_SD   = 2.0f;    // days
+
+constexpr float EGG_DURATION_DAYS     = 1.0f;
+constexpr float LARVA_DURATION_DAYS   = 2.0f;
+constexpr float PUPA_DURATION_DAYS    = 1.0f;
+
+// ---- Food rates (per real day) ----
+constexpr float QUEEN_FOOD_PER_DAY    = 3.0f;
+constexpr float WORKER_FOOD_PER_DAY   = 2.0f;
+constexpr float LARVA_FOOD_PER_DAY    = 1.5f;
+constexpr float EGG_FOOD_COST         = 1.0f;    // food per egg laid
+constexpr float LARVA_TOTAL_FOOD      = LARVA_FOOD_PER_DAY * LARVA_DURATION_DAYS; // 3.0
+
+// ---- Queen laying (real-time) ----
+constexpr int   FOUNDING_EGG_COUNT        = 10;
+constexpr float FOUNDING_EGG_WINDOW_DAYS  = 0.5f;   // 12 hours
+constexpr float ESTABLISHED_LAY_RATE_BASE = 6.0f;   // eggs/day minimum
+constexpr float ESTABLISHED_LAY_RATE_MAX  = 10.0f;  // eggs/day at high pop
+constexpr float LAY_RATE_POP_SCALE        = 100.0f;
+constexpr float LAY_PRESSURE_FLOOR        = 0.20f;  // never taper below 20%
+
+// ---- Starvation (real-time) ----
+constexpr float WORKER_SURVIVAL_DAYS  = 1.5f;
+constexpr float QUEEN_SURVIVAL_DAYS   = 2.0f;
 
 // ---- Queen ----
-constexpr float QUEEN_METABOLISM          = 0.0094f;
-constexpr int   QUEEN_LAY_INTERVAL_FOUNDING = days(0.5f);  // 100
-constexpr int   QUEEN_LAY_INTERVAL_NORMAL   = days(2.0f);  // 400
-constexpr float QUEEN_EGG_FOOD_COST       = 1.08f;
 constexpr float QUEEN_LAY_FOOD_FLOOR      = 50.0f;
 constexpr float QUEEN_LAY_PRESSURE_MAX    = 0.35f;
-constexpr float QUEEN_LAY_SLOWDOWN        = 0.25f;
 constexpr float QUEEN_MAX_BROOD_RATIO     = 0.25f;
-constexpr int   QUEEN_FOUNDING_EGG_CAP    = 12;
-constexpr float QUEEN_HUNGER_RATE         = 0.02f;
-constexpr float QUEEN_STARVE_THRESHOLD    = 50.0f;
-
-// ---- Brood ----
-constexpr int   EGG_DURATION        = days(10);     // 2000
-constexpr float LARVA_HUNGER_RATE   = 0.001f;
-constexpr float LARVA_STARVE        = 12.0f;
-constexpr float LARVA_FEED_AMOUNT   = 1.44f;
-constexpr int   PUPA_DURATION       = days(20);     // 4000
 
 // ---- Role params (indexed by Role enum) ----
 struct RoleParams {
     uint8_t move_ticks;
     uint8_t sense_radius;
     float   carry_amount;
-    float   metabolism;
-    float   speed;              // cells per tick (sub-cell movement)
-    int     lifespan_lo, lifespan_hi;
-    int     lifespan_pioneer_lo, lifespan_pioneer_hi;
-    int     larva_duration;
-    float   larva_food_needed;
+    float   speed;
 };
 
 constexpr RoleParams ROLE_PARAMS[ROLE_COUNT] = {
-    // ROLE_MINOR
-    { 4, 8, 6.6f, 0.00094f, 0.25f,
-      days(250), days(400),     // 50000, 80000
-      days(200), days(350),     // 40000, 70000
-      days(20), 11.5f },        // 4000
-    // ROLE_MAJOR
-    { 6, 6, 16.5f, 0.00144f, 1.0f / 6.0f,
-      days(350), days(550),     // 70000, 110000
-      days(200), days(350),     // pioneer (same range for now)
-      days(28), 23.0f },        // 5600
+    { 4, 8, 6.6f, 0.25f },        // ROLE_MINOR
+    { 6, 6, 16.5f, 1.0f / 6.0f }, // ROLE_MAJOR
 };
 
 constexpr Role DEFAULT_BROOD_ROLE = ROLE_MINOR;
-
-// ---- Worker ----
-constexpr float WORKER_HUNGER_RATE      = 0.015f;
-constexpr float WORKER_STARVE_THRESHOLD = 30.0f;
-constexpr int   GATHERING_TRIP_WEAR_LO  = 10;
-constexpr int   GATHERING_TRIP_WEAR_HI  = 20;
 
 // ---- Pheromones (JohnBuffer-inspired) ----
 constexpr float BASE_MARKER_INTENSITY = 10.0f;
@@ -136,21 +126,21 @@ inline float metabolic_scale_factor(int population) {
 }
 
 // ---- Food pressure ----
-constexpr float FOOD_PRESSURE_TARGET_DAYS = 7.0f;
+constexpr float FOOD_PRESSURE_BUFFER_DAYS = 2.0f;
 constexpr float MIN_GATHERER_FRACTION     = 0.05f;
 constexpr float MAX_GATHERER_FRACTION     = 0.80f;
 
 // ---- Starvation cascade ----
 constexpr float FAMINE_SLOWDOWN_PRESSURE   = 0.9f;
 constexpr float FAMINE_BROOD_CULL_PRESSURE = 0.8f;
-constexpr float FAMINE_BROOD_CULL_HUNGER   = 2.0f;
-constexpr float QUEEN_PRIORITY_HUNGER      = 20.0f;
+constexpr float FAMINE_BROOD_CULL_HUNGER   = 0.3f;   // normalized 0-1
+constexpr float QUEEN_PRIORITY_HUNGER      = 0.3f;   // normalized 0-1
 
 // ---- Brood cannibalism ----
 constexpr float BROOD_CANNIBALISM_PRESSURE  = 0.95f;
 constexpr float BROOD_CANNIBALISM_RECOVERY  = 0.4f;
 constexpr float BROOD_CANNIBALISM_MIN_PILE  = 2.0f;
-constexpr int   BROOD_CANNIBALISM_COOLDOWN  = 100;
+constexpr float CANNIBALISM_COOLDOWN_SECS   = 21600.0f; // 6 hours
 
 // ---- Recovery bounce ----
 constexpr int   RECOVERY_BOOST_DURATION   = 400;
@@ -179,10 +169,6 @@ constexpr int   FOOD_SHARE_DURATION_TICKS  = 88;
 constexpr int MAX_LIL_GUYS  = 200;
 constexpr int MAX_BROOD      = 100;
 constexpr int MAX_FOOD_PILES = 64;
-
-// ---- Food replenishment (single-board mode) ----
-constexpr int   FOOD_REPLENISH_INTERVAL = TICKS_PER_SIM_DAY;
-constexpr float FOOD_REPLENISH_AMOUNT   = 80.0f;
 
 // ---- Milestone leaves (sprout) ----
 constexpr int MILESTONE_LEAF_INTERVAL = 100;  // workers born per new leaf

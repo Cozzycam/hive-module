@@ -1,48 +1,50 @@
 #include "brood.h"
+#include <Arduino.h>
 
 void Brood::init(int8_t px, int8_t py, Role c) {
     x = px;
     y = py;
     stage = STAGE_EGG;
     role = c;
-    age = 0;
+    stage_start_ms = millis();
     hunger = 0.0f;
-    fed_total = 0.0f;
-    larva_duration = Cfg::ROLE_PARAMS[c].larva_duration;
-    food_needed    = Cfg::ROLE_PARAMS[c].larva_food_needed;
+    food_invested = 0.0f;
 }
 
-BroodTransition Brood::tick() {
+BroodTransition Brood::tick(float dt) {
     if (stage == STAGE_DEAD) return BROOD_NONE;
 
-    age++;
+    uint32_t elapsed_ms = millis() - stage_start_ms;
+    float elapsed_days = elapsed_ms / (Cfg::SECS_PER_DAY * 1000.0f);
 
     if (stage == STAGE_EGG) {
-        if (age >= Cfg::EGG_DURATION) {
+        if (elapsed_days >= Cfg::EGG_DURATION_DAYS) {
             stage = STAGE_LARVA;
-            age = 0;
+            stage_start_ms = millis();
+            hunger = 0.0f;
             return BROOD_EGG_TO_LARVA;
         }
         return BROOD_NONE;
     }
 
     if (stage == STAGE_LARVA) {
-        hunger += Cfg::LARVA_HUNGER_RATE;
-        if (hunger >= Cfg::LARVA_STARVE) {
+        // Hunger accumulates in real-time (normalized 0-1 over ~1 day without feeding)
+        hunger += dt / Cfg::SECS_PER_DAY;
+        if (hunger >= 1.0f) {
             stage = STAGE_DEAD;
             return BROOD_DIED;
         }
-        if (age >= static_cast<uint16_t>(larva_duration)
-                && fed_total >= food_needed) {
+        if (elapsed_days >= Cfg::LARVA_DURATION_DAYS
+                && food_invested >= Cfg::LARVA_TOTAL_FOOD) {
             stage = STAGE_PUPA;
-            age = 0;
+            stage_start_ms = millis();
             return BROOD_LARVA_TO_PUPA;
         }
         return BROOD_NONE;
     }
 
     if (stage == STAGE_PUPA) {
-        if (age >= Cfg::PUPA_DURATION)
+        if (elapsed_days >= Cfg::PUPA_DURATION_DAYS)
             return BROOD_HATCH;
     }
     return BROOD_NONE;
