@@ -160,10 +160,11 @@ constexpr int QUEEN_SPAWN_Y = GRID_HEIGHT / 2;  // 20
 
 // ---- Proximity interactions ----
 constexpr int   PROXIMITY_DETECTION_RADIUS = 1;
-constexpr float PROXIMITY_GREETING_CHANCE  = 0.35f;
-constexpr float PROXIMITY_FOOD_SHARE_CHANCE = 0.15f;
-constexpr int   GREETING_DURATION_TICKS    = 4;
-constexpr int   FOOD_SHARE_DURATION_TICKS  = 88;
+constexpr float PROXIMITY_GREETING_CHANCE  = 0.10f;
+constexpr float PROXIMITY_FOOD_SHARE_CHANCE = 0.08f;
+constexpr int   GREETING_DURATION_TICKS    = 8;    // ~1s at 8 tps
+constexpr int   FOOD_SHARE_DURATION_TICKS  = 12;   // ~1.5s at 8 tps
+constexpr int   INTERACTION_COOLDOWN_TICKS = 40;    // ~5s at 8 tps
 
 // ---- Pool limits ----
 constexpr int MAX_LIL_GUYS  = 200;

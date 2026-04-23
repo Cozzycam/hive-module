@@ -12,6 +12,15 @@
 #include "config.h"
 #include <cmath>
 
+// Per-lilguy animation overlay (does not change state machine)
+enum LilGuyAnim : uint8_t {
+    LG_ANIM_NONE              = 0,
+    LG_ANIM_GREETING          = 1,
+    LG_ANIM_FOOD_SHARE_GIVER  = 2,
+    LG_ANIM_FOOD_SHARE_RECEIVER = 3,
+    // Future: LG_ANIM_GROOMING, LG_ANIM_RETINUE_GROOM, etc.
+};
+
 class Chamber;  // forward declaration
 
 struct LilGuy {
@@ -48,6 +57,11 @@ struct LilGuy {
     int16_t  idle_repoll_tick     = 0;  // countdown to next _pick_task poll
     uint8_t  idle_microstate      = 0;  // 0=hold, 1=drift, 2=reface
     int16_t  idle_micro_ticks     = 0;  // current microstate duration
+
+    // Animation overlay
+    uint8_t  anim_type            = LG_ANIM_NONE;
+    uint16_t anim_remaining_ticks = 0;
+    uint16_t interaction_cooldown = 0;
 
     int8_t   last_cell_x, last_cell_y;     // for pheromone deposit gating
 

@@ -39,6 +39,10 @@ void LilGuy::init(int8_t px, int8_t py, Role c, bool pioneer) {
     idle_microstate = 0;
     idle_micro_ticks = 0;
 
+    anim_type = LG_ANIM_NONE;
+    anim_remaining_ticks = 0;
+    interaction_cooldown = 0;
+
     role = c;
     is_pioneer = pioneer;
     const auto& p = Cfg::ROLE_PARAMS[c];
@@ -92,7 +96,7 @@ void LilGuy::tick(Chamber& ch, float dt) {
     if (ch.has_queen) ticks_away = 0;
     else ticks_away++;
 
-    // Return-home timer
+    // Return-home timer — crisis overrides animation
     if (ticks_away >= Cfg::RETURN_HOME_TICKS && state != STATE_TO_HOME) {
         state = STATE_TO_HOME;
         has_target = false;
@@ -100,6 +104,24 @@ void LilGuy::tick(Chamber& ch, float dt) {
         steps_walked = 0;
         facing_dx = -facing_dx;
         facing_dy = -facing_dy;
+        anim_type = LG_ANIM_NONE;
+        anim_remaining_ticks = 0;
+    }
+
+    // Crisis state cancels animation
+    if (state == STATE_CANNIBALIZE && anim_type != LG_ANIM_NONE) {
+        anim_type = LG_ANIM_NONE;
+        anim_remaining_ticks = 0;
+    }
+
+    // Tick cooldowns
+    if (interaction_cooldown > 0) interaction_cooldown--;
+
+    // Animation freeze: skip movement and behavior dispatch while animating
+    if (anim_remaining_ticks > 0) {
+        anim_remaining_ticks--;
+        if (anim_remaining_ticks == 0) anim_type = LG_ANIM_NONE;
+        return;
     }
 
     // Movement phase -- every tick

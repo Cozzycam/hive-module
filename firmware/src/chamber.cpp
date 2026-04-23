@@ -160,36 +160,71 @@ void Chamber::_detect_proximity_interactions() {
             int idx = cy * Cfg::GRID_WIDTH + cx;
             if (grid_head[idx] < 0) continue;
 
-            // Same-cell pairs
-            for (int ai = grid_head[idx]; ai >= 0; ai = grid_next[ai]) {
-                for (int bi = grid_next[ai]; bi >= 0; bi = grid_next[bi]) {
-                    auto& a = lil_guys[ai];
-                    auto& b = lil_guys[bi];
-                    // Food sharing
-                    if ((a.food_carried > 0) != (b.food_carried > 0)) {
-                        if (g_rng.rand_float() < Cfg::PROXIMITY_FOOD_SHARE_CHANCE) {
-                            uint16_t pid = event_bus->next_pair_id();
-                            Event es; es.type = EVT_INTERACTION_STARTED; es.tick = tick_num;
-                            es.interaction_started = {pid, INTERACT_FOOD_SHARING,
-                                static_cast<uint8_t>(Cfg::FOOD_SHARE_DURATION_TICKS)};
-                            emit(es);
-                            Event ee; ee.type = EVT_INTERACTION_ENDED; ee.tick = tick_num;
-                            ee.interaction_ended = {pid};
-                            emit(ee);
-                            continue;
-                        }
-                    }
-                    // Greeting
-                    if (g_rng.rand_float() < Cfg::PROXIMITY_GREETING_CHANCE) {
+            // Helper: try interaction between a pair
+            auto try_interact = [&](int ai, int bi) {
+                auto& a = lil_guys[ai];
+                auto& b = lil_guys[bi];
+
+                // Trail protection: don't interrupt foraging workers
+                bool a_on_job = (a.state == STATE_TO_FOOD)
+                             || (a.state == STATE_TO_HOME && a.food_carried > 0);
+                bool b_on_job = (b.state == STATE_TO_FOOD)
+                             || (b.state == STATE_TO_HOME && b.food_carried > 0);
+                if (a_on_job || b_on_job) return;
+
+                // Cooldown gating
+                if (a.interaction_cooldown > 0 || b.interaction_cooldown > 0) return;
+
+                // Already animating
+                if (a.anim_remaining_ticks > 0 || b.anim_remaining_ticks > 0) return;
+
+                // Food sharing
+                if ((a.food_carried > 0) != (b.food_carried > 0)) {
+                    if (g_rng.rand_float() < Cfg::PROXIMITY_FOOD_SHARE_CHANCE) {
                         uint16_t pid = event_bus->next_pair_id();
                         Event es; es.type = EVT_INTERACTION_STARTED; es.tick = tick_num;
-                        es.interaction_started = {pid, INTERACT_GREETING,
-                            static_cast<uint8_t>(Cfg::GREETING_DURATION_TICKS)};
+                        es.interaction_started = {pid, INTERACT_FOOD_SHARING,
+                            static_cast<uint8_t>(Cfg::FOOD_SHARE_DURATION_TICKS)};
                         emit(es);
                         Event ee; ee.type = EVT_INTERACTION_ENDED; ee.tick = tick_num;
                         ee.interaction_ended = {pid};
                         emit(ee);
+
+                        bool a_gives = (a.food_carried > 0);
+                        a.anim_type = a_gives ? LG_ANIM_FOOD_SHARE_GIVER : LG_ANIM_FOOD_SHARE_RECEIVER;
+                        b.anim_type = a_gives ? LG_ANIM_FOOD_SHARE_RECEIVER : LG_ANIM_FOOD_SHARE_GIVER;
+                        a.anim_remaining_ticks = Cfg::FOOD_SHARE_DURATION_TICKS;
+                        b.anim_remaining_ticks = Cfg::FOOD_SHARE_DURATION_TICKS;
+                        a.interaction_cooldown = Cfg::INTERACTION_COOLDOWN_TICKS;
+                        b.interaction_cooldown = Cfg::INTERACTION_COOLDOWN_TICKS;
+                        return;
                     }
+                }
+
+                // Greeting
+                if (g_rng.rand_float() < Cfg::PROXIMITY_GREETING_CHANCE) {
+                    uint16_t pid = event_bus->next_pair_id();
+                    Event es; es.type = EVT_INTERACTION_STARTED; es.tick = tick_num;
+                    es.interaction_started = {pid, INTERACT_GREETING,
+                        static_cast<uint8_t>(Cfg::GREETING_DURATION_TICKS)};
+                    emit(es);
+                    Event ee; ee.type = EVT_INTERACTION_ENDED; ee.tick = tick_num;
+                    ee.interaction_ended = {pid};
+                    emit(ee);
+
+                    a.anim_type = LG_ANIM_GREETING;
+                    b.anim_type = LG_ANIM_GREETING;
+                    a.anim_remaining_ticks = Cfg::GREETING_DURATION_TICKS;
+                    b.anim_remaining_ticks = Cfg::GREETING_DURATION_TICKS;
+                    a.interaction_cooldown = Cfg::INTERACTION_COOLDOWN_TICKS;
+                    b.interaction_cooldown = Cfg::INTERACTION_COOLDOWN_TICKS;
+                }
+            };
+
+            // Same-cell pairs
+            for (int ai = grid_head[idx]; ai >= 0; ai = grid_next[ai]) {
+                for (int bi = grid_next[ai]; bi >= 0; bi = grid_next[bi]) {
+                    try_interact(ai, bi);
                 }
             }
 
@@ -202,36 +237,11 @@ void Chamber::_detect_proximity_interactions() {
                     continue;
                 int nidx = ny * Cfg::GRID_WIDTH + nx;
                 if (grid_head[nidx] < 0) continue;
-                // Only check pairs where this cell < neighbor cell to avoid duplicates
                 if (nidx <= idx) continue;
 
                 for (int ai = grid_head[idx]; ai >= 0; ai = grid_next[ai]) {
                     for (int bi = grid_head[nidx]; bi >= 0; bi = grid_next[bi]) {
-                        auto& a = lil_guys[ai];
-                        auto& b = lil_guys[bi];
-                        if ((a.food_carried > 0) != (b.food_carried > 0)) {
-                            if (g_rng.rand_float() < Cfg::PROXIMITY_FOOD_SHARE_CHANCE) {
-                                uint16_t pid = event_bus->next_pair_id();
-                                Event es; es.type = EVT_INTERACTION_STARTED; es.tick = tick_num;
-                                es.interaction_started = {pid, INTERACT_FOOD_SHARING,
-                                    static_cast<uint8_t>(Cfg::FOOD_SHARE_DURATION_TICKS)};
-                                emit(es);
-                                Event ee; ee.type = EVT_INTERACTION_ENDED; ee.tick = tick_num;
-                                ee.interaction_ended = {pid};
-                                emit(ee);
-                                continue;
-                            }
-                        }
-                        if (g_rng.rand_float() < Cfg::PROXIMITY_GREETING_CHANCE) {
-                            uint16_t pid = event_bus->next_pair_id();
-                            Event es; es.type = EVT_INTERACTION_STARTED; es.tick = tick_num;
-                            es.interaction_started = {pid, INTERACT_GREETING,
-                                static_cast<uint8_t>(Cfg::GREETING_DURATION_TICKS)};
-                            emit(es);
-                            Event ee; ee.type = EVT_INTERACTION_ENDED; ee.tick = tick_num;
-                            ee.interaction_ended = {pid};
-                            emit(ee);
-                        }
+                        try_interact(ai, bi);
                     }
                 }
             }

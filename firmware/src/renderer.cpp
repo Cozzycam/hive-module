@@ -940,18 +940,28 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
         int px = static_cast<int>(fx * Cfg::CELL_SIZE);
         int py = static_cast<int>(fy * Cfg::CELL_SIZE);
 
-        bool moving = w.has_target_cell ||
-                      (w.x != w.prev_x || w.y != w.prev_y);
-        bool resting = (w.state == STATE_IDLE && w.idle_ticks_remaining > 0);
+        // Animation override: interaction animations suppress normal bob
+        if (w.anim_type == LG_ANIM_GREETING) {
+            // Gentle 1px oscillation at ~4Hz (every ~8 frames at 30fps)
+            int twitch = ((_frame + i * 3) % 8 < 4) ? -1 : 0;
+            py += twitch;
+        } else if (w.anim_type == LG_ANIM_FOOD_SHARE_GIVER
+                || w.anim_type == LG_ANIM_FOOD_SHARE_RECEIVER) {
+            // Stationary, no bob
+        } else {
+            bool moving = w.has_target_cell ||
+                          (w.x != w.prev_x || w.y != w.prev_y);
+            bool resting = (w.state == STATE_IDLE && w.idle_ticks_remaining > 0);
 
-        if (resting) {
-            int breath_phase = (_frame + i * 7) % 60;
-            int bob = (breath_phase < 30) ? 0 : -1;
-            py += bob;
-        } else if (moving) {
-            float phase = (fx + fy) * 2.0f;
-            int bob = (static_cast<int>(phase) & 1) ? -1 : 0;
-            py += bob;
+            if (resting) {
+                int breath_phase = (_frame + i * 7) % 60;
+                int bob = (breath_phase < 30) ? 0 : -1;
+                py += bob;
+            } else if (moving) {
+                float phase = (fx + fy) * 2.0f;
+                int bob = (static_cast<int>(phase) & 1) ? -1 : 0;
+                py += bob;
+            }
         }
 
         float scale = SCALE_WORKER_MINOR;
@@ -1035,6 +1045,13 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
 
             _draw_sprite_scaled(sd.render_x, sd.render_y, WORKER_PIONEER,
                                 WORKER_PIONEER_W, WORKER_PIONEER_H, scale, flip);
+
+            // Food-share receiver pulse: warm dot during first half of animation
+            if (w.anim_type == LG_ANIM_FOOD_SHARE_RECEIVER
+                && w.anim_remaining_ticks > Cfg::FOOD_SHARE_DURATION_TICKS / 2) {
+                _gfx->fillRect(sd.render_x - 1, sd.render_y - 1, 3, 3, _pal_food_carry);
+                _mark_dirty(sd.render_x - 1, sd.render_y - 1, 3, 3);
+            }
 
             if (w.food_carried > 0) {
                 int mx = sd.render_x - static_cast<int>(w.facing_dx * 4);
