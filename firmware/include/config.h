@@ -104,9 +104,11 @@ constexpr int   CHAMBER_EXPLORE_STEPS   = 150;
 constexpr int   IDLE_REST_MIN_TICKS        = 40;    // ~5s at 8 tps
 constexpr int   IDLE_REST_MAX_TICKS        = 240;   // ~30s
 constexpr int   IDLE_REPOLL_INTERVAL       = 8;     // ~1s between task checks
-constexpr float IDLE_DRIFT_SPEED           = 0.1f;  // cells/tick (vs walk 0.25)
-constexpr float IDLE_HOLD_WEIGHT           = 0.60f;
-constexpr float IDLE_DRIFT_WEIGHT          = 0.25f;
+constexpr float IDLE_DRIFT_SPEED           = 0.05f; // cells/tick (vs walk 0.25)
+constexpr float IDLE_HOLD_WEIGHT           = 0.40f;
+constexpr float IDLE_DRIFT_WEIGHT          = 0.20f;
+constexpr float IDLE_HUDDLE_WEIGHT         = 0.25f;  // drift toward nearest idler/queen
+// remaining ~15% = reface
 // reface weight = 1 - hold - drift = 0.15
 constexpr int   IDLE_MICROSTATE_MIN_TICKS  = 16;    // ~2s
 constexpr int   IDLE_MICROSTATE_MAX_TICKS  = 80;    // ~10s
@@ -160,9 +162,10 @@ constexpr int QUEEN_SPAWN_Y = GRID_HEIGHT / 2;  // 20
 
 // ---- Proximity interactions ----
 constexpr int   PROXIMITY_DETECTION_RADIUS = 1;
+constexpr float BASE_FORAGER_FRACTION      = 0.10f;  // foraging prob at pressure 0.0
 constexpr float PROXIMITY_GREETING_CHANCE  = 0.10f;
 constexpr float PROXIMITY_FOOD_SHARE_CHANCE = 0.08f;
-constexpr int   GREETING_DURATION_TICKS    = 8;    // ~1s at 8 tps
+constexpr int   GREETING_DURATION_TICKS    = 12;   // ~1.5s at 8 tps
 constexpr int   FOOD_SHARE_DURATION_TICKS  = 12;   // ~1.5s at 8 tps
 constexpr int   INTERACTION_COOLDOWN_TICKS = 40;    // ~5s at 8 tps
 

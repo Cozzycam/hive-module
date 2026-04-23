@@ -191,6 +191,25 @@ static constexpr float SCALE_EGG            = 3.5f;   //  4x4  base → 14px  (0
 static constexpr float SCALE_LARVA          = 4.4f;   //  6x6  base → 26px  (0.30)
 static constexpr float SCALE_PUPA           = 3.2f;   //  8x8  base → 26px  (0.29)
 
+// ---- Sprite frame lookup ----
+// Returns sprite data for a given role + animation frame.
+// Returns nullptr if no dedicated frame exists — caller falls back to BASE.
+struct SpriteRef {
+    const uint16_t* data;
+    int w, h;
+};
+
+static const SpriteRef* _get_worker_sprite(Role /*role*/, bool /*is_pioneer*/,
+                                            LilGuySpriteFrame frame) {
+    static const SpriteRef base = {WORKER_PIONEER, WORKER_PIONEER_W, WORKER_PIONEER_H};
+    static const SpriteRef lean = {WORKER_LEAN, WORKER_LEAN_W, WORKER_LEAN_H};
+    switch (frame) {
+        case LG_FRAME_BASE: return &base;
+        case LG_FRAME_LEAN: return &lean;
+        default: return nullptr;
+    }
+}
+
 // ---- Seeded RNG for grain specks ----
 static uint32_t _grain_rng(uint32_t seed) {
     seed ^= seed << 13;
@@ -942,9 +961,23 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
 
         // Animation override: interaction animations suppress normal bob
         if (w.anim_type == LG_ANIM_GREETING) {
-            // Gentle 1px oscillation at ~4Hz (every ~8 frames at 30fps)
-            int twitch = ((_frame + i * 3) % 8 < 4) ? -1 : 0;
-            py += twitch;
+            // Lean toward partner: in (0-33%), hold (33-66%), out (66-100%)
+            float p = 1.0f - static_cast<float>(w.anim_remaining_ticks)
+                           / static_cast<float>(Cfg::GREETING_DURATION_TICKS);
+            float lean;
+            if (p < 0.33f) {
+                // Ease-in: smoothstep 0→1 over first third
+                float t2 = p / 0.33f;
+                lean = t2 * t2 * (3.0f - 2.0f * t2);
+            } else if (p < 0.66f) {
+                lean = 1.0f;  // hold
+            } else {
+                // Ease-out: smoothstep 1→0 over last third
+                float t2 = (p - 0.66f) / 0.34f;
+                lean = 1.0f - t2 * t2 * (3.0f - 2.0f * t2);
+            }
+            px += static_cast<int>(w.anim_lean_dx * 2.0f * lean);
+            py += static_cast<int>(w.anim_lean_dy * 2.0f * lean);
         } else if (w.anim_type == LG_ANIM_FOOD_SHARE_GIVER
                 || w.anim_type == LG_ANIM_FOOD_SHARE_RECEIVER) {
             // Stationary, no bob
@@ -1043,8 +1076,14 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
             if (w.role == ROLE_MAJOR)  scale = SCALE_WORKER_MAJOR;
             else if (w.is_pioneer)     scale = SCALE_WORKER_PIONEER;
 
-            _draw_sprite_scaled(sd.render_x, sd.render_y, WORKER_PIONEER,
-                                WORKER_PIONEER_W, WORKER_PIONEER_H, scale, flip);
+            // Sprite frame lookup: use dedicated frame if available, else base
+            LilGuySpriteFrame frame = LG_FRAME_BASE;
+            if (w.anim_type == LG_ANIM_GREETING) frame = LG_FRAME_LEAN;
+            const SpriteRef* spr = _get_worker_sprite(w.role, w.is_pioneer, frame);
+            if (!spr) spr = _get_worker_sprite(w.role, w.is_pioneer, LG_FRAME_BASE);
+
+            _draw_sprite_scaled(sd.render_x, sd.render_y, spr->data,
+                                spr->w, spr->h, scale, flip);
 
             // Food-share receiver pulse: warm dot during first half of animation
             if (w.anim_type == LG_ANIM_FOOD_SHARE_RECEIVER

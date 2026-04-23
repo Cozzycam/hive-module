@@ -106,10 +106,15 @@ void Queen::_lay_founding(Chamber& ch, float dt) {
             if (consumed > 0) reserves += consumed;
             break;
         }
-        int dx = g_rng.rand_int(-2, 2);
-        int dy = g_rng.rand_int(-2, 2);
+        // Place around queen, not under her (min distance 3 cells)
+        int dx, dy;
+        for (int att = 0; att < 8; att++) {
+            dx = g_rng.rand_int(-5, 5);
+            dy = g_rng.rand_int(-5, 5);
+            if (abs(dx) + abs(dy) >= 3) break;
+        }
         int ex = x + dx, ey = y + dy;
-        if (ch.in_bounds(ex, ey) && (dx != 0 || dy != 0)) {
+        if (ch.in_bounds(ex, ey)) {
             ch.add_brood(ex, ey, Cfg::DEFAULT_BROOD_ROLE);
             eggs_laid++;
             Event ev; ev.type = EVT_QUEEN_LAID_EGG; ev.tick = ch.tick_num;
@@ -148,10 +153,15 @@ void Queen::_lay_established(Chamber& ch, float dt) {
 
         ch.colony->food_store -= Cfg::EGG_FOOD_COST;
 
-        int dx = g_rng.rand_int(-2, 2);
-        int dy = g_rng.rand_int(-2, 2);
+        // Place around queen, not under her (min distance 3 cells)
+        int dx, dy;
+        for (int att = 0; att < 8; att++) {
+            dx = g_rng.rand_int(-5, 5);
+            dy = g_rng.rand_int(-5, 5);
+            if (abs(dx) + abs(dy) >= 3) break;
+        }
         int ex = x + dx, ey = y + dy;
-        if (ch.in_bounds(ex, ey) && (dx != 0 || dy != 0)) {
+        if (ch.in_bounds(ex, ey)) {
             ch.add_brood(ex, ey, Cfg::DEFAULT_BROOD_ROLE);
             eggs_laid++;
             Event ev; ev.type = EVT_QUEEN_LAID_EGG; ev.tick = ch.tick_num;

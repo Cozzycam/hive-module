@@ -322,8 +322,16 @@ void LilGuy::_pick_task(Chamber& ch) {
         }
     }
 
-    // Recruitment signal
-    if (_detects_food_trail(ch)) {
+    // Forager cap — count current foragers vs desired fraction
+    float forage_frac = Cfg::BASE_FORAGER_FRACTION
+        + (1.0f - Cfg::BASE_FORAGER_FRACTION)
+          * (pressure / Cfg::FAMINE_SLOWDOWN_PRESSURE);
+    if (forage_frac > 1.0f) forage_frac = 1.0f;
+    int max_foragers = static_cast<int>(col->population * forage_frac + 0.5f);
+    if (max_foragers < 1) max_foragers = 1;
+
+    if (col->gatherer_count < max_foragers) {
+        // Go gather
         state = STATE_TO_FOOD;
         has_target = false;
         has_target_cell = false;
@@ -332,27 +340,35 @@ void LilGuy::_pick_task(Chamber& ch) {
         return;
     }
 
-    // Gatherer regulation — wander briefly then retry
-    float target_frac = col->target_gatherer_fraction();
-    int total_pop = col->population;
-    if (total_pop > 0
-            && static_cast<float>(col->gatherer_count) / total_pop >= target_frac) {
-        int cd = (pressure > Cfg::FAMINE_SLOWDOWN_PRESSURE)
-               ? g_rng.rand_int(10, 30)
-               : g_rng.rand_int(Cfg::IDLE_RECONSIDER_MIN, Cfg::IDLE_RECONSIDER_MAX);
-        state = STATE_IDLE;
-        has_target = false;
+    // Non-forager fallthrough: tend queen > tend brood > idle
+    if (ch.queen_obj.alive && ch.queen_obj.needs_feeding() && has_food
+            && _within_sense(ch.queen_obj.x, ch.queen_obj.y)) {
+        state = STATE_TEND_QUEEN;
+        target_x = ch.queen_obj.x; target_y = ch.queen_obj.y;
+        has_target = true;
         has_target_cell = false;
-        idle_cooldown = cd;
         return;
     }
 
-    // Go gather
-    state = STATE_TO_FOOD;
+    {
+        int li = _nearest_hungry_larva(ch);
+        if (li >= 0 && has_food) {
+            state = STATE_TEND_BROOD;
+            target_x = ch.brood[li].x; target_y = ch.brood[li].y;
+            has_target = true;
+            has_target_cell = false;
+            return;
+        }
+    }
+
+    // Nothing to tend — idle
+    state = STATE_IDLE;
     has_target = false;
     has_target_cell = false;
-    steps_walked = 0;
-    chamber_steps = 0;
+    idle_ticks_remaining = g_rng.rand_int(Cfg::IDLE_REST_MIN_TICKS,
+                                           Cfg::IDLE_REST_MAX_TICKS);
+    idle_repoll_tick = Cfg::IDLE_REPOLL_INTERVAL;
+    _pick_idle_microstate(ch);
 }
 
 // ================================================================
@@ -360,6 +376,26 @@ void LilGuy::_pick_task(Chamber& ch) {
 // ================================================================
 
 void LilGuy::_do_to_food(Chamber& ch) {
+    // Periodic forager re-evaluation — recall excess scouts
+    if (steps_walked > 0 && steps_walked % 32 == 0 && food_carried == 0) {
+        float pressure = ch.colony->food_pressure();
+        float forage_frac = Cfg::BASE_FORAGER_FRACTION
+            + (1.0f - Cfg::BASE_FORAGER_FRACTION)
+              * (pressure / Cfg::FAMINE_SLOWDOWN_PRESSURE);
+        if (forage_frac > 1.0f) forage_frac = 1.0f;
+        int max_foragers = static_cast<int>(ch.colony->population * forage_frac + 0.5f);
+        if (max_foragers < 1) max_foragers = 1;
+        if (ch.colony->gatherer_count > max_foragers) {
+            state = STATE_TO_HOME;
+            has_target = false;
+            has_target_cell = false;
+            steps_walked = 0;
+            facing_dx = -facing_dx;
+            facing_dy = -facing_dy;
+            return;
+        }
+    }
+
     // Scout patience -- give up and head home after too long.
     if (steps_walked > Cfg::SCOUT_PATIENCE_TICKS) {
         state = STATE_TO_HOME;
@@ -531,25 +567,85 @@ void LilGuy::_do_tend_queen(Chamber& ch) {
 }
 
 void LilGuy::_do_idle(Chamber& ch) {
-    // True rest: only drift needs a new target cell
+    // True rest: drift and huddle need new target cells
     if (idle_ticks_remaining > 0) {
         if (idle_microstate == 1) {
+            // Random drift with queen bias
             int cx = cell_x(), cy = cell_y();
-            int dx = g_rng.rand_dir();
-            int dy = g_rng.rand_dir();
+            int dx, dy;
+            if (ch.has_queen && g_rng.rand_float() < 0.5f) {
+                dx = (ch.queen_obj.x > cx) ? 1 : ((ch.queen_obj.x < cx) ? -1 : 0);
+                dy = (ch.queen_obj.y > cy) ? 1 : ((ch.queen_obj.y < cy) ? -1 : 0);
+            } else {
+                dx = g_rng.rand_dir();
+                dy = g_rng.rand_dir();
+            }
             if (dx != 0 && dy != 0) {
                 if (g_rng.rand_float() < 0.5f) dy = 0; else dx = 0;
             }
             if (dx == 0 && dy == 0) dx = g_rng.rand_sign();
             _set_target_cell(cx + dx, cy + dy, ch);
+        } else if (idle_microstate == 3) {
+            // Huddle: drift toward nearest idle neighbor or queen,
+            // but stop when adjacent — orbit rather than overlap
+            int cx = cell_x(), cy = cell_y();
+            int best_dist = 999;
+            int tx = cx, ty = cy;
+            bool target_is_queen = false;
+
+            // Find nearest idle worker
+            for (int i = 0; i < ch.lil_guy_count; i++) {
+                auto& other = ch.lil_guys[i];
+                if (&other == this || !other.alive) continue;
+                if (other.state != STATE_IDLE) continue;
+                int ox = other.cell_x(), oy = other.cell_y();
+                int d = abs(ox - cx) + abs(oy - cy);
+                if (d > 0 && d < best_dist) {
+                    best_dist = d;
+                    tx = ox; ty = oy;
+                }
+            }
+
+            // Queen is also a huddle target (preferred if close)
+            if (ch.has_queen && ch.queen_obj.alive) {
+                int d = abs(ch.queen_obj.x - cx) + abs(ch.queen_obj.y - cy);
+                if (d > 0 && (d < best_dist || g_rng.rand_float() < 0.4f)) {
+                    tx = ch.queen_obj.x; ty = ch.queen_obj.y;
+                    best_dist = d;
+                    target_is_queen = true;
+                }
+            }
+
+            // Close enough? Orbit tangentially instead of piling on
+            int comfort = target_is_queen ? 4 : 2;  // queen is big, keep wider ring
+            if (best_dist <= comfort) {
+                // Tangential drift: perpendicular to the approach direction
+                int dx = (tx > cx) ? 1 : ((tx < cx) ? -1 : 0);
+                int dy = (ty > cy) ? 1 : ((ty < cy) ? -1 : 0);
+                // Rotate 90 degrees (pick one direction randomly)
+                int tdx, tdy;
+                if (g_rng.rand_float() < 0.5f) { tdx = -dy; tdy = dx; }
+                else                            { tdx = dy;  tdy = -dx; }
+                if (tdx == 0 && tdy == 0) tdx = g_rng.rand_sign();
+                _set_target_cell(cx + tdx, cy + tdy, ch);
+            } else {
+                // Approach
+                int dx = (tx > cx) ? 1 : ((tx < cx) ? -1 : 0);
+                int dy = (ty > cy) ? 1 : ((ty < cy) ? -1 : 0);
+                if (dx != 0 && dy != 0) {
+                    if (g_rng.rand_float() < 0.5f) dy = 0; else dx = 0;
+                }
+                if (dx == 0 && dy == 0) dx = g_rng.rand_sign();
+                _set_target_cell(cx + dx, cy + dy, ch);
+            }
         }
         return;
     }
 
-    // Wander (old behavior)
+    // Wander (non-resting idle, legacy path)
     int cx = cell_x(), cy = cell_y();
     int dx, dy;
-    if (ch.has_queen && g_rng.rand_float() < 0.3f) {
+    if (ch.has_queen && g_rng.rand_float() < 0.5f) {
         dx = (ch.queen_obj.x > cx) ? 1 : ((ch.queen_obj.x < cx) ? -1 : 0);
         dy = (ch.queen_obj.y > cy) ? 1 : ((ch.queen_obj.y < cy) ? -1 : 0);
     } else {
@@ -638,13 +734,16 @@ void LilGuy::_pick_idle_microstate(Chamber& ch) {
 
     float r = g_rng.rand_float();
     if (r < Cfg::IDLE_HOLD_WEIGHT) {
-        idle_microstate = 0;
+        idle_microstate = 0;  // hold
         speed = Cfg::ROLE_PARAMS[role].speed;
     } else if (r < Cfg::IDLE_HOLD_WEIGHT + Cfg::IDLE_DRIFT_WEIGHT) {
-        idle_microstate = 1;
+        idle_microstate = 1;  // random drift
+        speed = Cfg::IDLE_DRIFT_SPEED;
+    } else if (r < Cfg::IDLE_HOLD_WEIGHT + Cfg::IDLE_DRIFT_WEIGHT + Cfg::IDLE_HUDDLE_WEIGHT) {
+        idle_microstate = 3;  // huddle: drift toward nearest idler or queen
         speed = Cfg::IDLE_DRIFT_SPEED;
     } else {
-        idle_microstate = 2;
+        idle_microstate = 2;  // reface
         speed = Cfg::ROLE_PARAMS[role].speed;
         int d = g_rng.rand_int(0, 3);
         const float fdx[] = {1.0f, -1.0f, 0.0f, 0.0f};

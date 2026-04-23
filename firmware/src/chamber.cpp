@@ -1,6 +1,7 @@
 /* Chamber — ported from sim/chamber.py. */
 #include "chamber.h"
 #include "rng.h"
+#include <Arduino.h>
 #include <cstring>
 #include <cmath>
 
@@ -218,6 +219,17 @@ void Chamber::_detect_proximity_interactions() {
                     b.anim_remaining_ticks = Cfg::GREETING_DURATION_TICKS;
                     a.interaction_cooldown = Cfg::INTERACTION_COOLDOWN_TICKS;
                     b.interaction_cooldown = Cfg::INTERACTION_COOLDOWN_TICKS;
+
+                    // Lean direction: each leans toward the other
+                    float dx = b.x - a.x;
+                    float dy = b.y - a.y;
+                    if (fabsf(dx) >= fabsf(dy)) {
+                        a.anim_lean_dx = (dx > 0) ? 1 : -1;  a.anim_lean_dy = 0;
+                    } else {
+                        a.anim_lean_dx = 0;  a.anim_lean_dy = (dy > 0) ? 1 : -1;
+                    }
+                    b.anim_lean_dx = -a.anim_lean_dx;
+                    b.anim_lean_dy = -a.anim_lean_dy;
                 }
             };
 

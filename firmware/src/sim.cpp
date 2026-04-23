@@ -16,17 +16,19 @@ void Sim::init() {
     tick_count = 0;
     last_lifecycle_ms = millis();
 
-    // Debug: spawn one of each entity type for visual testing
+    // Debug: spawn workers for visual/interaction testing
     int qx = Cfg::QUEEN_SPAWN_X, qy = Cfg::QUEEN_SPAWN_Y;
-    chamber.add_brood(qx - 3, qy - 2, ROLE_MINOR);                  // egg
+    chamber.add_brood(qx - 4, qy - 3, ROLE_MINOR);
     chamber.brood[chamber.brood_count - 1].stage = STAGE_EGG;
-    chamber.add_brood(qx - 2, qy + 2, ROLE_MINOR);                  // larva
+    chamber.add_brood(qx + 4, qy + 3, ROLE_MINOR);
     chamber.brood[chamber.brood_count - 1].stage = STAGE_LARVA;
-    chamber.add_brood(qx + 3, qy - 2, ROLE_MINOR);                  // pupa
+    chamber.add_brood(qx + 4, qy - 3, ROLE_MINOR);
     chamber.brood[chamber.brood_count - 1].stage = STAGE_PUPA;
-    chamber.add_lil_guy(qx + 4, qy + 2, ROLE_MINOR, true);          // pioneer
-    chamber.add_lil_guy(qx - 5, qy,     ROLE_MINOR, false);         // minor
-    chamber.add_lil_guy(qx + 5, qy,     ROLE_MAJOR, false);         // major
+    for (int i = 0; i < 5; i++)
+        chamber.add_lil_guy(qx - 4 + i, qy - 3, ROLE_MINOR, true);  // 5 pioneers
+    for (int i = 0; i < 9; i++)
+        chamber.add_lil_guy(qx - 4 + i, qy + 3, ROLE_MINOR, false); // 9 minors
+    chamber.add_lil_guy(qx, qy + 5, ROLE_MAJOR, false);              // 1 major
     colony.population = chamber.lil_guy_count;
 }
 
@@ -68,8 +70,9 @@ void Sim::tick(float dt) {
 
     int gatherers = 0;
     for (int i = 0; i < chamber.lil_guy_count; i++) {
-        if (chamber.lil_guys[i].state == STATE_TO_FOOD
-                || chamber.lil_guys[i].state == STATE_TO_HOME)
+        auto& w = chamber.lil_guys[i];
+        if (w.state == STATE_TO_FOOD
+                || (w.state == STATE_TO_HOME && w.food_carried > 0))
             gatherers++;
     }
     colony.gatherer_count = gatherers;
