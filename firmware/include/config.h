@@ -20,9 +20,9 @@ namespace Cfg {
 constexpr int CHAMBER_WIDTH_PX  = 480;
 constexpr int CHAMBER_HEIGHT_PX = 320;
 constexpr int CELL_SIZE         = 16;
-constexpr int GRID_WIDTH        = CHAMBER_WIDTH_PX / CELL_SIZE;   // 60
-constexpr int GRID_HEIGHT       = CHAMBER_HEIGHT_PX / CELL_SIZE;  // 40
-constexpr int GRID_CELLS        = GRID_WIDTH * GRID_HEIGHT;       // 2400
+constexpr int GRID_WIDTH        = CHAMBER_WIDTH_PX / CELL_SIZE;   // 30
+constexpr int GRID_HEIGHT       = CHAMBER_HEIGHT_PX / CELL_SIZE;  // 20
+constexpr int GRID_CELLS        = GRID_WIDTH * GRID_HEIGHT;       // 600
 
 // ---- Founding biology ----
 constexpr float FOOD_STORE_START = 80.0f;
@@ -91,7 +91,6 @@ constexpr float ARRIVAL_THRESHOLD       = 0.05f;
 constexpr int   SCOUT_PATIENCE_TICKS    = 3000;
 constexpr float FORAGE_DEBUG_PILE_SIZE  = 220.0f;
 constexpr float TAP_FEED_AMOUNT        = 200.0f;  // food placed by player tap
-constexpr float FOOD_PILE_CAP           = 55.0f;
 constexpr int   FOOD_DEPOSIT_RADIUS     = 5;
 constexpr int   RETURN_HOME_TICKS       = 960;
 constexpr int   IDLE_RECONSIDER_MIN     = 40;
