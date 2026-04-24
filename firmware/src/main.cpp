@@ -6,6 +6,7 @@
  *   1-7  -- set speed directly     (2,5,8,15,30,60,150 tps)
  *   z    -- zoom in                x    -- zoom out
  *   ?    -- print current status
+ *   R    -- reboot ESP32
  */
 
 #include <Arduino.h>
@@ -127,6 +128,11 @@ static void handle_serial() {
             renderer.force_full_redraw();
             Serial.println("Full redraw");
             break;
+        case 'R':  // reboot
+            Serial.println("Rebooting...");
+            delay(100);
+            ESP.restart();
+            break;
         case '?':
             print_status();
             break;
@@ -141,7 +147,7 @@ static void handle_serial() {
 void setup() {
     Serial.begin(115200);
     Serial.println("Hive Module -- live sim");
-    Serial.println("Commands: +/- speed, 1-9/0 speed level, r redraw, ? status");
+    Serial.println("Commands: +/- speed, 1-9/0 speed level, r redraw, R reboot, ? status");
 
     g_rng = Rng(esp_random());
 

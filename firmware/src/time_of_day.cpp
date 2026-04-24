@@ -180,22 +180,29 @@ static bool _sun_time(float lat, float lon, int doy, int days_in_year,
 }
 
 void time_of_day_recompute_sun() {
-    int diy = _is_leap(g_tod.year) ? 366 : 365;
+    // Use local date — day rollover triggers on local time,
+    // so sunrise/sunset must be computed for the local calendar day.
+    int y, m, d, h, mi;
+    _unix_to_ymd(g_tod.unix_time, y, m, d, h, mi);
+    int tz = _tz_offset_minutes(y, m, d, h);
+    uint32_t local = g_tod.unix_time + tz * 60;
+    int ly, lm, ld, lh, lmi;
+    _unix_to_ymd(local, ly, lm, ld, lh, lmi);
+
+    int doy = _day_of_year(ly, lm, ld);
+    int diy = _is_leap(ly) ? 366 : 365;
     float rise_min, set_min;
 
-    if (_sun_time(LOC_LAT, LOC_LON, g_tod.day_of_year, diy,
+    if (_sun_time(LOC_LAT, LOC_LON, doy, diy,
                   90.833f, rise_min, set_min)) {
-        // Convert UTC minutes to unix time for today
-        int y, m, d, h, mi;
-        _unix_to_ymd(g_tod.unix_time, y, m, d, h, mi);
-        uint32_t midnight = _ymd_to_unix(y, m, d, 0, 0);
+        // rise_min/set_min are UTC minutes from midnight —
+        // anchor to UTC midnight of the local date
+        uint32_t midnight = _ymd_to_unix(ly, lm, ld, 0, 0);
         g_tod.sunrise_unix = midnight + (uint32_t)(rise_min * 60.0f);
         g_tod.sunset_unix  = midnight + (uint32_t)(set_min * 60.0f);
     } else {
         // Polar edge case — use 6:00/18:00 UTC as fallback
-        int y, m, d, h, mi;
-        _unix_to_ymd(g_tod.unix_time, y, m, d, h, mi);
-        uint32_t midnight = _ymd_to_unix(y, m, d, 0, 0);
+        uint32_t midnight = _ymd_to_unix(ly, lm, ld, 0, 0);
         g_tod.sunrise_unix = midnight + 6 * 3600;
         g_tod.sunset_unix  = midnight + 18 * 3600;
     }
