@@ -151,6 +151,8 @@ void Chamber::tick(float dt) {
         }
         if (screen_y < 28.0f) {  // HUD_STRIP_H
             lil_guys[i].stack_on = -1;
+            lil_guys[i].sleeping = false;
+            lil_guys[i].anim_type = LG_ANIM_NONE;
         }
     }
 }
@@ -208,9 +210,10 @@ void Chamber::_detect_proximity_interactions() {
                 // Cooldown gating
                 if (a.interaction_cooldown > 0 || b.interaction_cooldown > 0) return;
 
-                // Already animating or part of a stack
+                // Already animating, stacked, or sleeping
                 if (a.anim_remaining_ticks > 0 || b.anim_remaining_ticks > 0) return;
                 if (in_stack[ai] || in_stack[bi]) return;
+                if (a.sleeping || b.sleeping) return;
 
                 // Food sharing
                 if ((a.food_carried > 0) != (b.food_carried > 0)) {
@@ -328,6 +331,8 @@ void Chamber::_detect_proximity_interactions() {
                             while (walk >= 0) {
                                 if (walk == ground) {
                                     lil_guys[j].stack_on = -1;
+                                    lil_guys[j].sleeping = false;
+                                    lil_guys[j].anim_type = LG_ANIM_NONE;
                                     break;
                                 }
                                 walk = lil_guys[walk].stack_on;
@@ -468,7 +473,11 @@ void Chamber::remove_lil_guy(int idx) {
     // Patch stack_on references: last moved to idx, idx is gone
     for (int k = 0; k < lil_guy_count; k++) {
         if (lil_guys[k].stack_on == last)      lil_guys[k].stack_on = idx;
-        else if (lil_guys[k].stack_on == idx)   lil_guys[k].stack_on = -1;
+        else if (lil_guys[k].stack_on == idx) {
+            lil_guys[k].stack_on = -1;
+            lil_guys[k].sleeping = false;
+            lil_guys[k].anim_type = LG_ANIM_NONE;
+        }
     }
 }
 

@@ -203,9 +203,11 @@ static const SpriteRef* _get_worker_sprite(Role /*role*/, bool /*is_pioneer*/,
                                             LilGuySpriteFrame frame) {
     static const SpriteRef base = {WORKER_PIONEER, WORKER_PIONEER_W, WORKER_PIONEER_H};
     static const SpriteRef lean = {WORKER_LEAN, WORKER_LEAN_W, WORKER_LEAN_H};
+    static const SpriteRef snooze = {WORKER_SLEEP, WORKER_SLEEP_W, WORKER_SLEEP_H};
     switch (frame) {
         case LG_FRAME_BASE: return &base;
         case LG_FRAME_LEAN: return &lean;
+        case LG_FRAME_SNOOZE: return &snooze;
         default: return nullptr;
     }
 }
@@ -999,7 +1001,8 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
             px += static_cast<int>(w.anim_lean_dx * 2.0f * lean);
             py += static_cast<int>(w.anim_lean_dy * 2.0f * lean);
         } else if (w.anim_type == LG_ANIM_FOOD_SHARE_GIVER
-                || w.anim_type == LG_ANIM_FOOD_SHARE_RECEIVER) {
+                || w.anim_type == LG_ANIM_FOOD_SHARE_RECEIVER
+                || w.anim_type == LG_ANIM_SNOOZE) {
             // Stationary, no bob
         } else {
             bool moving = w.has_target_cell ||
@@ -1099,6 +1102,7 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
             // Sprite frame lookup: use dedicated frame if available, else base
             LilGuySpriteFrame frame = LG_FRAME_BASE;
             if (w.anim_type == LG_ANIM_GROOMING) frame = LG_FRAME_LEAN;
+            else if (w.anim_type == LG_ANIM_SNOOZE) frame = LG_FRAME_SNOOZE;
             const SpriteRef* spr = _get_worker_sprite(w.role, w.is_pioneer, frame);
             if (!spr) spr = _get_worker_sprite(w.role, w.is_pioneer, LG_FRAME_BASE);
 
@@ -1117,6 +1121,25 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
                 int my = sd.render_y - static_cast<int>(w.facing_dy * 4);
                 _gfx->fillRect(mx - 1, my - 1, 3, 3, _pal_food_carry);
                 _mark_dirty(mx - 1, my - 1, 3, 3);
+            }
+
+            // Floating Zs above sleeping ants
+            if (w.anim_type == LG_ANIM_SNOOZE) {
+                unsigned long ms = millis();
+                uint16_t zcol = _rgb565(180, 180, 220);
+                _gfx->setTextSize(1);
+                // Two Zs at different phases, floating upward
+                for (int zi = 0; zi < 2; zi++) {
+                    float phase = ((ms + zi * 1500) % 3000) / 3000.0f;
+                    int zx = sd.render_x + 4 + zi * 5;
+                    int zy = sd.render_y - 10 - static_cast<int>(phase * 14.0f);
+                    uint8_t alpha = (phase < 0.7f) ? 255 : static_cast<uint8_t>(255 * (1.0f - (phase - 0.7f) / 0.3f));
+                    uint16_t c = _rgb565(alpha * 180 / 255, alpha * 180 / 255, alpha * 220 / 255);
+                    _gfx->setTextColor(c);
+                    _gfx->setCursor(zx, zy);
+                    _gfx->print(zi == 0 ? "z" : "Z");
+                    _mark_dirty(zx, zy, 6, 8);
+                }
             }
             break;
         }

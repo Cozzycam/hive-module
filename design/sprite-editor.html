@@ -77,6 +77,8 @@ body {
     padding: 16px; background: #0a0a0a;
 }
 #canvas { cursor: crosshair; image-rendering: pixelated; }
+.canvas-wrap.selecting #canvas { cursor: crosshair; }
+.canvas-wrap.moving #canvas { cursor: grab; }
 
 /* ── Status bar ── */
 .status-bar {
@@ -147,6 +149,7 @@ select {
     <header class="toolbar">
         <select id="sprite-select"></select>
         <button onclick="newSprite()" title="New sprite">+ New</button>
+        <button onclick="dupeSprite()" title="Duplicate current sprite">Dupe</button>
         <span class="spacer"></span>
         <button onclick="saveToServer()" title="Save to server">Save</button>
         <button onclick="downloadJSON()" title="Download as JSON">JSON</button>
@@ -170,6 +173,7 @@ select {
         <button class="tool" data-tool="erase" title="Erase (E)">Erase</button>
         <button class="tool" data-tool="fill" title="Flood fill (F)">Fill</button>
         <button class="tool" data-tool="pick" title="Eyedropper (I)">Pick</button>
+        <button class="tool" data-tool="select" title="Select & Move (S)">Select</button>
         <span class="sep"></span>
         <button onclick="undo()" title="Undo (Ctrl+Z)">Undo</button>
         <span class="sep"></span>
@@ -218,6 +222,10 @@ const state = {
     painting: false,
     lastG: null,
     undoStack: [],
+    // Selection state
+    sel: null,       // {x, y, w, h, pixels} — floating selection
+    selStart: null,  // {x, y} — drag start for creating selection
+    selDrag: null,   // {ox, oy} — offset when dragging selection
 };
 
 // ── DOM ────────────────────────────────────────────────
@@ -283,8 +291,50 @@ function render() {
         ctx.stroke();
     }
 
+    // Draw floating selection
+    if (state.sel) {
+        const sel = state.sel;
+        for (let sy = 0; sy < sel.h; sy++) {
+            for (let sx = 0; sx < sel.w; sx++) {
+                const hex = sel.pixels[sy * sel.w + sx];
+                if (hex === T) continue;
+                const px = (sel.x + sx) * cs, py = (sel.y + sy) * cs;
+                ctx.fillStyle = h2css(hex);
+                ctx.fillRect(px, py, cs, cs);
+            }
+        }
+        // Selection border (marching ants)
+        ctx.strokeStyle = '#4ecca3';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.lineDashOffset = -(Date.now() / 80 % 8);
+        ctx.strokeRect(sel.x * cs, sel.y * cs, sel.w * cs, sel.h * cs);
+        ctx.setLineDash([]);
+    }
+
+    // Rubber band while selecting
+    if (state.selStart && state.lastG && state.tool === 'select' && state.painting && !state.sel) {
+        const rx = Math.min(state.selStart.x, state.lastG.x);
+        const ry = Math.min(state.selStart.y, state.lastG.y);
+        const rw = Math.abs(state.lastG.x - state.selStart.x) + 1;
+        const rh = Math.abs(state.lastG.y - state.selStart.y) + 1;
+        ctx.strokeStyle = 'rgba(78, 204, 163, 0.6)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeRect(rx * cs, ry * cs, rw * cs, rh * cs);
+        ctx.setLineDash([]);
+    }
+
     $('sprite-info').textContent = `${s.name}  ${sw} \u00d7 ${sh}`;
 }
+
+// Animate marching ants
+let _selAnimFrame = 0;
+function _animSel() {
+    if (state.sel) render();
+    _selAnimFrame = requestAnimationFrame(_animSel);
+}
+_animSel();
 
 // ── Tools ──────────────────────────────────────────────
 function setPixel(gx, gy, color) {
@@ -362,6 +412,26 @@ function c2g(cx, cy) {
 canvas.addEventListener('mousedown', e => {
     if (e.button !== 0) return;
     const g = c2g(e.clientX, e.clientY);
+
+    if (state.tool === 'select') {
+        if (state.sel && g.x >= state.sel.x && g.x < state.sel.x + state.sel.w
+                      && g.y >= state.sel.y && g.y < state.sel.y + state.sel.h) {
+            // Start dragging existing selection
+            state.selDrag = { ox: g.x - state.sel.x, oy: g.y - state.sel.y };
+            state.painting = true;
+            state.lastG = g;
+        } else {
+            // Stamp any existing selection, start new one
+            stampSelection();
+            pushUndo();
+            state.selStart = { x: g.x, y: g.y };
+            state.painting = true;
+            state.lastG = g;
+            render();
+        }
+        return;
+    }
+
     pushUndo();
     state.painting = true;
     state.lastG = g;
@@ -371,6 +441,31 @@ canvas.addEventListener('mousedown', e => {
 canvas.addEventListener('mousemove', e => {
     const g = c2g(e.clientX, e.clientY);
     $('cursor-pos').textContent = `${g.x}, ${g.y}`;
+
+    if (state.tool === 'select') {
+        // Update cursor
+        const wrap = $('canvas-wrap');
+        if (state.sel && g.x >= state.sel.x && g.x < state.sel.x + state.sel.w
+                      && g.y >= state.sel.y && g.y < state.sel.y + state.sel.h) {
+            wrap.classList.add('moving'); wrap.classList.remove('selecting');
+        } else {
+            wrap.classList.add('selecting'); wrap.classList.remove('moving');
+        }
+
+        if (!state.painting) return;
+        if (state.selDrag && state.sel) {
+            // Drag selection
+            state.sel.x = g.x - state.selDrag.ox;
+            state.sel.y = g.y - state.selDrag.oy;
+            render();
+        } else if (state.selStart) {
+            // Rubber band
+            state.lastG = g;
+            render();
+        }
+        return;
+    }
+
     if (!state.painting || !state.lastG) return;
     if (state.tool === 'paint' || state.tool === 'erase') {
         const col = state.tool === 'erase' ? T : state.color;
@@ -380,32 +475,62 @@ canvas.addEventListener('mousemove', e => {
     state.lastG = g;
 });
 
-window.addEventListener('mouseup', () => { state.painting = false; state.lastG = null; });
+window.addEventListener('mouseup', () => {
+    if (state.tool === 'select' && state.selStart && state.lastG && !state.sel) {
+        // Finalize selection rectangle
+        const s = sp();
+        if (s) {
+            const x = Math.min(state.selStart.x, state.lastG.x);
+            const y = Math.min(state.selStart.y, state.lastG.y);
+            const w = Math.abs(state.lastG.x - state.selStart.x) + 1;
+            const h = Math.abs(state.lastG.y - state.selStart.y) + 1;
+            if (w > 0 && h > 0) {
+                // Lift pixels into floating selection
+                const pixels = [];
+                for (let sy = 0; sy < h; sy++) {
+                    for (let sx = 0; sx < w; sx++) {
+                        const gx = x + sx, gy = y + sy;
+                        if (gx >= 0 && gx < s.width && gy >= 0 && gy < s.height) {
+                            pixels.push(s.pixels[gy * s.width + gx]);
+                            s.pixels[gy * s.width + gx] = T;
+                        } else {
+                            pixels.push(T);
+                        }
+                    }
+                }
+                state.sel = { x, y, w, h, pixels };
+            }
+        }
+        state.selStart = null;
+        render();
+    }
+    state.painting = false;
+    state.lastG = null;
+    state.selDrag = null;
+});
 
 canvas.addEventListener('touchstart', e => {
     if (e.touches.length !== 1) return;
     e.preventDefault();
     const t = e.touches[0], g = c2g(t.clientX, t.clientY);
-    pushUndo();
-    state.painting = true;
-    state.lastG = g;
-    applyTool(g.x, g.y);
+    // Reuse mousedown logic via synthetic dispatch
+    canvas.dispatchEvent(new MouseEvent('mousedown', {
+        clientX: t.clientX, clientY: t.clientY, button: 0
+    }));
 }, { passive: false });
 
 canvas.addEventListener('touchmove', e => {
-    if (!state.painting || e.touches.length !== 1) return;
+    if (e.touches.length !== 1) return;
     e.preventDefault();
-    const t = e.touches[0], g = c2g(t.clientX, t.clientY);
-    $('cursor-pos').textContent = `${g.x}, ${g.y}`;
-    if (state.lastG && (state.tool === 'paint' || state.tool === 'erase')) {
-        const col = state.tool === 'erase' ? T : state.color;
-        plotLine(state.lastG.x, state.lastG.y, g.x, g.y, (px,py) => setPixel(px,py,col));
-        render();
-    }
-    state.lastG = g;
+    const t = e.touches[0];
+    canvas.dispatchEvent(new MouseEvent('mousemove', {
+        clientX: t.clientX, clientY: t.clientY
+    }));
 }, { passive: false });
 
-canvas.addEventListener('touchend', () => { state.painting = false; state.lastG = null; });
+canvas.addEventListener('touchend', () => {
+    window.dispatchEvent(new MouseEvent('mouseup'));
+});
 
 // ── Keyboard Shortcuts ─────────────────────────────────
 document.addEventListener('keydown', e => {
@@ -415,6 +540,8 @@ document.addEventListener('keydown', e => {
     if (e.key === 'e') setTool('erase');
     if (e.key === 'f') setTool('fill');
     if (e.key === 'i') setTool('pick');
+    if (e.key === 's') setTool('select');
+    if (e.key === 'Escape') { stampSelection(); setTool('paint'); }
     if (e.key === 'g') toggleGrid();
     if (e.key === '=' || e.key === '+') zoomIn();
     if (e.key === '-') zoomOut();
@@ -422,6 +549,10 @@ document.addEventListener('keydown', e => {
 
 // ── UI Controls ────────────────────────────────────────
 function setTool(name) {
+    if (state.tool === 'select' && name !== 'select') {
+        stampSelection();
+        $('canvas-wrap').classList.remove('moving', 'selecting');
+    }
     state.tool = name;
     document.querySelectorAll('.tool').forEach(el =>
         el.classList.toggle('active', el.dataset.tool === name));
@@ -511,6 +642,7 @@ function updateSelect() {
 $('sprite-select').addEventListener('change', e => loadSprite(e.target.value));
 
 function loadSprite(name) {
+    stampSelection();
     state.current = name;
     state.undoStack = [];
     autoZoom();
@@ -556,6 +688,35 @@ function newSprite() {
     state.sprites[name] = { name, width: w, height: h, pixels: new Array(w*h).fill(T) };
     loadSprite(name);
     toast(`Created ${name} (${w}\u00d7${h})`);
+}
+
+function stampSelection() {
+    if (!state.sel) return;
+    const s = sp(); if (!s) { state.sel = null; return; }
+    const sel = state.sel;
+    for (let sy = 0; sy < sel.h; sy++) {
+        for (let sx = 0; sx < sel.w; sx++) {
+            const gx = sel.x + sx, gy = sel.y + sy;
+            const px = sel.pixels[sy * sel.w + sx];
+            if (px === T) continue;
+            if (gx >= 0 && gx < s.width && gy >= 0 && gy < s.height) {
+                s.pixels[gy * s.width + gx] = px;
+            }
+        }
+    }
+    state.sel = null;
+    $('canvas-wrap').classList.remove('moving', 'selecting');
+    render();
+}
+
+function dupeSprite() {
+    const s = sp(); if (!s) { toast('No sprite to duplicate'); return; }
+    const raw = prompt('Name for duplicate:', s.name + '_COPY');
+    if (!raw) return;
+    const name = raw.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+    state.sprites[name] = { name, width: s.width, height: s.height, pixels: [...s.pixels] };
+    loadSprite(name);
+    toast(`Duplicated as ${name}`);
 }
 
 // ── I/O ────────────────────────────────────────────────

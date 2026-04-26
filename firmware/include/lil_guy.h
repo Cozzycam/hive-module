@@ -19,6 +19,7 @@ enum LilGuyAnim : uint8_t {
     LG_ANIM_FOOD_SHARE_GIVER  = 2,
     LG_ANIM_FOOD_SHARE_RECEIVER = 3,
     LG_ANIM_GROOMING            = 4,
+    LG_ANIM_SNOOZE              = 5,
 };
 
 // Sprite frame selection — animations can request dedicated sprite art
@@ -27,7 +28,8 @@ enum LilGuySpriteFrame : uint8_t {
     LG_FRAME_LEAN     = 1,   // hand-painted lean frame (pending)
     LG_FRAME_CARRYING = 2,   // carrying seed/larva/corpse (future)
     LG_FRAME_GROOMING = 3,   // reserved for grooming brief
-    LG_FRAME_DORMANT  = 4,   // reserved for queen hibernation
+    LG_FRAME_SNOOZE   = 4,   // sleeping pose
+    LG_FRAME_DORMANT  = 5,   // reserved for queen hibernation
 };
 
 class Chamber;  // forward declaration
@@ -77,6 +79,11 @@ struct LilGuy {
     // Stacking (greeting towers)
     int16_t  stack_on             = -1;  // index of ant below (-1 = ground)
     uint8_t  stack_hop_remaining  = 0;   // hop-on animation countdown
+
+    // Sleep
+    bool     sleeping             = false;
+    uint32_t sleep_until_ms       = 0;   // wake time (millis)
+    uint32_t sleep_cooldown_ms    = 0;   // can't sleep again until this time
 
     int8_t   last_cell_x, last_cell_y;     // for pheromone deposit gating
 

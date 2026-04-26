@@ -44,6 +44,9 @@ void LilGuy::init(int8_t px, int8_t py, Role c, bool pioneer) {
     interaction_cooldown = 0;
     stack_on = -1;
     stack_hop_remaining = 0;
+    sleeping = false;
+    sleep_until_ms = 0;
+    sleep_cooldown_ms = 0;
 
     role = c;
     is_pioneer = pioneer;
@@ -122,7 +125,7 @@ void LilGuy::tick(Chamber& ch, float dt) {
     // Stacking: track the ant below, skip normal behavior unless idle expired
     if (stack_on >= 0) {
         auto& below = ch.lil_guys[stack_on];
-        if (!below.alive) { stack_on = -1; }
+        if (!below.alive) { stack_on = -1; sleeping = false; anim_type = LG_ANIM_NONE; }
         else {
             if (stack_hop_remaining > 0) {
                 x += (below.x - x) * 0.3f;
@@ -131,15 +134,25 @@ void LilGuy::tick(Chamber& ch, float dt) {
             } else {
                 x = below.x; y = below.y;
             }
-            // Occasionally groom the ant below while stacked
-            if (anim_remaining_ticks > 0) {
-                anim_remaining_ticks--;
-                if (anim_remaining_ticks == 0) anim_type = LG_ANIM_NONE;
-            } else if (anim_type == LG_ANIM_NONE && g_rng.rand_float() < 0.03f) {
-                anim_type = LG_ANIM_GROOMING;
-                anim_remaining_ticks = Cfg::GREETING_DURATION_TICKS;
-                anim_lean_dx = 0;
-                anim_lean_dy = 1;  // lean down toward ant below
+            // Sleeping ants show snooze sprite, skip grooming
+            if (sleeping) {
+                anim_type = LG_ANIM_SNOOZE;
+                if (millis() >= sleep_until_ms) {
+                    sleeping = false;
+                    anim_type = LG_ANIM_NONE;
+                    sleep_cooldown_ms = millis() + 4UL * 3600UL * 1000UL;
+                }
+            } else {
+                // Occasionally groom the ant below while stacked
+                if (anim_remaining_ticks > 0) {
+                    anim_remaining_ticks--;
+                    if (anim_remaining_ticks == 0) anim_type = LG_ANIM_NONE;
+                } else if (anim_type == LG_ANIM_NONE && g_rng.rand_float() < 0.03f) {
+                    anim_type = LG_ANIM_GROOMING;
+                    anim_remaining_ticks = Cfg::GREETING_DURATION_TICKS;
+                    anim_lean_dx = 0;
+                    anim_lean_dy = 1;
+                }
             }
             // Stay stacked while idle; only fall through when timer expires
             // so _pick_task can decide whether to unstack or stay idle
@@ -149,6 +162,18 @@ void LilGuy::tick(Chamber& ch, float dt) {
             }
             // Timer expired — fall through to normal behavior
             // (_pick_task will unstack if it assigns real work)
+        }
+    }
+
+    // Sleeping: stay put, skip normal behavior until wake time
+    if (sleeping) {
+        if (millis() >= sleep_until_ms) {
+            sleeping = false;
+            anim_type = LG_ANIM_NONE;
+            sleep_cooldown_ms = millis() + 4UL * 3600UL * 1000UL;  // 4 hour cooldown
+        } else {
+            anim_type = LG_ANIM_SNOOZE;
+            return;
         }
     }
 
@@ -259,7 +284,9 @@ void LilGuy::_pick_task(Chamber& ch) {
     speed = Cfg::ROLE_PARAMS[role].speed;
     idle_ticks_remaining = 0;
     int16_t was_stacked = stack_on;
-    stack_on = -1;  // assume unstack; restore if we stay idle
+    bool was_sleeping = sleeping;
+    stack_on = -1;   // assume unstack; restore if we stay idle
+    sleeping = false; // assume wake; restore if we stay idle
 
     if (food_carried > 0) {
         state = STATE_TO_HOME;
@@ -293,18 +320,36 @@ void LilGuy::_pick_task(Chamber& ch) {
         return;
     }
 
+    // Sleep check — independent of idle budget, bypasses founding suppression
+    if (!was_sleeping && !sleeping
+            && g_tod.phase == PHASE_NIGHT
+            && millis() >= sleep_cooldown_ms
+            && g_rng.rand_float() < 0.25f) {
+        stack_on = was_stacked;
+        sleeping = true;
+        sleep_until_ms = millis() + 3600UL * 1000UL;
+        anim_type = LG_ANIM_SNOOZE;
+        state = STATE_IDLE;
+        has_target = false;
+        has_target_cell = false;
+        idle_ticks_remaining = g_rng.rand_int(Cfg::IDLE_REST_MIN_TICKS,
+                                               Cfg::IDLE_REST_MAX_TICKS);
+        return;
+    }
+
     // Idle budget — gates all non-critical tasks.
     // Returns 0 during famine or founding, so crisis paths still fire.
     float budget = _colony_idle_budget(ch);
     if (budget > 0 && g_rng.rand_float() < budget) {
-        stack_on = was_stacked;  // stay in stack if we were stacked
+        stack_on = was_stacked;
+        sleeping = was_sleeping;
         state = STATE_IDLE;
         has_target = false;
         has_target_cell = false;
         idle_ticks_remaining = g_rng.rand_int(Cfg::IDLE_REST_MIN_TICKS,
                                                Cfg::IDLE_REST_MAX_TICKS);
         idle_repoll_tick = Cfg::IDLE_REPOLL_INTERVAL;
-        if (was_stacked < 0) {
+        if (was_stacked < 0 && !sleeping) {
             if (ch._food_pile_index(cell_x(), cell_y()) >= 0) {
                 idle_microstate = 1;
                 speed = Cfg::IDLE_DRIFT_SPEED;
@@ -402,14 +447,15 @@ void LilGuy::_pick_task(Chamber& ch) {
     }
 
     // Nothing to tend — idle
-    stack_on = was_stacked;  // stay in stack if we were stacked
+    stack_on = was_stacked;
+    sleeping = was_sleeping;
     state = STATE_IDLE;
     has_target = false;
     has_target_cell = false;
     idle_ticks_remaining = g_rng.rand_int(Cfg::IDLE_REST_MIN_TICKS,
                                            Cfg::IDLE_REST_MAX_TICKS);
     idle_repoll_tick = Cfg::IDLE_REPOLL_INTERVAL;
-    if (was_stacked < 0) _pick_idle_microstate(ch);
+    if (was_stacked < 0 && !sleeping) _pick_idle_microstate(ch);
 }
 
 // ================================================================
