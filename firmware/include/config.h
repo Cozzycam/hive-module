@@ -162,7 +162,7 @@ constexpr int QUEEN_SPAWN_Y = GRID_HEIGHT / 2;  // 20
 // ---- Proximity interactions ----
 constexpr int   PROXIMITY_DETECTION_RADIUS = 1;
 constexpr float BASE_FORAGER_FRACTION      = 0.10f;  // foraging prob at pressure 0.0
-constexpr float PROXIMITY_GREETING_CHANCE  = 0.10f;
+constexpr float PROXIMITY_GREETING_CHANCE  = 0.20f;
 constexpr float PROXIMITY_FOOD_SHARE_CHANCE = 0.08f;
 constexpr int   GREETING_DURATION_TICKS    = 12;   // ~1.5s at 8 tps
 constexpr int   FOOD_SHARE_DURATION_TICKS  = 12;   // ~1.5s at 8 tps

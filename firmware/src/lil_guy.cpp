@@ -42,6 +42,8 @@ void LilGuy::init(int8_t px, int8_t py, Role c, bool pioneer) {
     anim_type = LG_ANIM_NONE;
     anim_remaining_ticks = 0;
     interaction_cooldown = 0;
+    stack_on = -1;
+    stack_hop_remaining = 0;
 
     role = c;
     is_pioneer = pioneer;
@@ -116,6 +118,39 @@ void LilGuy::tick(Chamber& ch, float dt) {
 
     // Tick cooldowns
     if (interaction_cooldown > 0) interaction_cooldown--;
+
+    // Stacking: track the ant below, skip normal behavior unless idle expired
+    if (stack_on >= 0) {
+        auto& below = ch.lil_guys[stack_on];
+        if (!below.alive) { stack_on = -1; }
+        else {
+            if (stack_hop_remaining > 0) {
+                x += (below.x - x) * 0.3f;
+                y += (below.y - y) * 0.3f;
+                stack_hop_remaining--;
+            } else {
+                x = below.x; y = below.y;
+            }
+            // Occasionally groom the ant below while stacked
+            if (anim_remaining_ticks > 0) {
+                anim_remaining_ticks--;
+                if (anim_remaining_ticks == 0) anim_type = LG_ANIM_NONE;
+            } else if (anim_type == LG_ANIM_NONE && g_rng.rand_float() < 0.03f) {
+                anim_type = LG_ANIM_GROOMING;
+                anim_remaining_ticks = Cfg::GREETING_DURATION_TICKS;
+                anim_lean_dx = 0;
+                anim_lean_dy = 1;  // lean down toward ant below
+            }
+            // Stay stacked while idle; only fall through when timer expires
+            // so _pick_task can decide whether to unstack or stay idle
+            if (idle_ticks_remaining > 0) {
+                idle_ticks_remaining--;
+                return;
+            }
+            // Timer expired — fall through to normal behavior
+            // (_pick_task will unstack if it assigns real work)
+        }
+    }
 
     // Animation freeze: skip movement and behavior dispatch while animating
     if (anim_remaining_ticks > 0) {
@@ -223,6 +258,8 @@ void LilGuy::_on_enter_cell(int cx, int cy, Chamber& ch) {
 void LilGuy::_pick_task(Chamber& ch) {
     speed = Cfg::ROLE_PARAMS[role].speed;
     idle_ticks_remaining = 0;
+    int16_t was_stacked = stack_on;
+    stack_on = -1;  // assume unstack; restore if we stay idle
 
     if (food_carried > 0) {
         state = STATE_TO_HOME;
@@ -260,19 +297,22 @@ void LilGuy::_pick_task(Chamber& ch) {
     // Returns 0 during famine or founding, so crisis paths still fire.
     float budget = _colony_idle_budget(ch);
     if (budget > 0 && g_rng.rand_float() < budget) {
+        stack_on = was_stacked;  // stay in stack if we were stacked
         state = STATE_IDLE;
         has_target = false;
         has_target_cell = false;
         idle_ticks_remaining = g_rng.rand_int(Cfg::IDLE_REST_MIN_TICKS,
                                                Cfg::IDLE_REST_MAX_TICKS);
         idle_repoll_tick = Cfg::IDLE_REPOLL_INTERVAL;
-        if (ch._food_pile_index(cell_x(), cell_y()) >= 0) {
-            idle_microstate = 1;
-            speed = Cfg::IDLE_DRIFT_SPEED;
-            idle_micro_ticks = g_rng.rand_int(Cfg::IDLE_MICROSTATE_MIN_TICKS,
-                                               Cfg::IDLE_MICROSTATE_MAX_TICKS);
-        } else {
-            _pick_idle_microstate(ch);
+        if (was_stacked < 0) {
+            if (ch._food_pile_index(cell_x(), cell_y()) >= 0) {
+                idle_microstate = 1;
+                speed = Cfg::IDLE_DRIFT_SPEED;
+                idle_micro_ticks = g_rng.rand_int(Cfg::IDLE_MICROSTATE_MIN_TICKS,
+                                                   Cfg::IDLE_MICROSTATE_MAX_TICKS);
+            } else {
+                _pick_idle_microstate(ch);
+            }
         }
         return;
     }
@@ -362,13 +402,14 @@ void LilGuy::_pick_task(Chamber& ch) {
     }
 
     // Nothing to tend — idle
+    stack_on = was_stacked;  // stay in stack if we were stacked
     state = STATE_IDLE;
     has_target = false;
     has_target_cell = false;
     idle_ticks_remaining = g_rng.rand_int(Cfg::IDLE_REST_MIN_TICKS,
                                            Cfg::IDLE_REST_MAX_TICKS);
     idle_repoll_tick = Cfg::IDLE_REPOLL_INTERVAL;
-    _pick_idle_microstate(ch);
+    if (was_stacked < 0) _pick_idle_microstate(ch);
 }
 
 // ================================================================
@@ -515,6 +556,15 @@ void LilGuy::_do_tend_brood(Chamber& ch) {
                     if (!b.needs_feeding()) break;
                     ch.colony->food_store -= feed_amt;
                     b.feed(feed_amt);
+                    // Grooming animation: lean toward brood
+                    anim_type = LG_ANIM_GROOMING;
+                    anim_remaining_ticks = Cfg::GREETING_DURATION_TICKS;
+                    float bdx = b.x - x, bdy = b.y - y;
+                    if (fabsf(bdx) >= fabsf(bdy)) {
+                        anim_lean_dx = (bdx > 0) ? 1 : -1; anim_lean_dy = 0;
+                    } else {
+                        anim_lean_dx = 0; anim_lean_dy = (bdy > 0) ? 1 : -1;
+                    }
                     if (ch.event_bus) {
                         uint16_t pid = ch.event_bus->next_pair_id();
                         Event es; es.type = EVT_INTERACTION_STARTED; es.tick = ch.tick_num;
@@ -546,6 +596,15 @@ void LilGuy::_do_tend_queen(Chamber& ch) {
         if (ch.colony->food_store >= feed_amt) {
             ch.colony->food_store -= feed_amt;
             ch.queen_obj.hunger = fmaxf(0.0f, ch.queen_obj.hunger - 0.1f);
+            // Grooming animation: lean toward queen
+            anim_type = LG_ANIM_GROOMING;
+            anim_remaining_ticks = Cfg::GREETING_DURATION_TICKS;
+            float qdx = ch.queen_obj.x - x, qdy = ch.queen_obj.y - y;
+            if (fabsf(qdx) >= fabsf(qdy)) {
+                anim_lean_dx = (qdx > 0) ? 1 : -1; anim_lean_dy = 0;
+            } else {
+                anim_lean_dx = 0; anim_lean_dy = (qdy > 0) ? 1 : -1;
+            }
             if (ch.event_bus) {
                 uint16_t pid = ch.event_bus->next_pair_id();
                 Event es; es.type = EVT_INTERACTION_STARTED; es.tick = ch.tick_num;

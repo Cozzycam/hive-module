@@ -16,19 +16,20 @@ void Sim::init() {
     tick_count = 0;
     last_lifecycle_ms = millis();
 
-    // Debug: spawn workers for visual/interaction testing
+    // Debug: spawn brood + workers for visual/interaction testing
     int qx = Cfg::QUEEN_SPAWN_X, qy = Cfg::QUEEN_SPAWN_Y;
-    chamber.add_brood(qx - 4, qy - 3, ROLE_MINOR);
+    chamber.add_brood(qx - 1, qy - 3, ROLE_MINOR);
     chamber.brood[chamber.brood_count - 1].stage = STAGE_EGG;
-    chamber.add_brood(qx + 4, qy + 3, ROLE_MINOR);
+    chamber.add_brood(qx, qy - 3, ROLE_MINOR);
     chamber.brood[chamber.brood_count - 1].stage = STAGE_LARVA;
-    chamber.add_brood(qx + 4, qy - 3, ROLE_MINOR);
+    chamber.add_brood(qx + 1, qy - 3, ROLE_MINOR);
     chamber.brood[chamber.brood_count - 1].stage = STAGE_PUPA;
-    for (int i = 0; i < 5; i++)
-        chamber.add_lil_guy(qx - 4 + i, qy - 3, ROLE_MINOR, true);  // 5 pioneers
-    for (int i = 0; i < 9; i++)
-        chamber.add_lil_guy(qx - 4 + i, qy + 3, ROLE_MINOR, false); // 9 minors
-    chamber.add_lil_guy(qx, qy + 5, ROLE_MAJOR, false);              // 1 major
+    for (int i = 0; i < 3; i++)
+        chamber.add_lil_guy(qx - 1 + i, qy - 4, ROLE_MINOR, true);  // 3 pioneers
+    for (int i = 0; i < 3; i++)
+        chamber.add_lil_guy(qx - 1 + i, qy + 3, ROLE_MINOR, false); // 3 minors
+    for (int i = 0; i < 3; i++)
+        chamber.add_lil_guy(qx - 1 + i, qy + 5, ROLE_MAJOR, false); // 3 majors
     colony.population = chamber.lil_guy_count;
 }
 

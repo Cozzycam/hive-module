@@ -960,19 +960,39 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
         int py = static_cast<int>(fy * Cfg::CELL_SIZE);
 
         // Animation override: interaction animations suppress normal bob
-        if (w.anim_type == LG_ANIM_GREETING) {
-            // Lean toward partner: in (0-33%), hold (33-66%), out (66-100%)
+        if (w.stack_on >= 0) {
+            // Stacked ant: walk down the tower, summing each ant's sprite height
+            float offset = 0.0f;
+            int cur = w.stack_on;
+            while (cur >= 0 && offset < 200.0f) {
+                auto& b = ch.lil_guys[cur];
+                float s = SCALE_WORKER_MINOR;
+                if (b.role == ROLE_MAJOR)  s = SCALE_WORKER_MAJOR;
+                else if (b.is_pioneer)     s = SCALE_WORKER_PIONEER;
+                offset -= static_cast<int>(WORKER_PIONEER_H * s + 0.5f) * 0.6f;
+                cur = b.stack_on;
+            }
+
+            // Damped hop during mount animation
+            if (w.stack_hop_remaining > 0) {
+                float p = 1.0f - static_cast<float>(w.stack_hop_remaining) / 12.0f;
+                float bounce = expf(-3.5f * p) * cosf(p * 10.0f);
+                offset += bounce * 6.0f;
+            }
+            py += static_cast<int>(offset);
+
+            // Grooming while stacked: just swap to lean sprite, no position change
+        } else if (w.anim_type == LG_ANIM_GROOMING) {
+            // Lean toward brood/queen: in (0-33%), hold (33-66%), out (66-100%)
             float p = 1.0f - static_cast<float>(w.anim_remaining_ticks)
                            / static_cast<float>(Cfg::GREETING_DURATION_TICKS);
             float lean;
             if (p < 0.33f) {
-                // Ease-in: smoothstep 0→1 over first third
                 float t2 = p / 0.33f;
                 lean = t2 * t2 * (3.0f - 2.0f * t2);
             } else if (p < 0.66f) {
-                lean = 1.0f;  // hold
+                lean = 1.0f;
             } else {
-                // Ease-out: smoothstep 1→0 over last third
                 float t2 = (p - 0.66f) / 0.34f;
                 lean = 1.0f - t2 * t2 * (3.0f - 2.0f * t2);
             }
@@ -1078,7 +1098,7 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
 
             // Sprite frame lookup: use dedicated frame if available, else base
             LilGuySpriteFrame frame = LG_FRAME_BASE;
-            if (w.anim_type == LG_ANIM_GREETING) frame = LG_FRAME_LEAN;
+            if (w.anim_type == LG_ANIM_GROOMING) frame = LG_FRAME_LEAN;
             const SpriteRef* spr = _get_worker_sprite(w.role, w.is_pioneer, frame);
             if (!spr) spr = _get_worker_sprite(w.role, w.is_pioneer, LG_FRAME_BASE);
 

@@ -363,7 +363,14 @@ static ColonyPhase _phase      = PHASE_FOUNDING;
 // ================================================================
 
 void hud_init() {
-    _load_founded();
+    // Reset founding time so colony always starts at Day 1
+    _prefs.begin("hive", false);
+    _prefs.remove("founded");
+    _prefs.remove("founded_ok");
+    _prefs.end();
+    _colony_founded_unix = 0;
+    _founded_stored = false;
+    _founded_reliable = false;
     _anim_pop  = { 0, 0, 0 };
     _anim_days = { 0, 0, 0 };
     _anim_food = { 0, 0, 0 };

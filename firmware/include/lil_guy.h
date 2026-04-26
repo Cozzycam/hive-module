@@ -18,7 +18,7 @@ enum LilGuyAnim : uint8_t {
     LG_ANIM_GREETING          = 1,
     LG_ANIM_FOOD_SHARE_GIVER  = 2,
     LG_ANIM_FOOD_SHARE_RECEIVER = 3,
-    // Future: LG_ANIM_GROOMING, LG_ANIM_RETINUE_GROOM, etc.
+    LG_ANIM_GROOMING            = 4,
 };
 
 // Sprite frame selection — animations can request dedicated sprite art
@@ -73,6 +73,10 @@ struct LilGuy {
     uint16_t interaction_cooldown = 0;
     int8_t   anim_lean_dx         = 0;   // lean direction toward partner (-1, 0, +1)
     int8_t   anim_lean_dy         = 0;
+
+    // Stacking (greeting towers)
+    int16_t  stack_on             = -1;  // index of ant below (-1 = ground)
+    uint8_t  stack_hop_remaining  = 0;   // hop-on animation countdown
 
     int8_t   last_cell_x, last_cell_y;     // for pheromone deposit gating
 
