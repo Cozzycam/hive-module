@@ -34,3 +34,10 @@
 // ---- Display dimensions ----
 #define LCD_WIDTH      320
 #define LCD_HEIGHT     480
+
+// ---- Topology DETECT pins (reserved, active LOW via neighbour GND) ----
+// On J8 header. Not yet wired in main firmware — used by tools/topology-test.
+#define DETECT_N       17
+#define DETECT_E       18
+#define DETECT_S       21
+#define DETECT_W       38

@@ -1,6 +1,7 @@
 /* Chamber — ported from sim/chamber.py. */
 #include "chamber.h"
 #include "rng.h"
+#include "time_of_day.h"
 #include <Arduino.h>
 #include <cstring>
 #include <cmath>
@@ -102,15 +103,17 @@ void Chamber::tick(float dt) {
     if (cannibalism_cooldown > 0) cannibalism_cooldown--;
     if (food_delivery_signal > 0) food_delivery_signal--;
 
-    // Shuffle workers (Fisher-Yates), fixing stack_on references
+    // Shuffle workers (Fisher-Yates), fixing stack_on and zoomie_target references
     for (int i = lil_guy_count - 1; i > 0; i--) {
         int j = g_rng.rand_int(0, i);
         if (i != j) {
             LilGuy tmp = lil_guys[i]; lil_guys[i] = lil_guys[j]; lil_guys[j] = tmp;
-            // Patch any stack_on references that pointed to i or j
+            // Patch any stack_on / zoomie_target references that pointed to i or j
             for (int k = 0; k < lil_guy_count; k++) {
                 if (lil_guys[k].stack_on == i)      lil_guys[k].stack_on = j;
                 else if (lil_guys[k].stack_on == j) lil_guys[k].stack_on = i;
+                if (lil_guys[k].zoomie_target == i)      lil_guys[k].zoomie_target = j;
+                else if (lil_guys[k].zoomie_target == j) lil_guys[k].zoomie_target = i;
             }
         }
     }
@@ -210,13 +213,64 @@ void Chamber::_detect_proximity_interactions() {
                 // Cooldown gating
                 if (a.interaction_cooldown > 0 || b.interaction_cooldown > 0) return;
 
-                // Already animating, stacked, or sleeping
+                // Already animating or sleeping
                 if (a.anim_remaining_ticks > 0 || b.anim_remaining_ticks > 0) return;
-                if (in_stack[ai] || in_stack[bi]) return;
                 if (a.sleeping || b.sleeping) return;
 
-                // Food sharing
-                if ((a.food_carried > 0) != (b.food_carried > 0)) {
+                // Zoomies: daytime only, both idle, not stacked, not already zooming
+                if (g_tod.phase == PHASE_DAY
+                        && a.state == STATE_IDLE && b.state == STATE_IDLE
+                        && !in_stack[ai] && !in_stack[bi]
+                        && a.zoomie_ticks <= 0 && b.zoomie_ticks <= 0
+                        && g_rng.rand_float() < Cfg::ZOOMIE_CHANCE) {
+                    int duration = g_rng.rand_int(Cfg::ZOOMIE_MIN_TICKS,
+                                                   Cfg::ZOOMIE_MAX_TICKS);
+                    // A = runner (random waypoints), B chases A
+                    a.state = STATE_ZOOMIES;
+                    a.zoomie_target = -1;  // runner
+                    a.zoomie_ticks = duration;
+                    a.speed = Cfg::ROLE_PARAMS[a.role].speed * Cfg::ZOOMIE_SPEED_MULT;
+                    a.has_target = false;
+                    a.has_target_cell = false;
+                    a.idle_ticks_remaining = 0;
+
+                    b.state = STATE_ZOOMIES;
+                    b.zoomie_target = ai;  // chases A
+                    b.zoomie_ticks = duration;
+                    b.speed = Cfg::ROLE_PARAMS[b.role].speed * Cfg::ZOOMIE_SPEED_MULT;
+                    b.has_target = false;
+                    b.has_target_cell = false;
+                    b.idle_ticks_remaining = 0;
+
+                    // Try to recruit a third nearby idle lil guy
+                    if (g_rng.rand_float() < Cfg::ZOOMIE_THIRD_CHANCE) {
+                        int acx = a.cell_x(), acy = a.cell_y();
+                        for (int ci = 0; ci < lil_guy_count; ci++) {
+                            if (ci == ai || ci == bi) continue;
+                            auto& c = lil_guys[ci];
+                            if (!c.alive || c.state != STATE_IDLE || c.sleeping) continue;
+                            if (in_stack[ci] || c.anim_remaining_ticks > 0) continue;
+                            if (c.interaction_cooldown > 0 || c.zoomie_ticks > 0) continue;
+                            int d = abs(c.cell_x() - acx) + abs(c.cell_y() - acy);
+                            if (d <= 3) {
+                                // Chain: A runs, B chases A, C chases B
+                                c.state = STATE_ZOOMIES;
+                                c.zoomie_target = bi;  // chases B
+                                c.zoomie_ticks = duration;
+                                c.speed = Cfg::ROLE_PARAMS[c.role].speed * Cfg::ZOOMIE_SPEED_MULT;
+                                c.has_target = false;
+                                c.has_target_cell = false;
+                                c.idle_ticks_remaining = 0;
+                                break;
+                            }
+                        }
+                    }
+                    return;
+                }
+
+                // Food sharing and grooming only between non-stacked ants
+                if (!in_stack[ai] && !in_stack[bi] &&
+                    (a.food_carried > 0) != (b.food_carried > 0)) {
                     if (g_rng.rand_float() < Cfg::PROXIMITY_FOOD_SHARE_CHANCE) {
                         uint16_t pid = event_bus->next_pair_id();
                         Event es; es.type = EVT_INTERACTION_STARTED; es.tick = tick_num;
@@ -240,8 +294,8 @@ void Chamber::_detect_proximity_interactions() {
 
                 // Greeting → mutual grooming or stacking
                 if (g_rng.rand_float() < Cfg::PROXIMITY_GREETING_CHANCE) {
-                    if (g_rng.rand_float() < 0.5f) {
-                        // Mutual grooming: both lean toward each other
+                    if (!in_stack[ai] && !in_stack[bi] && g_rng.rand_float() < 0.5f) {
+                        // Mutual grooming: both lean toward each other (non-stacked only)
                         a.anim_type = LG_ANIM_GROOMING;
                         b.anim_type = LG_ANIM_GROOMING;
                         a.anim_remaining_ticks = Cfg::GREETING_DURATION_TICKS;
@@ -281,28 +335,40 @@ void Chamber::_detect_proximity_interactions() {
                         }
                     };
 
+                    // Collapse cooldown: don't stack if either ant recently collapsed
+                    uint32_t now_ms = millis();
+                    if (a.stack_cooldown_ms > now_ms || b.stack_cooldown_ms > now_ms)
+                        return;
+
                     // Pick who becomes the base, who hops on
+                    // An ant already riding can't hop (would break chain)
                     int base_i, hopper_i;
-                    if (g_rng.rand_float() < 0.5f) {
+                    bool a_riding = (a.stack_on >= 0), b_riding = (b.stack_on >= 0);
+                    if (a_riding && b_riding) return;  // both already riding
+                    if (a_riding) {
+                        base_i = ai; hopper_i = bi;    // rider becomes base
+                    } else if (b_riding) {
+                        base_i = bi; hopper_i = ai;
+                    } else if (g_rng.rand_float() < 0.5f) {
                         base_i = ai; hopper_i = bi;
                     } else {
                         base_i = bi; hopper_i = ai;
                     }
                     int mount_on = top_of(base_i);
 
-                    // Walk to ground to find bottom ant and stack depth
-                    int depth = 1;
-                    bool has_pioneer = lil_guys[mount_on].is_pioneer;
-                    int ground = mount_on;
-                    int cur = lil_guys[mount_on].stack_on;
-                    while (cur >= 0 && depth < 20) {
-                        depth++;
-                        if (lil_guys[cur].is_pioneer) has_pioneer = true;
-                        ground = cur;
-                        cur = lil_guys[cur].stack_on;
-                    }
+                    // Cycle check: ensure hopper isn't already below mount_on
+                    bool cycle = false;
+                    for (int check = mount_on; check >= 0; check = lil_guys[check].stack_on)
+                        if (check == hopper_i) { cycle = true; break; }
+                    if (cycle) return;
 
-                    // Mount first — then check if it causes a collapse
+                    auto weight_of = [&](int idx) -> int {
+                        if (lil_guys[idx].is_pioneer) return Cfg::STACK_WEIGHT_PIONEER;
+                        return (lil_guys[idx].role == ROLE_MAJOR) ? Cfg::STACK_WEIGHT_MAJOR
+                                                                   : Cfg::STACK_WEIGHT_MINOR;
+                    };
+
+                    // Mount first
                     auto& hopper = lil_guys[hopper_i];
                     hopper.stack_on = mount_on;
                     hopper.stack_hop_remaining = 12;
@@ -313,29 +379,51 @@ void Chamber::_detect_proximity_interactions() {
                     hopper.interaction_cooldown = Cfg::INTERACTION_COOLDOWN_TICKS;
                     lil_guys[mount_on].interaction_cooldown = Cfg::INTERACTION_COOLDOWN_TICKS;
 
-                    // Check collapse: major on pioneer, or too tall
+                    // Walk the full combined stack from true top to true ground
+                    int true_top = top_of(hopper_i);
+                    int stack_weight = 0;
+                    bool has_pioneer = false;
+                    int ground = true_top;
+                    int cur = true_top;
+                    while (cur >= 0) {
+                        stack_weight += weight_of(cur);
+                        if (lil_guys[cur].is_pioneer) has_pioneer = true;
+                        ground = cur;
+                        cur = lil_guys[cur].stack_on;
+                    }
+                    stack_weight -= weight_of(ground);  // ground supports, isn't supported
+
+                    // Check collapse: major on pioneer, or too heavy
                     bool collapse = false;
                     if (lil_guys[hopper_i].role == ROLE_MAJOR && has_pioneer)
                         collapse = true;
-                    int max_depth = lil_guys[ground].is_pioneer ? 5
-                                  : (lil_guys[ground].role == ROLE_MAJOR ? 10 : 7);
-                    if (depth + 1 > max_depth)
+                    int capacity = lil_guys[ground].is_pioneer ? Cfg::STACK_CAPACITY_PIONEER
+                                 : (lil_guys[ground].role == ROLE_MAJOR ? Cfg::STACK_CAPACITY_MAJOR
+                                                                         : Cfg::STACK_CAPACITY_MINOR);
+                    if (stack_weight > capacity)
                         collapse = true;
 
                     if (collapse) {
-                        // Disassemble entire stack from ground up
+                        // Start topple animation on entire stack
                         for (int j = 0; j < lil_guy_count; j++) {
-                            if (lil_guys[j].stack_on < 0) continue;
-                            // Check if this ant is in the same stack
-                            int walk = lil_guys[j].stack_on;
-                            while (walk >= 0) {
-                                if (walk == ground) {
-                                    lil_guys[j].stack_on = -1;
-                                    lil_guys[j].sleeping = false;
-                                    lil_guys[j].anim_type = LG_ANIM_NONE;
-                                    break;
+                            // Check if this ant is in the stack (including ground)
+                            bool in_this_stack = (j == ground);
+                            if (!in_this_stack && lil_guys[j].stack_on >= 0) {
+                                int walk = lil_guys[j].stack_on;
+                                while (walk >= 0) {
+                                    if (walk == ground) { in_this_stack = true; break; }
+                                    walk = lil_guys[walk].stack_on;
                                 }
-                                walk = lil_guys[walk].stack_on;
+                            }
+                            if (in_this_stack) {
+                                // Compute depth: count ants below this one
+                                int depth = 0;
+                                int walk = lil_guys[j].stack_on;
+                                while (walk >= 0) { depth++; walk = lil_guys[walk].stack_on; }
+                                lil_guys[j].topple_depth = depth;
+                                lil_guys[j].anim_type = LG_ANIM_TOPPLE;
+                                lil_guys[j].anim_remaining_ticks =
+                                    Cfg::STACK_TOPPLE_TICKS + Cfg::STACK_FALL_TICKS;
                             }
                         }
                     }
@@ -470,7 +558,7 @@ void Chamber::remove_lil_guy(int idx) {
     int last = lil_guy_count - 1;
     lil_guys[idx] = lil_guys[last];
     lil_guy_count--;
-    // Patch stack_on references: last moved to idx, idx is gone
+    // Patch stack_on and zoomie_target references: last moved to idx, idx is gone
     for (int k = 0; k < lil_guy_count; k++) {
         if (lil_guys[k].stack_on == last)      lil_guys[k].stack_on = idx;
         else if (lil_guys[k].stack_on == idx) {
@@ -478,6 +566,8 @@ void Chamber::remove_lil_guy(int idx) {
             lil_guys[k].sleeping = false;
             lil_guys[k].anim_type = LG_ANIM_NONE;
         }
+        if (lil_guys[k].zoomie_target == last)      lil_guys[k].zoomie_target = idx;
+        else if (lil_guys[k].zoomie_target == idx)   lil_guys[k].zoomie_target = -1;
     }
 }
 

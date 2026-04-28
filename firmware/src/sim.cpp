@@ -26,8 +26,8 @@ void Sim::init() {
     chamber.brood[chamber.brood_count - 1].stage = STAGE_PUPA;
     for (int i = 0; i < 3; i++)
         chamber.add_lil_guy(qx - 1 + i, qy - 4, ROLE_MINOR, true);  // 3 pioneers
-    for (int i = 0; i < 3; i++)
-        chamber.add_lil_guy(qx - 1 + i, qy + 3, ROLE_MINOR, false); // 3 minors
+    for (int i = 0; i < 10; i++)
+        chamber.add_lil_guy(qx - 5 + i, qy + 3, ROLE_MINOR, false); // 10 minors
     for (int i = 0; i < 3; i++)
         chamber.add_lil_guy(qx - 1 + i, qy + 5, ROLE_MAJOR, false); // 3 majors
     colony.population = chamber.lil_guy_count;

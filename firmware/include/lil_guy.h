@@ -20,6 +20,7 @@ enum LilGuyAnim : uint8_t {
     LG_ANIM_FOOD_SHARE_RECEIVER = 3,
     LG_ANIM_GROOMING            = 4,
     LG_ANIM_SNOOZE              = 5,
+    LG_ANIM_TOPPLE              = 6,
 };
 
 // Sprite frame selection — animations can request dedicated sprite art
@@ -79,11 +80,17 @@ struct LilGuy {
     // Stacking (greeting towers)
     int16_t  stack_on             = -1;  // index of ant below (-1 = ground)
     uint8_t  stack_hop_remaining  = 0;   // hop-on animation countdown
+    int8_t   topple_depth         = 0;   // stack depth at collapse (for fall anim)
+    uint32_t stack_cooldown_ms    = 0;   // can't stack again until this time
 
     // Sleep
     bool     sleeping             = false;
     uint32_t sleep_until_ms       = 0;   // wake time (millis)
     uint32_t sleep_cooldown_ms    = 0;   // can't sleep again until this time
+
+    // Zoomies (daytime chase)
+    int16_t  zoomie_target        = -1;  // index of lil guy being chased
+    int16_t  zoomie_ticks         = 0;   // countdown to end
 
     int8_t   last_cell_x, last_cell_y;     // for pheromone deposit gating
 
@@ -110,6 +117,7 @@ struct LilGuy {
     void _pick_idle_microstate(Chamber& ch);
     float _colony_idle_budget(Chamber& ch);
     void _do_cannibalize(Chamber& ch);
+    void _do_zoomies(Chamber& ch);
     bool _target_still_valid(Chamber& ch);
 
     // Marker sampling -- returns true and sets out_dx/out_dy if gradient found

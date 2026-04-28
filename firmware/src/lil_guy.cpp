@@ -47,6 +47,8 @@ void LilGuy::init(int8_t px, int8_t py, Role c, bool pioneer) {
     sleeping = false;
     sleep_until_ms = 0;
     sleep_cooldown_ms = 0;
+    zoomie_target = -1;
+    zoomie_ticks = 0;
 
     role = c;
     is_pioneer = pioneer;
@@ -142,6 +144,9 @@ void LilGuy::tick(Chamber& ch, float dt) {
                     anim_type = LG_ANIM_NONE;
                     sleep_cooldown_ms = millis() + 4UL * 3600UL * 1000UL;
                 }
+            } else if (anim_type == LG_ANIM_TOPPLE) {
+                // Toppling — let the main animation handler deal with it
+                // (fall through past the stacked block)
             } else {
                 // Occasionally groom the ant below while stacked
                 if (anim_remaining_ticks > 0) {
@@ -156,7 +161,7 @@ void LilGuy::tick(Chamber& ch, float dt) {
             }
             // Stay stacked while idle; only fall through when timer expires
             // so _pick_task can decide whether to unstack or stay idle
-            if (idle_ticks_remaining > 0) {
+            if (anim_type != LG_ANIM_TOPPLE && idle_ticks_remaining > 0) {
                 idle_ticks_remaining--;
                 return;
             }
@@ -180,7 +185,23 @@ void LilGuy::tick(Chamber& ch, float dt) {
     // Animation freeze: skip movement and behavior dispatch while animating
     if (anim_remaining_ticks > 0) {
         anim_remaining_ticks--;
-        if (anim_remaining_ticks == 0) anim_type = LG_ANIM_NONE;
+        // Topple: unstack at the wobble→fall transition
+        if (anim_type == LG_ANIM_TOPPLE
+            && anim_remaining_ticks == Cfg::STACK_FALL_TICKS) {
+            stack_on = -1;
+            sleeping = false;
+            stack_cooldown_ms = millis() + Cfg::STACK_COLLAPSE_COOLDOWN_MS;
+        }
+        if (anim_remaining_ticks == 0) {
+            // End of fall: nudge position to match scatter direction
+            if (anim_type == LG_ANIM_TOPPLE && topple_depth > 0) {
+                float nudge = (topple_depth & 1) ? -1.0f : 1.0f;
+                float nx = x + nudge;
+                if (nx >= 0 && nx < Cfg::GRID_WIDTH) x = nx;
+            }
+            anim_type = LG_ANIM_NONE;
+            topple_depth = 0;
+        }
         return;
     }
 
@@ -206,6 +227,7 @@ void LilGuy::tick(Chamber& ch, float dt) {
             case STATE_CANNIBALIZE: _do_cannibalize(ch); break;
             case STATE_TO_FOOD:     _do_to_food(ch);     break;
             case STATE_TO_HOME:     _do_to_home(ch);     break;
+            case STATE_ZOOMIES:     _do_zoomies(ch);     break;
             default:                _do_idle(ch);        break;
         }
     }
@@ -217,6 +239,20 @@ void LilGuy::tick(Chamber& ch, float dt) {
 
 bool LilGuy::_set_target_cell(int cx, int cy, Chamber& ch) {
     if (!ch.in_bounds(cx, cy)) return false;
+    // Idle ants can't enter the queen's body cells (but can move out if already inside)
+    if (state == STATE_IDLE && ch.has_queen && ch.queen_obj.alive) {
+        bool dest_inside = abs(cx - ch.queen_obj.x) <= Cfg::QUEEN_BODY_HALF_W
+                        && abs(cy - ch.queen_obj.y) <= Cfg::QUEEN_BODY_HALF_H;
+        if (dest_inside) {
+            bool already_inside = abs(cell_x() - ch.queen_obj.x) <= Cfg::QUEEN_BODY_HALF_W
+                               && abs(cell_y() - ch.queen_obj.y) <= Cfg::QUEEN_BODY_HALF_H;
+            if (!already_inside) return false;  // block entry
+            // Already inside: only allow moves that get closer to the edge
+            int cur_max = max(abs(cell_x() - ch.queen_obj.x), abs(cell_y() - ch.queen_obj.y));
+            int new_max = max(abs(cx - ch.queen_obj.x), abs(cy - ch.queen_obj.y));
+            if (new_max < cur_max) return false;  // moving deeper, block
+        }
+    }
     target_cell_x = cx;
     target_cell_y = cy;
     has_target_cell = true;
@@ -283,6 +319,8 @@ void LilGuy::_on_enter_cell(int cx, int cy, Chamber& ch) {
 void LilGuy::_pick_task(Chamber& ch) {
     speed = Cfg::ROLE_PARAMS[role].speed;
     idle_ticks_remaining = 0;
+    zoomie_target = -1;
+    zoomie_ticks = 0;
     int16_t was_stacked = stack_on;
     bool was_sleeping = sleeping;
     stack_on = -1;   // assume unstack; restore if we stay idle
@@ -662,20 +700,35 @@ void LilGuy::_do_tend_queen(Chamber& ch) {
                 ch.emit(ee);
             }
         }
-        state = STATE_IDLE;
+        // Done tending — re-evaluate tasks (may forage, tend brood, etc.)
         has_target = false;
         has_target_cell = false;
-        idle_cooldown = g_rng.rand_int(20, 40);
+        _pick_task(ch);
         return;
     }
     _step_toward_cell(target_x, target_y, ch);
 }
 
 void LilGuy::_do_idle(Chamber& ch) {
+    // Escape queen exclusion zone: override everything, walk straight out
+    if (ch.has_queen && ch.queen_obj.alive) {
+        int cx = cell_x(), cy = cell_y();
+        if (abs(cx - ch.queen_obj.x) <= Cfg::QUEEN_BODY_HALF_W
+            && abs(cy - ch.queen_obj.y) <= Cfg::QUEEN_BODY_HALF_H) {
+            int dx = (cx > ch.queen_obj.x) ? 1 : ((cx < ch.queen_obj.x) ? -1 : g_rng.rand_sign());
+            int dy = (cy > ch.queen_obj.y) ? 1 : ((cy < ch.queen_obj.y) ? -1 : 0);
+            if (dx != 0 && dy != 0) {
+                if (g_rng.rand_float() < 0.5f) dy = 0; else dx = 0;
+            }
+            _set_target_cell(cx + dx, cy + dy, ch);
+            return;
+        }
+    }
+
     // True rest: drift and huddle need new target cells
     if (idle_ticks_remaining > 0) {
         if (idle_microstate == 1) {
-            // Random drift with queen bias + comfort zone
+            // Random drift with queen bias
             int cx = cell_x(), cy = cell_y();
             int dx, dy;
             if (ch.has_queen && g_rng.rand_float() < 0.5f) {
@@ -690,19 +743,6 @@ void LilGuy::_do_idle(Chamber& ch) {
             }
             if (dx == 0 && dy == 0) dx = g_rng.rand_sign();
 
-            // Queen comfort zone: if already close, don't drift closer
-            if (ch.has_queen && ch.queen_obj.alive) {
-                int qd_now  = abs(ch.queen_obj.x - cx) + abs(ch.queen_obj.y - cy);
-                int qd_next = abs(ch.queen_obj.x - (cx+dx)) + abs(ch.queen_obj.y - (cy+dy));
-                if (qd_now <= 10 && qd_next < qd_now) {
-                    // Deflect: move away from queen instead
-                    dx = (cx > ch.queen_obj.x) ? 1 : ((cx < ch.queen_obj.x) ? -1 : g_rng.rand_sign());
-                    dy = (cy > ch.queen_obj.y) ? 1 : ((cy < ch.queen_obj.y) ? -1 : 0);
-                    if (dx != 0 && dy != 0) {
-                        if (g_rng.rand_float() < 0.5f) dy = 0; else dx = 0;
-                    }
-                }
-            }
             _set_target_cell(cx + dx, cy + dy, ch);
         } else if (idle_microstate == 3) {
             // Huddle: drift toward nearest idle neighbor or queen,
@@ -736,7 +776,7 @@ void LilGuy::_do_idle(Chamber& ch) {
             }
 
             // Close enough? Orbit tangentially instead of piling on
-            int comfort = target_is_queen ? 10 : 2;  // queen is big, keep wider ring
+            int comfort = target_is_queen ? (Cfg::QUEEN_BODY_HALF_W + 1) : 2;
             if (best_dist <= comfort) {
                 // Tangential drift: perpendicular to the approach direction
                 int dx = (tx > cx) ? 1 : ((tx < cx) ? -1 : 0);
@@ -776,18 +816,6 @@ void LilGuy::_do_idle(Chamber& ch) {
     }
     if (dx == 0 && dy == 0) return;
 
-    // Queen comfort zone
-    if (ch.has_queen && ch.queen_obj.alive) {
-        int qd_now  = abs(ch.queen_obj.x - cx) + abs(ch.queen_obj.y - cy);
-        int qd_next = abs(ch.queen_obj.x - (cx+dx)) + abs(ch.queen_obj.y - (cy+dy));
-        if (qd_now <= 10 && qd_next < qd_now) {
-            dx = (cx > ch.queen_obj.x) ? 1 : ((cx < ch.queen_obj.x) ? -1 : g_rng.rand_sign());
-            dy = (cy > ch.queen_obj.y) ? 1 : ((cy < ch.queen_obj.y) ? -1 : 0);
-            if (dx != 0 && dy != 0) {
-                if (g_rng.rand_float() < 0.5f) dy = 0; else dx = 0;
-            }
-        }
-    }
     _set_target_cell(cx + dx, cy + dy, ch);
 }
 
@@ -815,6 +843,57 @@ void LilGuy::_do_cannibalize(Chamber& ch) {
         return;
     }
     _step_toward_cell(target_x, target_y, ch);
+}
+
+// ================================================================
+//  Zoomies (daytime chase)
+// ================================================================
+
+void LilGuy::_do_zoomies(Chamber& ch) {
+    zoomie_ticks--;
+
+    // End conditions: timer expired, chaser's target invalid
+    bool done = (zoomie_ticks <= 0);
+    if (!done && zoomie_target >= 0
+        && (zoomie_target >= ch.lil_guy_count
+            || !ch.lil_guys[zoomie_target].alive)) {
+        done = true;
+    }
+
+    if (done) {
+        state = STATE_IDLE;
+        has_target = false;
+        has_target_cell = false;
+        speed = Cfg::ROLE_PARAMS[role].speed;
+        zoomie_target = -1;
+        zoomie_ticks = 0;
+        interaction_cooldown = Cfg::INTERACTION_COOLDOWN_TICKS;
+        idle_ticks_remaining = g_rng.rand_int(Cfg::IDLE_REST_MIN_TICKS,
+                                               Cfg::IDLE_REST_MAX_TICKS);
+        idle_repoll_tick = Cfg::IDLE_REPOLL_INTERVAL;
+        _pick_idle_microstate(ch);
+        return;
+    }
+
+    if (zoomie_target < 0) {
+        // Runner: pick random waypoints and sprint to them
+        int cx = cell_x(), cy = cell_y();
+        if (!has_target || (cx == target_x && cy == target_y)) {
+            // Pick a new random waypoint within the grid
+            target_x = g_rng.rand_int(1, Cfg::GRID_WIDTH - 2);
+            target_y = g_rng.rand_int(1, Cfg::GRID_HEIGHT - 2);
+            has_target = true;
+        }
+        _step_toward_cell(target_x, target_y, ch);
+    } else {
+        // Chaser: trail a couple cells behind target's facing direction
+        auto& t = ch.lil_guys[zoomie_target];
+        int tx = t.cell_x() - static_cast<int>(t.facing_dx * 2.0f);
+        int ty = t.cell_y() - static_cast<int>(t.facing_dy * 2.0f);
+        tx = (tx < 0) ? 0 : (tx >= Cfg::GRID_WIDTH  ? Cfg::GRID_WIDTH  - 1 : tx);
+        ty = (ty < 0) ? 0 : (ty >= Cfg::GRID_HEIGHT ? Cfg::GRID_HEIGHT - 1 : ty);
+        _step_toward_cell(tx, ty, ch);
+    }
 }
 
 // ================================================================
@@ -901,7 +980,8 @@ float LilGuy::_colony_idle_budget(Chamber& ch) {
 
 bool LilGuy::_target_still_valid(Chamber& ch) {
     if (state == STATE_IDLE || state == STATE_TO_FOOD
-            || state == STATE_TO_HOME || state == STATE_CANNIBALIZE)
+            || state == STATE_TO_HOME || state == STATE_CANNIBALIZE
+            || state == STATE_ZOOMIES)
         return true;
     if (!has_target) return false;
     if (state == STATE_TEND_QUEEN) {

@@ -898,7 +898,8 @@ void Renderer::_dim_framebuffer(float brightness) {
 
 static bool _sprite_cmp(const SpriteDraw& a, const SpriteDraw& b) {
     if (a.sort_y != b.sort_y) return a.sort_y < b.sort_y;  // smaller Y = further back
-    return a.size_px > b.size_px;  // larger sprite on top at same Y
+    if (a.size_px != b.size_px) return a.size_px < b.size_px;  // larger sprite drawn on top
+    return a.entity_idx < b.entity_idx;  // stable tiebreaker
 }
 
 void Renderer::_build_floor_sprites(const Chamber& ch) {
@@ -960,11 +961,14 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
         float fy = w.prev_y + (w.y - w.prev_y) * t;
         int px = static_cast<int>(fx * Cfg::CELL_SIZE);
         int py = static_cast<int>(fy * Cfg::CELL_SIZE);
+        float sort_y_stable = fy * Cfg::CELL_SIZE;  // depth key before bob/anim offsets
 
         // Animation override: interaction animations suppress normal bob
         if (w.stack_on >= 0) {
             // Stacked ant: walk down the tower, summing each ant's sprite height
             float offset = 0.0f;
+            int stack_depth = 0;
+            int base_idx = w.stack_on;
             int cur = w.stack_on;
             while (cur >= 0 && offset < 200.0f) {
                 auto& b = ch.lil_guys[cur];
@@ -972,16 +976,54 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
                 if (b.role == ROLE_MAJOR)  s = SCALE_WORKER_MAJOR;
                 else if (b.is_pioneer)     s = SCALE_WORKER_PIONEER;
                 offset -= static_cast<int>(WORKER_PIONEER_H * s + 0.5f) * 0.6f;
+                stack_depth++;
+                if (b.stack_on < 0) base_idx = cur;  // ground-level ant
                 cur = b.stack_on;
             }
+            // Sort by base ant's position so whole tower moves as one z-unit
+            auto& base = ch.lil_guys[base_idx];
+            float base_fy = base.prev_y + (base.y - base.prev_y) * t;
+            sort_y_stable = base_fy * Cfg::CELL_SIZE + stack_depth * 0.1f;
 
+            // Topple wobble: increasing amplitude, higher ants wobble more
+            if (w.anim_type == LG_ANIM_TOPPLE) {
+                float p = 1.0f - static_cast<float>(w.anim_remaining_ticks)
+                               / static_cast<float>(Cfg::STACK_TOPPLE_TICKS);
+                float amplitude = p * (2.0f + stack_depth * 1.5f);
+                float wobble = sinf(p * 18.0f + stack_depth * 1.2f) * amplitude;
+                px += static_cast<int>(wobble);
             // Damped hop during mount animation
-            if (w.stack_hop_remaining > 0) {
+            } else if (w.stack_hop_remaining > 0) {
                 float p = 1.0f - static_cast<float>(w.stack_hop_remaining) / 12.0f;
                 float bounce = expf(-3.5f * p) * cosf(p * 10.0f);
                 offset += bounce * 6.0f;
             }
             py += static_cast<int>(offset);
+
+        } else if (w.anim_type == LG_ANIM_TOPPLE) {
+            if (w.anim_remaining_ticks > Cfg::STACK_FALL_TICKS) {
+                // Wobble phase (ground ant)
+                float total = static_cast<float>(Cfg::STACK_TOPPLE_TICKS);
+                float remaining_wobble = w.anim_remaining_ticks - Cfg::STACK_FALL_TICKS;
+                float p = 1.0f - remaining_wobble / total;
+                float wobble = sinf(p * 18.0f) * p * 2.0f;
+                px += static_cast<int>(wobble);
+            } else if (w.topple_depth > 0) {
+                // Fall phase: animate from stack height down to ground
+                float fall_p = 1.0f - static_cast<float>(w.anim_remaining_ticks)
+                                    / static_cast<float>(Cfg::STACK_FALL_TICKS);
+                // Compute the height this ant was at
+                float height = 0.0f;
+                for (int d = 0; d < w.topple_depth; d++) {
+                    float s = SCALE_WORKER_MINOR;
+                    height -= static_cast<int>(WORKER_PIONEER_H * s + 0.5f) * 0.6f;
+                }
+                py += static_cast<int>(height * (1.0f - fall_p));
+                // Alternate left/right by depth, scatter ~1 cell width
+                float side = (w.topple_depth & 1) ? -1.0f : 1.0f;
+                float scatter = side * Cfg::CELL_SIZE * fall_p;
+                px += static_cast<int>(scatter);
+            }
 
             // Grooming while stacked: just swap to lean sprite, no position change
         } else if (w.anim_type == LG_ANIM_GROOMING) {
@@ -1025,7 +1067,7 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
         else if (w.is_pioneer)     scale = SCALE_WORKER_PIONEER;
 
         auto& sd = _agent_sprites[_agent_sprite_count++];
-        sd.sort_y    = static_cast<float>(py);
+        sd.sort_y    = sort_y_stable;
         sd.render_x  = px;
         sd.render_y  = py;
         sd.size_px   = static_cast<uint16_t>(WORKER_PIONEER_W * scale + 0.5f);
@@ -1038,12 +1080,13 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
     if (ch.has_queen && ch.queen_obj.alive) {
         int px = ch.queen_obj.x * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
         int py = ch.queen_obj.y * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
+        float queen_sort_y = static_cast<float>(py) + 2.0f * Cfg::CELL_SIZE; // +2 cell bias (stable)
         int breath_phase = _frame % 60;
         int bob = (breath_phase < 30) ? 0 : -1;
         py += bob;
 
         auto& sd = _agent_sprites[_agent_sprite_count++];
-        sd.sort_y    = static_cast<float>(py) + 2.0f * Cfg::CELL_SIZE; // +2 cell bias
+        sd.sort_y    = queen_sort_y;
         sd.render_x  = px;
         sd.render_y  = py;
         sd.size_px   = static_cast<uint16_t>(QUEEN_W * SCALE_QUEEN + 0.5f);

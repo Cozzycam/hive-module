@@ -11,7 +11,8 @@ enum Role    : uint8_t { ROLE_MINOR = 0, ROLE_MAJOR = 1, ROLE_COUNT = 2 };
 enum BroodStage : uint8_t { STAGE_EGG = 0, STAGE_LARVA = 1, STAGE_PUPA = 2, STAGE_DEAD = 3 };
 enum AntState : uint8_t {
     STATE_IDLE = 0, STATE_TEND_QUEEN = 1, STATE_TEND_BROOD = 2,
-    STATE_TO_FOOD = 3, STATE_TO_HOME = 4, STATE_CANNIBALIZE = 5
+    STATE_TO_FOOD = 3, STATE_TO_HOME = 4, STATE_CANNIBALIZE = 5,
+    STATE_ZOOMIES = 6
 };
 
 namespace Cfg {
@@ -116,6 +117,13 @@ constexpr float IDLE_BUDGET_DAY            = 0.70f;
 constexpr float IDLE_BUDGET_TWILIGHT       = 0.85f;
 constexpr float IDLE_BUDGET_NIGHT          = 0.95f;
 
+// ---- Zoomies (daytime chase behavior) ----
+constexpr float ZOOMIE_CHANCE              = 0.03f;  // per proximity pair per tick
+constexpr float ZOOMIE_THIRD_CHANCE        = 0.30f;  // chance to recruit a 3rd lil guy
+constexpr float ZOOMIE_SPEED_MULT          = 4.0f;   // speed multiplier vs normal
+constexpr int   ZOOMIE_MIN_TICKS           = 16;     // ~2s at 8 tps
+constexpr int   ZOOMIE_MAX_TICKS           = 24;     // ~3s at 8 tps
+
 // ---- Metabolic scaling (3/4-power law) ----
 constexpr float METABOLIC_SCALE_FLOOR = 0.7f;
 constexpr int   METABOLIC_SCALE_ONSET = 10;
@@ -158,6 +166,19 @@ constexpr Face FACE_OPPOSITE[FACE_COUNT] = { FACE_S, FACE_N, FACE_E, FACE_W };
 
 constexpr int QUEEN_SPAWN_X = GRID_WIDTH / 2;   // 30
 constexpr int QUEEN_SPAWN_Y = GRID_HEIGHT / 2;  // 20
+constexpr int QUEEN_BODY_HALF_W = 4;            // cells — idle ants won't enter (x)
+constexpr int QUEEN_BODY_HALF_H = 5;            // cells — idle ants won't enter (y)
+
+// ---- Stack weights & capacities ----
+constexpr int STACK_WEIGHT_PIONEER     = 1;
+constexpr int STACK_WEIGHT_MINOR       = 2;
+constexpr int STACK_WEIGHT_MAJOR       = 3;
+constexpr int STACK_CAPACITY_PIONEER   = 5;   // light — topples fast
+constexpr int STACK_CAPACITY_MINOR     = 7;
+constexpr int STACK_CAPACITY_MAJOR     = 10;
+constexpr int STACK_TOPPLE_TICKS       = 12;  // wobble duration before scatter
+constexpr int STACK_FALL_TICKS         = 8;   // fall-down duration after wobble
+constexpr uint32_t STACK_COLLAPSE_COOLDOWN_MS = 120000; // 120s before restacking
 
 // ---- Proximity interactions ----
 constexpr int   PROXIMITY_DETECTION_RADIUS = 1;
