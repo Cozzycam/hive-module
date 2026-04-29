@@ -346,13 +346,13 @@ void Renderer::_clear_dirty() {
         (_cpal.floor1_r + _cpal.floor2_r) / 2,
         (_cpal.floor1_g + _cpal.floor2_g) / 2,
         (_cpal.floor1_b + _cpal.floor2_b) / 2);
-    uint16_t outer = _rgb565(_cpal.outer_r, _cpal.outer_g, _cpal.outer_b);
+    uint16_t floor2 = _rgb565(_cpal.floor2_r, _cpal.floor2_g, _cpal.floor2_b);
 
     for (int i = 0; i < _dirty_count; i++) {
         auto& d = _dirty[i];
         if (d.x < FLOOR_X || d.y < FLOOR_Y ||
             d.x + d.w > FLOOR_X + FLOOR_W || d.y + d.h > FLOOR_Y + FLOOR_H) {
-            _gfx->fillRect(d.x, d.y, d.w, d.h, outer);
+            _gfx->fillRect(d.x, d.y, d.w, d.h, floor2);
         } else {
             _gfx->fillRect(d.x, d.y, d.w, d.h, floor_mid);
         }
@@ -401,8 +401,8 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
 #endif
     {
         if (_needs_full_redraw) {
-            uint16_t outer = _rgb565(_cpal.outer_r, _cpal.outer_g, _cpal.outer_b);
-            _gfx->fillScreen(outer);
+            uint16_t floor2 = _rgb565(_cpal.floor2_r, _cpal.floor2_g, _cpal.floor2_b);
+            _gfx->fillScreen(floor2);
             _dirty_count = 0;
             _needs_full_redraw = false;
         } else {
@@ -417,8 +417,8 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
     unsigned long sprites_start = millis();
 #endif
 
-    // Sprout overlay (per-frame, on top of floor, below entities)
-    _draw_sprout_overlay();
+    // Sprout overlay (queen chamber only — per-frame, on top of floor, below entities)
+    if (ch.has_queen) _draw_sprout_overlay();
 
     // Layer 2: floor-level sprites (food, brood) — Y-sorted
     _build_floor_sprites(ch);
@@ -428,10 +428,11 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
     _build_agent_sprites(ch, lerp_t);
     _draw_sorted_sprites(_agent_sprites, _agent_sprite_count, ch);
 
+    _draw_tunnel_entrances(ch);
     _draw_anims();
 
-    // Check for milestone leaf growth
-    _check_milestone(ch);
+    // Check for milestone leaf growth (queen chamber only)
+    if (ch.has_queen) _check_milestone(ch);
 
     _frame++;
 
@@ -470,14 +471,11 @@ void Renderer::_render_floor_to_cache() {
     // the canvas into _floor_cache. This avoids per-pixel RGB565 banding
     // since fillCircle produces natural circular bands, not horizontal ones.
 
-    uint16_t outer_col = _rgb565(_cpal.outer_r, _cpal.outer_g, _cpal.outer_b);
     uint16_t floor2_col = _rgb565(_cpal.floor2_r, _cpal.floor2_g, _cpal.floor2_b);
 
-    // Pass 1: Frame
-    _gfx->fillScreen(outer_col);
-
-    // Pass 2: Base floor
-    _gfx->fillRoundRect(FLOOR_X, FLOOR_Y, FLOOR_W, FLOOR_H, FLOOR_RADIUS, floor2_col);
+    // Fill entire screen with floor edge color so no dark frame shows
+    // through physically rounded LCD corners
+    _gfx->fillScreen(floor2_col);
 
     // Pass 3: Radial gradient via concentric filled circles (painter's algorithm).
     // 32 bands from outer (floor2) to inner (floor1). Circular band boundaries
@@ -540,7 +538,7 @@ void Renderer::_blit_floor_cache_full() {
 void Renderer::_draw_floor_uncached() {
     // Pass 2: Base
     uint16_t floor2_col = _rgb565(_cpal.floor2_r, _cpal.floor2_g, _cpal.floor2_b);
-    _gfx->fillRoundRect(FLOOR_X, FLOOR_Y, FLOOR_W, FLOOR_H, FLOOR_RADIUS, floor2_col);
+    _gfx->fillRect(FLOOR_X, FLOOR_Y, FLOOR_W, FLOOR_H, floor2_col);
 
     // Pass 3: Gradient (banded approximation for speed)
     static constexpr int NUM_BANDS = 12;
@@ -857,7 +855,7 @@ bool Renderer::_tick_boot_splash(const Chamber& ch) {
         _gfx->fillScreen(outer);
         _draw_floor_uncached();
 #endif
-        _draw_sprout_overlay();
+        if (ch.has_queen) _draw_sprout_overlay();
         if (ch.has_queen) _draw_queen(ch);
 
         // Dim entire framebuffer to create smooth fade-in
@@ -1422,5 +1420,84 @@ void Renderer::_draw_one_anim(const Anim& a) {
         _mark_dirty(a.px - r - 1, a.py - r - 1, r * 2 + 3, r * 2 + 3);
         break;
     }
+    }
+}
+
+// ================================================================
+//  Tunnel entrances — sprite-based burrow openings at connected faces
+// ================================================================
+
+#include "sprites.h"
+
+void Renderer::_draw_tunnel_entrances(const Chamber& ch) {
+    for (int f = 0; f < FACE_COUNT; f++) {
+        if (ch.entries[f] < 0) continue;
+
+        int cx = Cfg::ENTRY_X[f] * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
+        int cy = Cfg::ENTRY_Y[f] * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
+
+        // TUNNEL_E is 20w × 56h, designed for the east (right) edge.
+        // Anchor: right edge of sprite flush with screen edge, centered vertically.
+        int sx, sy;
+        const uint16_t* data = TUNNEL_E;
+        int sw = TUNNEL_E_W, sh = TUNNEL_E_H;
+
+        float scale = 1.3f;
+        int scaled_w = (int)(sw * scale);
+        int scaled_h = (int)(sh * scale);
+
+        switch (f) {
+        case FACE_E:
+            sx = SCREEN_W - scaled_w + 10;
+            sy = cy - scaled_h / 2;
+            _draw_sprite_scaled(sx + scaled_w/2, sy + scaled_h/2, data, sw, sh, scale, false);
+            break;
+        case FACE_W:
+            sx = -10;
+            sy = cy - scaled_h / 2;
+            _draw_sprite_scaled(sx + scaled_w/2, sy + scaled_h/2, data, sw, sh, scale, true);
+            break;
+        case FACE_N:
+            // Rotate 90° CCW + scale
+            {
+                int dst_w = (int)(sh * scale), dst_h = (int)(sw * scale);
+                sx = cx - dst_w / 2;
+                sy = -10;
+                for (int dy = 0; dy < dst_h; dy++) {
+                    int src_col = (int)((sw - 1) - dy / scale);
+                    for (int dx = 0; dx < dst_w; dx++) {
+                        int src_row = (int)(dx / scale);
+                        if (src_row >= sh || src_col < 0) continue;
+                        uint16_t col = pgm_read_word(&data[src_row * sw + src_col]);
+                        if (col != SPRITE_TRANSPARENT)
+                            _gfx->drawPixel(sx + dx, sy + dy, col);
+                    }
+                }
+                _mark_dirty(sx, sy, dst_w, dst_h);
+            }
+            continue;
+        case FACE_S:
+            // Rotate 90° CW + scale
+            {
+                int dst_w = (int)(sh * scale), dst_h = (int)(sw * scale);
+                sx = cx - dst_w / 2;
+                sy = SCREEN_H - dst_h + 10;
+                for (int dy = 0; dy < dst_h; dy++) {
+                    int src_col = (int)(dy / scale);
+                    for (int dx = 0; dx < dst_w; dx++) {
+                        int src_row = (int)((sh - 1) - dx / scale);
+                        if (src_row < 0 || src_col >= sw) continue;
+                        uint16_t col = pgm_read_word(&data[src_row * sw + src_col]);
+                        if (col != SPRITE_TRANSPARENT)
+                            _gfx->drawPixel(sx + dx, sy + dy, col);
+                    }
+                }
+                _mark_dirty(sx, sy, dst_w, dst_h);
+            }
+            continue;
+        default: continue;
+        }
+
+        _mark_dirty(sx, sy, sw, sh);
     }
 }

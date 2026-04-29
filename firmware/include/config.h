@@ -15,6 +15,10 @@ enum AntState : uint8_t {
     STATE_ZOOMIES = 6
 };
 
+// Firmware version — bump manually for OTA releases.
+// Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
+constexpr uint32_t FW_VERSION = 10;
+
 namespace Cfg {
 
 // ---- Grid ----
@@ -158,6 +162,7 @@ constexpr float RECOVERY_BOOST_THRESHOLD  = 0.8f;
 // ---- Chamber geometry ----
 constexpr int ENTRY_X[FACE_COUNT] = { GRID_WIDTH/2,  GRID_WIDTH/2,  0,             GRID_WIDTH-1 };
 constexpr int ENTRY_Y[FACE_COUNT] = { 0,             GRID_HEIGHT-1, GRID_HEIGHT/2, GRID_HEIGHT/2 };
+constexpr int ENTRY_HALF_W        = 1;  // entry zone is 3 cells wide (center ± 1)
 
 constexpr int FACE_DX[FACE_COUNT] = {  0,  0, -1,  1 };
 constexpr int FACE_DY[FACE_COUNT] = { -1,  1,  0,  0 };

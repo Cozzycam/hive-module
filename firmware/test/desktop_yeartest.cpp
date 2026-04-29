@@ -3,8 +3,8 @@
  *
  * Build:  g++ -std=c++17 -O2 -I../include -o yeartest desktop_yeartest.cpp \
  *         ../src/colony_state.cpp ../src/pheromone_grid.cpp ../src/brood.cpp \
- *         ../src/lil_guy.cpp ../src/queen.cpp ../src/chamber.cpp ../src/sim.cpp \
- *         ../src/rng.cpp
+ *         ../src/lil_guy.cpp ../src/queen.cpp ../src/chamber.cpp \
+ *         ../src/coordinator.cpp ../src/sim.cpp ../src/rng.cpp
  */
 #include <cstdio>
 #include <cstdlib>
@@ -44,7 +44,7 @@ int main() {
         _fake_millis += 125;  // 125ms per tick at 8 tps
         sim.tick(dt);
 
-        auto& col = sim.colony;
+        auto& col = sim.coordinator.colony;
         float elapsed_days = tick * dt / Cfg::SECS_PER_DAY;
         int day = static_cast<int>(elapsed_days);
 
@@ -66,7 +66,7 @@ int main() {
         }
     }
 
-    auto& col = sim.colony;
+    auto& col = sim.coordinator.colony;
     printf("\n============================================================\n");
     printf("YEAR-END SUMMARY (C++ PORT)\n");
     printf("============================================================\n");
@@ -79,9 +79,9 @@ int main() {
            col.brood_egg, col.brood_larva, col.brood_pupa);
     printf("  Food pressure:       %.3f\n", col.food_pressure());
     printf("  Queen alive:         %s\n",
-           (sim.chamber.has_queen && sim.chamber.queen_obj.alive) ? "YES" : "NO");
+           (sim.coordinator.chamber.has_queen && sim.coordinator.chamber.queen_obj.alive) ? "YES" : "NO");
     printf("  Eggs laid total:     %d\n",
-           sim.chamber.has_queen ? sim.chamber.queen_obj.eggs_laid : 0);
+           sim.coordinator.chamber.has_queen ? sim.coordinator.chamber.queen_obj.eggs_laid : 0);
 
     printf("\n");
     if (col.population >= 50 && col.population <= 200)

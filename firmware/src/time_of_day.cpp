@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
 #include <time.h>
 #include <cmath>
 
@@ -343,6 +344,13 @@ static void _rtc_write(uint32_t unix_time) {
 //  NTP
 // ================================================================
 
+// Disconnect from AP but keep WiFi STA alive for ESP-NOW.
+// Re-pins radio to channel 1 so topology resumes immediately.
+static void _wifi_teardown() {
+    WiFi.disconnect();
+    esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
+}
+
 static bool _ntp_sync() {
     Serial.printf("[tod] WiFi connecting to '%s'...\n", WIFI_SSID);
     WiFi.mode(WIFI_STA);
@@ -352,8 +360,7 @@ static bool _ntp_sync() {
     while (WiFi.status() != WL_CONNECTED) {
         if (millis() - start > 10000) {
             Serial.println("[tod] WiFi timeout");
-            WiFi.disconnect(true);
-            WiFi.mode(WIFI_OFF);
+            _wifi_teardown();
             return false;
         }
         delay(100);
@@ -368,8 +375,7 @@ static bool _ntp_sync() {
     while (!getLocalTime(&tm, 100)) {
         if (millis() - start > 10000) {
             Serial.println("[tod] NTP timeout");
-            WiFi.disconnect(true);
-            WiFi.mode(WIFI_OFF);
+            _wifi_teardown();
             return false;
         }
         delay(100);
@@ -386,8 +392,7 @@ static bool _ntp_sync() {
     // Write to RTC for offline persistence
     _rtc_write(g_tod.unix_time);
 
-    WiFi.disconnect(true);
-    WiFi.mode(WIFI_OFF);
+    _wifi_teardown();
     return true;
 }
 
@@ -403,6 +408,33 @@ static void _start_simulated_clock() {
     _sim_clock_epoch = _ymd_to_unix(2026, 4, 20, 0, 0);
     g_tod.unix_time = _sim_clock_epoch;
     Serial.println("[tod] No RTC or NTP — simulated 24h clock");
+}
+
+// ================================================================
+//  WiFi helpers (shared with OTA)
+// ================================================================
+
+bool tod_wifi_connect(uint32_t timeout_ms) {
+    Serial.printf("[wifi] Connecting to '%s'...\n", WIFI_SSID);
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+    unsigned long start = millis();
+    while (WiFi.status() != WL_CONNECTED) {
+        if (millis() - start > timeout_ms) {
+            Serial.println("[wifi] Connect timeout");
+            WiFi.disconnect(true);
+            WiFi.mode(WIFI_OFF);
+            return false;
+        }
+        delay(100);
+    }
+    Serial.printf("[wifi] Connected, IP=%s\n", WiFi.localIP().toString().c_str());
+    return true;
+}
+
+void tod_wifi_disconnect() {
+    _wifi_teardown();
 }
 
 // ================================================================

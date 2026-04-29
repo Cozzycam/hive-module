@@ -41,3 +41,8 @@ void time_of_day_tick();
 // Recompute sunrise/sunset for current day. Called internally on
 // day rollover and after NTP sync.
 void time_of_day_recompute_sun();
+
+// WiFi connect/disconnect helpers — reuse NTP credentials for OTA etc.
+// connect returns true on success. disconnect turns WiFi off.
+bool tod_wifi_connect(uint32_t timeout_ms = 10000);
+void tod_wifi_disconnect();

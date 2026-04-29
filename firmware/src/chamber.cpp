@@ -137,6 +137,8 @@ void Chamber::tick(float dt) {
         }
     }
 
+    // Edge crossing + handoff is handled by Coordinator after chamber.tick()
+
     // Proximity interactions between lil guys
     _detect_proximity_interactions();
 
@@ -597,8 +599,11 @@ void Chamber::count_brood(uint16_t& eggs, uint16_t& larvae, uint16_t& pupae) con
 
 int Chamber::_entry_face_at(int x, int y) const {
     for (int f = 0; f < FACE_COUNT; f++) {
-        if (Cfg::ENTRY_X[f] == x && Cfg::ENTRY_Y[f] == y)
-            return f;
+        // N/S faces span horizontally, W/E faces span vertically
+        bool on_edge = (Cfg::FACE_DY[f] != 0)
+            ? (y == Cfg::ENTRY_Y[f] && abs(x - Cfg::ENTRY_X[f]) <= Cfg::ENTRY_HALF_W)
+            : (x == Cfg::ENTRY_X[f] && abs(y - Cfg::ENTRY_Y[f]) <= Cfg::ENTRY_HALF_W);
+        if (on_edge) return f;
     }
     return -1;
 }

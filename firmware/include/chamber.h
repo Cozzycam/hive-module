@@ -72,9 +72,11 @@ public:
     // Used by LilGuy for food pile checks
     int  _food_pile_index(int x, int y) const;
 
+    // Used by Coordinator for edge crossing detection
+    int  _entry_face_at(int x, int y) const;  // returns Face or -1
+
 private:
     void _deposit_home_cell(int x, int y, float amount);
     void _deposit_food_cell(int x, int y, float amount);
-    int  _entry_face_at(int x, int y) const;  // returns Face or -1
     void _detect_proximity_interactions();
 };

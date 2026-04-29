@@ -1,23 +1,18 @@
-/* Single-board sim coordinator. Runs one founding chamber with food.
- * Owns the EventBus and passes it to the chamber per-tick. */
+/* Sim — top-level entry point. Owns the Coordinator and EventBus.
+ * main.cpp calls Sim::init/tick/handle_touch; rendering reads
+ * coordinator.chamber and coordinator.colony. */
 #pragma once
-#include "chamber.h"
+#include "coordinator.h"
 #include "touch.h"
 #include "events.h"
 
 class Sim {
 public:
-    ColonyState colony;
-    Chamber     chamber;
+    Coordinator coordinator;
     EventBus    event_bus;
     uint32_t    tick_count = 0;
-    uint32_t    last_lifecycle_ms = 0;
 
     void init();
     void tick(float dt);
     void handle_touch();
-
-    /* Drain events and log to serial. Called from main loop at
-     * display rate, not sim tick rate. */
-    void drain_events();
 };

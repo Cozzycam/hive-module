@@ -65,6 +65,12 @@ struct PositionData {
     int8_t x, y;
 };
 
+struct HandoffData {
+    uint8_t  worker_idx;   // slot index in lil_guys[]
+    uint8_t  face;         // Face enum value
+    uint16_t neighbour_id; // module_id of the neighbour
+};
+
 // ---- Event struct (tagged union) ----
 
 struct Event {
@@ -77,6 +83,7 @@ struct Event {
         FoodTappedData         food_tapped;
         YoungHatchedData       young_hatched;
         PositionData           position;  // queen_laid_egg, young_died, lil_guy_died
+        HandoffData            handoff;   // handoff_incoming, handoff_outgoing
     };
 };
 

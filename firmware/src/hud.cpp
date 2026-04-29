@@ -9,7 +9,9 @@
 #include "hud.h"
 #include "time_of_day.h"
 #include "config.h"
+#include "pin_config.h"
 #include <Preferences.h>
+#include <Wire.h>
 #include <cstdio>
 #include <cmath>
 
@@ -496,4 +498,110 @@ void hud_draw(Arduino_Canvas* gfx, const Chamber& ch) {
     _draw_text(gfx, phase_x, text_y, phase_str, ink2);
     _draw_pulse_dot(gfx, dot_cx, text_y + 4, bg_565,
                     pal.moss_r, pal.moss_g, pal.moss_b);
+}
+
+// ================================================================
+//  Battery indicator (AXP2101 PMU)
+// ================================================================
+
+// AXP2101 registers (from charge-diagnostic tool)
+static constexpr uint8_t AXP_REG_STATUS1 = 0x01;
+static constexpr uint8_t AXP_REG_BAT_PCT = 0xA4;
+
+static bool     _axp_found = false;
+static int      _batt_pct  = -1;     // 0-100, or -1 if unread
+static uint8_t  _charge_state = 0;   // bits [6:5] of STATUS1
+static uint32_t _batt_last_read_ms = 0;
+
+static int _axp_read(uint8_t reg) {
+    Wire.beginTransmission(AXP2101_ADDR);
+    Wire.write(reg);
+    if (Wire.endTransmission(false) != 0) return -1;
+    if (Wire.requestFrom((uint8_t)AXP2101_ADDR, (uint8_t)1) != 1) return -1;
+    return Wire.read();
+}
+
+void hud_battery_init() {
+    Wire.beginTransmission(AXP2101_ADDR);
+    _axp_found = (Wire.endTransmission() == 0);
+    if (_axp_found)
+        Serial.println("[batt] AXP2101 found");
+    else
+        Serial.println("[batt] AXP2101 not found — battery indicator disabled");
+}
+
+static void _batt_update() {
+    if (!_axp_found) return;
+    uint32_t now = millis();
+    if (now - _batt_last_read_ms < 2000) return;  // read every 2s
+    _batt_last_read_ms = now;
+
+    int pct = _axp_read(AXP_REG_BAT_PCT);
+    int st1 = _axp_read(AXP_REG_STATUS1);
+    if (pct >= 0) _batt_pct = pct > 100 ? 100 : pct;
+    if (st1 >= 0) _charge_state = (st1 >> 5) & 0x03;
+}
+
+void hud_draw_battery(Arduino_Canvas* gfx) {
+    _batt_update();
+    if (_batt_pct < 0) return;  // no data yet
+
+    // Get palette for current time of day
+    HudPalette pal;
+    _get_palette(pal);
+
+    uint16_t outline = _rgb565(pal.ink2_r, pal.ink2_g, pal.ink2_b);
+    uint16_t text_col = _rgb565(pal.ink_r, pal.ink_g, pal.ink_b);
+
+    // Fill color based on level
+    uint16_t fill;
+    if (_batt_pct > 50)
+        fill = _rgb565(pal.moss_r, pal.moss_g, pal.moss_b);       // green/moss
+    else if (_batt_pct > 20)
+        fill = _rgb565(pal.acc_r, pal.acc_g, pal.acc_b);          // amber/accent
+    else
+        fill = _rgb565(220, 60, 60);                               // red (universal)
+
+    bool charging = (_charge_state == 1);  // 1=charging
+    bool charged  = (_charge_state == 2);  // 2=charge done
+
+    // Position: bottom-left corner
+    static constexpr int BX = 6;       // left margin
+    static constexpr int BY = 308;     // ~12px from bottom of 320
+    static constexpr int BW = 16;      // body width
+    static constexpr int BH = 9;       // body height
+    static constexpr int NW = 2;       // nub width
+    static constexpr int NH = 3;       // nub height
+
+    // Battery body outline
+    gfx->drawRect(BX, BY, BW, BH, outline);
+    // Nub on right
+    gfx->fillRect(BX + BW, BY + (BH - NH) / 2, NW, NH, outline);
+
+    // Fill bar inside body (1px padding)
+    int max_fill_w = BW - 4;
+    int fill_w = (_batt_pct * max_fill_w + 50) / 100;
+    if (fill_w < 1 && _batt_pct > 0) fill_w = 1;
+    if (fill_w > 0)
+        gfx->fillRect(BX + 2, BY + 2, fill_w, BH - 4, fill);
+
+    // Clear unfilled area (in case sim drew something there)
+    if (fill_w < max_fill_w)
+        gfx->fillRect(BX + 2 + fill_w, BY + 2, max_fill_w - fill_w, BH - 4,
+                       _rgb565(pal.bg_r, pal.bg_g, pal.bg_b));
+
+    // Text: always ink color, suffix indicates charge state
+    gfx->setTextSize(1);
+    gfx->setTextWrap(false);
+    char buf[12];
+    int tx = BX + BW + NW + 4;
+    int ty = BY + 1;
+
+    if (charging)
+        snprintf(buf, sizeof(buf), "%d%%+", _batt_pct);
+    else if (charged)
+        snprintf(buf, sizeof(buf), "%d%%*", _batt_pct);
+    else
+        snprintf(buf, sizeof(buf), "%d%%", _batt_pct);
+    _draw_text(gfx, tx, ty, buf, text_col);
 }

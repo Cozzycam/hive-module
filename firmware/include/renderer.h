@@ -170,4 +170,7 @@ private:
     void _spawn_anim(AnimType type, int px, int py, uint8_t duration);
     void _draw_anims();
     void _draw_one_anim(const Anim& a);
+
+    // Tunnel entrances at connected faces
+    void _draw_tunnel_entrances(const Chamber& ch);
 };
