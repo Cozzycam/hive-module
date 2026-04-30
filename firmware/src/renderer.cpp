@@ -429,6 +429,7 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
     _draw_sorted_sprites(_agent_sprites, _agent_sprite_count, ch);
 
     _draw_tunnel_entrances(ch);
+    if (debug_phero) _draw_phero_overlay(ch);
     _draw_anims();
 
     // Check for milestone leaf growth (queen chamber only)
@@ -1499,5 +1500,42 @@ void Renderer::_draw_tunnel_entrances(const Chamber& ch) {
         }
 
         _mark_dirty(sx, sy, sw, sh);
+    }
+}
+
+// ================================================================
+//  Debug: pheromone heatmap overlay
+// ================================================================
+
+void Renderer::_draw_phero_overlay(const Chamber& ch) {
+    // Draw semi-transparent colored cells:
+    //   Home pheromone = blue channel
+    //   Food pheromone = green channel
+    // Intensity mapped to alpha (skip cells with no pheromone)
+    for (int cy = 0; cy < Cfg::GRID_HEIGHT; cy++) {
+        for (int cx = 0; cx < Cfg::GRID_WIDTH; cx++) {
+            float h = ch.pheromones.raw_home(cx, cy);
+            float f = ch.pheromones.raw_food(cx, cy);
+            if (h < 0.01f && f < 0.01f) continue;
+
+            // Normalize to 0–1 range (clamp at 20 — typical max from boundary sync)
+            float hn = (h > 20.0f) ? 1.0f : h / 20.0f;
+            float fn = (f > 20.0f) ? 1.0f : f / 20.0f;
+
+            // Map to RGB: home=blue, food=green
+            int r = 0;
+            int g = static_cast<int>(fn * 200);
+            int b = static_cast<int>(hn * 200);
+
+            // Alpha blend at ~40% opacity over each pixel in cell
+            // For speed, just draw a single smaller rect at ~50% cell size
+            int px = cx * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 4;
+            int py = cy * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 4;
+            int pw = Cfg::CELL_SIZE / 2;
+            int ph = Cfg::CELL_SIZE / 2;
+
+            uint16_t col = _rgb565(r, g, b);
+            _gfx->fillRect(px, py, pw, ph, col);
+        }
     }
 }

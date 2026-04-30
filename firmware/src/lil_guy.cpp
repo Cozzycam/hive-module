@@ -299,8 +299,6 @@ void LilGuy::_advance_toward_target(Chamber& ch) {
 
 void LilGuy::_on_enter_cell(int cx, int cy, Chamber& ch) {
     if (state == STATE_TO_FOOD) {
-        float intensity = Cfg::BASE_MARKER_INTENSITY * expf(-Cfg::MARKER_STEP_DECAY * steps_walked);
-        ch.deposit_home(cx, cy, intensity);
         steps_walked++;
         chamber_steps++;
     } else if (state == STATE_TO_HOME) {
@@ -610,11 +608,9 @@ void LilGuy::_do_to_home(Chamber& ch) {
         }
         _step_toward_cell(qx, qy, ch);
     } else {
-        int8_t dx, dy;
-        if (_sample_markers(ch, false, dx, dy)) {
-            int cx = cell_x(), cy = cell_y();
-            _set_target_cell(cx + dx, cy + dy, ch);
-        } else if (ch.home_face >= 0) {
+        // No queen — head directly for exit (home markers from wandering
+        // foragers create noise that disrupts the gradient on satellites)
+        if (ch.home_face >= 0) {
             Face hf = static_cast<Face>(ch.home_face);
             _step_toward_cell(Cfg::ENTRY_X[hf], Cfg::ENTRY_Y[hf], ch);
         } else {

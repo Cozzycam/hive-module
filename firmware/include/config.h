@@ -17,7 +17,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 10;
+constexpr uint32_t FW_VERSION = 17;
 
 namespace Cfg {
 
@@ -85,7 +85,8 @@ constexpr Role DEFAULT_BROOD_ROLE = ROLE_MINOR;
 // ---- Pheromones (JohnBuffer-inspired) ----
 constexpr float BASE_MARKER_INTENSITY = 10.0f;
 constexpr float MARKER_STEP_DECAY     = 0.02f;
-constexpr float PHEROMONE_GRID_DECAY  = 0.997f;
+constexpr float PHEROMONE_HOME_DECAY  = 0.992f;  // half-life ~11s at 8tps — stale trails clear fast
+constexpr float PHEROMONE_FOOD_DECAY  = 0.9985f; // half-life ~58s at 8tps — food trails survive return trips
 constexpr float PHEROMONE_MAX         = 20.0f;
 constexpr float SENSE_FLOOR           = 0.02f;
 

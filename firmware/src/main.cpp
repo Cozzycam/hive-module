@@ -233,6 +233,11 @@ static void process_serial_line(const char* line) {
             Serial.printf("Topology overlay: %s\n", topo_overlay ? "ON" : "OFF");
             if (!topo_overlay) renderer.force_full_redraw();
             break;
+        case 'p':
+            renderer.debug_phero = !renderer.debug_phero;
+            Serial.printf("Pheromone overlay: %s\n", renderer.debug_phero ? "ON" : "OFF");
+            if (!renderer.debug_phero) renderer.force_full_redraw();
+            break;
         default:
             break;
         }

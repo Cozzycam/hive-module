@@ -47,17 +47,11 @@ void PheromoneGrid::deposit_food(int x, int y, float amount) {
 }
 
 void PheromoneGrid::decay() {
-    for (int i = 0; i < Cfg::GRID_CELLS; i++) {
-        float v = _home[i];
-        if (v > 0.0f) {
-            v *= Cfg::PHEROMONE_GRID_DECAY;
-            _home[i] = (v > Cfg::SENSE_FLOOR) ? v : 0.0f;
-        }
-    }
+    // Home layer unused — workers navigate by topology (home_face / queen position)
     for (int i = 0; i < Cfg::GRID_CELLS; i++) {
         float v = _food[i];
         if (v > 0.0f) {
-            v *= Cfg::PHEROMONE_GRID_DECAY;
+            v *= Cfg::PHEROMONE_FOOD_DECAY;
             _food[i] = (v > Cfg::SENSE_FLOOR) ? v : 0.0f;
         }
     }

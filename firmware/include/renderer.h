@@ -80,6 +80,7 @@ public:
     void draw(const Chamber& ch, float lerp_t);
     void flush();
     void force_full_redraw() { _needs_full_redraw = true; }
+    bool debug_phero = false;  // pheromone overlay (toggle via serial 'p')
 
     // Feed drained events to create animations
     void receive_events(const Event* events, int count, const Chamber& ch);
@@ -173,4 +174,7 @@ private:
 
     // Tunnel entrances at connected faces
     void _draw_tunnel_entrances(const Chamber& ch);
+
+    // Debug: pheromone overlay
+    void _draw_phero_overlay(const Chamber& ch);
 };

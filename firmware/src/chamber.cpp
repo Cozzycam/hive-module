@@ -30,11 +30,8 @@ void Chamber::tick(float dt) {
     // Pheromone decay
     pheromones.decay();
 
-    // Queen beacon
-    if (has_queen && queen_obj.alive) {
-        pheromones.deposit_home(queen_obj.x, queen_obj.y,
-                                Cfg::BASE_MARKER_INTENSITY);
-    }
+    // Queen beacon — food pheromone only (home direction is known via topology)
+    // (no home beacon needed; workers navigate by queen position directly)
 
     // Queen tick
     if (has_queen) queen_obj.tick(*this, dt);

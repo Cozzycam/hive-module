@@ -317,9 +317,8 @@ void Coordinator::_send_boundary_pheromones(uint32_t tick_num) {
         for (int i = 0; i < n; i++) {
             int bx, by;
             boundary_cell_xy(f, i, bx, by);
-            float h = chamber.pheromones.raw_home(bx, by);
             float fd = chamber.pheromones.raw_food(bx, by);
-            msg.data[i * 2]     = static_cast<uint8_t>(fminf(255.0f, h * 12.75f));
+            msg.data[i * 2]     = 0;  // home slot unused
             msg.data[i * 2 + 1] = static_cast<uint8_t>(fminf(255.0f, fd * 12.75f));
         }
 
@@ -346,8 +345,6 @@ void Coordinator::_apply_boundary_pheromones() {
         for (int i = 0; i < n; i++) {
             int bx, by;
             boundary_cell_xy(f, i, bx, by);
-            if (bd.home[i] > 0.0f)
-                chamber.pheromones.deposit_home(bx, by, bd.home[i]);
             if (bd.food[i] > 0.0f)
                 chamber.pheromones.deposit_food(bx, by, bd.food[i]);
         }
@@ -400,8 +397,9 @@ void Coordinator::_check_edge_crossings(EventBus& bus, uint32_t tick_num) {
         if (face < 0 || chamber.entries[face] < 0) continue;
 
         // Anti-bounce: empty TO_FOOD workers can't retreat through home_face
+        // until they've explored a bit (prevents immediate bounce-back on arrival)
         if (w.state == STATE_TO_FOOD && w.food_carried <= 0.0f
-            && face == chamber.home_face) continue;
+            && face == chamber.home_face && w.chamber_steps < 16) continue;
 
         const Neighbour& nb = topology_neighbour(static_cast<Face>(face));
         if (!nb.present) continue;
@@ -454,12 +452,11 @@ void Coordinator::_check_edge_crossings(EventBus& bus, uint32_t tick_num) {
             Serial.printf("[handoff] OUT worker %d via face %s to 0x%04X (state=%d food=%.1f)\n",
                 i, face_letter(face), nb.module_id, w.state, w.food_carried);
 
-        // Phantom pheromone deposit
-        int ex = Cfg::ENTRY_X[face], ey = Cfg::ENTRY_Y[face];
-        if (w.state == STATE_TO_HOME && w.food_carried > 0)
+        // Phantom pheromone deposit — food trail only
+        if (w.state == STATE_TO_HOME && w.food_carried > 0) {
+            int ex = Cfg::ENTRY_X[face], ey = Cfg::ENTRY_Y[face];
             chamber.pheromones.deposit_food(ex, ey, Cfg::BASE_MARKER_INTENSITY * 0.5f);
-        else
-            chamber.pheromones.deposit_home(ex, ey, Cfg::BASE_MARKER_INTENSITY * 0.5f);
+        }
 
         // Fire events
         for (int s = 0; s < sent_count; s++) {
@@ -517,11 +514,11 @@ void Coordinator::_place_arrival(const LilGuyTransfer& t, EventBus& bus,
         first_idx[af] = idx;
     }
 
-    int entry_x = Cfg::ENTRY_X[af], entry_y = Cfg::ENTRY_Y[af];
-    if (w.state == STATE_TO_HOME && w.food_carried > 0)
+    // Phantom pheromone deposit — food trail only
+    if (w.state == STATE_TO_HOME && w.food_carried > 0) {
+        int entry_x = Cfg::ENTRY_X[af], entry_y = Cfg::ENTRY_Y[af];
         chamber.pheromones.deposit_food(entry_x, entry_y, Cfg::BASE_MARKER_INTENSITY * 0.5f);
-    else
-        chamber.pheromones.deposit_home(entry_x, entry_y, Cfg::BASE_MARKER_INTENSITY * 0.5f);
+    }
 
     Serial.printf("[handoff] IN slot %d from 0x%04X face %s (state=%d food=%.1f%s)\n",
         idx, t.sender_id, face_letter(af), t.state, t.food_carried,
