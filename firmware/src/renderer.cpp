@@ -901,7 +901,7 @@ void Renderer::_dim_framebuffer(float brightness) {
 static bool _sprite_cmp(const SpriteDraw& a, const SpriteDraw& b) {
     if (a.sort_y != b.sort_y) return a.sort_y < b.sort_y;  // smaller Y = further back
     if (a.size_px != b.size_px) return a.size_px < b.size_px;  // larger sprite drawn on top
-    return a.entity_idx < b.entity_idx;  // stable tiebreaker
+    return a.render_x < b.render_x;  // stable tiebreaker (x doesn't shuffle between frames)
 }
 
 void Renderer::_build_floor_sprites(const Chamber& ch) {
@@ -1076,6 +1076,7 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
         sd.kind      = SK_WORKER;
         sd.flags     = (w.facing_dx < -0.1f) ? 1 : 0;
         sd.entity_idx = i;
+        sd.tint_seed = w.tint_seed;
     }
 
     // Queen
@@ -1095,6 +1096,7 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
         sd.kind      = SK_QUEEN;
         sd.flags     = 0;
         sd.entity_idx = -1;
+        sd.tint_seed = 0;
     }
 
     std::stable_sort(_agent_sprites, _agent_sprites + _agent_sprite_count, _sprite_cmp);
@@ -1151,8 +1153,8 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
             const SpriteRef* spr = _get_worker_sprite(w.role, w.is_pioneer, frame);
             if (!spr) spr = _get_worker_sprite(w.role, w.is_pioneer, LG_FRAME_BASE);
 
-            _draw_sprite_scaled(sd.render_x, sd.render_y, spr->data,
-                                spr->w, spr->h, scale, flip);
+            _draw_sprite_scaled_tinted(sd.render_x, sd.render_y, spr->data,
+                                spr->w, spr->h, scale, flip, sd.tint_seed);
 
             // Food-share receiver pulse: warm dot during first half of animation
             if (w.anim_type == LG_ANIM_FOOD_SHARE_RECEIVER
@@ -1209,7 +1211,30 @@ void Renderer::_draw_sprite_scaled(int cx, int cy, const uint16_t* data,
     int oy = cy - dh / 2;
     _mark_dirty(ox, oy, dw, dh);
 
+    _draw_sprite_scaled_tinted(cx, cy, data, sw, sh, scale, flip_h, 0);
+}
+
+void Renderer::_draw_sprite_scaled_tinted(int cx, int cy, const uint16_t* data,
+                                           int sw, int sh, float scale,
+                                           bool flip_h, uint8_t tint_seed) {
+    int dw = static_cast<int>(sw * scale + 0.5f);
+    int dh = static_cast<int>(sh * scale + 0.5f);
+    if (dw > MAX_SCALED_DIM) dw = MAX_SCALED_DIM;
+    if (dh > MAX_SCALED_DIM) dh = MAX_SCALED_DIM;
+
+    int ox = cx - dw / 2;
+    int oy = cy - dh / 2;
+    _mark_dirty(ox, oy, dw, dh);
+
     bool tint = (_nf > 0.01f);
+    // Per-worker RGB offsets from seed: 3 independent subtle shifts
+    int tint_r = 0, tint_g = 0, tint_b = 0;
+    if (tint_seed != 0) {
+        tint_r = (int)(tint_seed & 0x07) - 3;         // -3..+4
+        tint_g = (int)((tint_seed >> 3) & 0x03) - 1;  // -1..+2
+        tint_b = (int)((tint_seed >> 5) & 0x07) - 3;  // -3..+4
+    }
+    bool has_tint = (tint_r | tint_g | tint_b) != 0;
     uint16_t row_buf[MAX_SCALED_DIM];
 
     for (int dy = 0; dy < dh; dy++) {
@@ -1217,12 +1242,9 @@ void Renderer::_draw_sprite_scaled(int cx, int cy, const uint16_t* data,
         if (py < 0 || py >= SCREEN_H) continue;
         int sy = dy * sh / dh;
 
-        // Clamp horizontal span to screen
         int dx_start = (ox < 0) ? -ox : 0;
         int dx_end   = (ox + dw > SCREEN_W) ? (SCREEN_W - ox) : dw;
 
-        // Build scanline and blit contiguous opaque runs
-        // Uses draw16bitRGBBitmap which respects display rotation
         int run_start = -1;
         for (int dx = dx_start; dx < dx_end; dx++) {
             int sx = flip_h ? (sw - 1 - dx * sw / dw) : (dx * sw / dw);
@@ -1236,6 +1258,15 @@ void Renderer::_draw_sprite_scaled(int cx, int cy, const uint16_t* data,
                 continue;
             }
             if (tint) c = tint_night(c, _nf, 0.4f);
+            if (has_tint) {
+                int r5 = (c >> 11) & 0x1F;
+                int g6 = (c >> 5)  & 0x3F;
+                int b5 =  c        & 0x1F;
+                r5 += tint_r; if (r5 < 0) r5 = 0; if (r5 > 31) r5 = 31;
+                g6 += tint_g; if (g6 < 0) g6 = 0; if (g6 > 63) g6 = 63;
+                b5 += tint_b; if (b5 < 0) b5 = 0; if (b5 > 31) b5 = 31;
+                c = (r5 << 11) | (g6 << 5) | b5;
+            }
             row_buf[dx] = c;
             if (run_start < 0) run_start = dx;
         }

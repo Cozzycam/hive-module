@@ -25,6 +25,7 @@ void Sim::init() {
         for (int i = 0; i < 3; i++)
             ch.add_lil_guy(qx - 1 + i, qy + 5, ROLE_MAJOR, false);
         coordinator.colony.population = ch.lil_guy_count;
+        coordinator.colony.worker_census = ch.lil_guy_count;
     }
     // Satellite: chamber is already empty (no queen, no workers, no brood)
 }

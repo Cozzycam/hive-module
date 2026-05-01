@@ -72,6 +72,7 @@ struct SpriteDraw {
     SpriteKind kind;
     uint8_t  flags;       // bit 0 = flip_h
     int16_t  entity_idx;  // index into sim array
+    uint8_t  tint_seed;   // per-entity colour variation seed (workers only)
 };
 
 class Renderer {
@@ -163,6 +164,9 @@ private:
     void _draw_sprite_scaled(int cx, int cy, const uint16_t* data,
                              int sw, int sh, float scale,
                              bool flip_h = false);
+    void _draw_sprite_scaled_tinted(int cx, int cy, const uint16_t* data,
+                                    int sw, int sh, float scale,
+                                    bool flip_h, uint8_t tint_seed);
 
     // Kept for boot splash compatibility
     void _draw_queen(const Chamber& ch);

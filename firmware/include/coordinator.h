@@ -69,4 +69,5 @@ private:
     TunnelPending _tunnel_pending[MAX_TUNNEL_PENDING];
     void _place_arrival(const LilGuyTransfer& t, EventBus& bus, uint32_t tick_num,
                         int* first_idx_per_face);
+
 };

@@ -133,6 +133,7 @@ void Coordinator::_aggregate_colony_stats() {
         }
     }
 #endif
+
     colony.population = local_pop + remote_pop;
 
     int gatherers = 0;

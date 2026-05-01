@@ -45,6 +45,7 @@ void Chamber::tick(float dt) {
             int8_t bx = brood[i].x, by = brood[i].y;
             add_lil_guy(bx, by, brood[i].role, pioneer);
             colony->total_workers_born++;
+            colony->worker_census++;
             if (!queen_obj.founding_done) queen_obj.founding_done = true;
             Event ev; ev.type = EVT_YOUNG_HATCHED; ev.tick = tick_num;
             ev.young_hatched = {STAGE_PUPA, 0xFF, bx, by};

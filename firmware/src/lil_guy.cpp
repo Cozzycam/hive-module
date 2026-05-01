@@ -49,6 +49,7 @@ void LilGuy::init(int8_t px, int8_t py, Role c, bool pioneer) {
     sleep_cooldown_ms = 0;
     zoomie_target = -1;
     zoomie_ticks = 0;
+    tint_seed = static_cast<uint8_t>(g_rng.rand_int(1, 255));
 
     role = c;
     is_pioneer = pioneer;
@@ -76,6 +77,7 @@ void LilGuy::tick(Chamber& ch, float dt) {
 
     if (millis() - born_at_ms >= lifespan_ms) {
         alive = false;
+        if (ch.colony->worker_census > 0) ch.colony->worker_census--;
         Event ev; ev.type = EVT_LIL_GUY_DIED; ev.tick = ch.tick_num;
         ev.position = {static_cast<int8_t>(cell_x()), static_cast<int8_t>(cell_y())};
         ch.emit(ev);
@@ -92,6 +94,7 @@ void LilGuy::tick(Chamber& ch, float dt) {
         hunger += dt / (Cfg::WORKER_SURVIVAL_DAYS * Cfg::SECS_PER_DAY);
         if (hunger >= 1.0f) {
             alive = false;
+            if (ch.colony->worker_census > 0) ch.colony->worker_census--;
             Event ev; ev.type = EVT_LIL_GUY_DIED; ev.tick = ch.tick_num;
             ev.position = {static_cast<int8_t>(cell_x()), static_cast<int8_t>(cell_y())};
             ch.emit(ev);
@@ -767,10 +770,11 @@ void LilGuy::_do_idle(Chamber& ch) {
                 }
             }
 
-            // Queen is a huddle target only at dusk/night
-            if (queen_pull) {
+            // Queen as huddle target: always available, stronger pull at dusk/night
+            if (ch.has_queen && ch.queen_obj.alive) {
+                float queen_chance = queen_pull ? 0.4f : 0.2f;
                 int d = abs(ch.queen_obj.x - cx) + abs(ch.queen_obj.y - cy);
-                if (d > 0 && (d < best_dist || g_rng.rand_float() < 0.4f)) {
+                if (d > 0 && (d < best_dist || g_rng.rand_float() < queen_chance)) {
                     tx = ch.queen_obj.x; ty = ch.queen_obj.y;
                     best_dist = d;
                     target_is_queen = true;

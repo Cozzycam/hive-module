@@ -29,6 +29,7 @@ struct __attribute__((packed)) LilGuyTransfer {
     uint8_t  idle_microstate;
     uint8_t  sleeping;
     uint32_t sleep_until_ms;
+    uint8_t  tint_seed;
 };
 
 static_assert(sizeof(LilGuyTransfer) <= 250, "LilGuyTransfer exceeds ESP-NOW max payload");
@@ -60,6 +61,7 @@ inline void lil_guy_to_transfer(const LilGuy& w, LilGuyTransfer& t,
     t.idle_microstate = w.idle_microstate;
     t.sleeping        = w.sleeping ? 1 : 0;
     t.sleep_until_ms  = w.sleep_until_ms;
+    t.tint_seed       = w.tint_seed;
 }
 
 // Deserialize transfer payload into a LilGuy at a given entry position.
@@ -123,6 +125,7 @@ inline void transfer_to_lil_guy(const LilGuyTransfer& t, LilGuy& w,
     w.stack_cooldown_ms    = 0;
     w.zoomie_target        = -1;
     w.zoomie_ticks         = 0;
+    w.tint_seed            = t.tint_seed;
     w.last_cell_x          = static_cast<int8_t>(entry_x);
     w.last_cell_y          = static_cast<int8_t>(entry_y);
 }

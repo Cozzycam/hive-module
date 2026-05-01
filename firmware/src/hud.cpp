@@ -396,7 +396,7 @@ void hud_draw(Arduino_Canvas* gfx, const Chamber& ch) {
     // Recompute target values once per second
     if (now - _last_update_ms >= 1000) {
         _last_update_ms = now;
-        _target_pop = ch.colony->population + (ch.has_queen && ch.queen_obj.alive ? 1 : 0);
+        _target_pop = ch.colony->worker_census + (ch.has_queen && ch.queen_obj.alive ? 1 : 0);
         _target_age_days = _colony_age_days();
         _target_food_days = _food_days_remaining(ch);
         _phase = _get_phase(_target_pop);
@@ -510,8 +510,18 @@ void hud_draw(Arduino_Canvas* gfx, const Chamber& ch) {
 
     _draw_text(gfx, time_x, text_y, buf, ink);
     _draw_text(gfx, phase_x, text_y, phase_str, ink2);
-    _draw_pulse_dot(gfx, dot_cx, text_y + 4, bg_565,
-                    pal.moss_r, pal.moss_g, pal.moss_b);
+    // Pulse dot: green = NTP + weather synced, dim grey = no sync
+    if (g_tod.ntp_synced && g_weather.valid) {
+        _draw_pulse_dot(gfx, dot_cx, text_y + 4, bg_565,
+                        pal.moss_r, pal.moss_g, pal.moss_b);
+    } else {
+        // Static dim dot — not synced
+        uint16_t dim = _rgb565(80, 80, 80);
+        for (int dy = -2; dy <= 2; dy++)
+            for (int dx = -2; dx <= 2; dx++)
+                if (dx * dx + dy * dy <= 4)
+                    gfx->drawPixel(dot_cx + dx, text_y + 4 + dy, dim);
+    }
 }
 
 // ================================================================
