@@ -118,8 +118,11 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
 }
 
 void Coordinator::_aggregate_colony_stats() {
-    // Local population
+    // Local population + workers in tunnel transit
     uint16_t local_pop = chamber.lil_guy_count;
+    for (int i = 0; i < MAX_TUNNEL_PENDING; i++) {
+        if (_tunnel_pending[i].active) local_pop++;
+    }
 
     // Queen: add remote satellite populations
     uint16_t remote_pop = 0;
@@ -166,7 +169,11 @@ void Coordinator::_broadcast_population() {
     PopSyncMessage msg;
     msg.msg_type   = TOPO_POP_SYNC;
     msg.sender_id  = topology_my_id();
-    msg.population = chamber.lil_guy_count;
+    uint16_t pop = chamber.lil_guy_count;
+    for (int i = 0; i < MAX_TUNNEL_PENDING; i++) {
+        if (_tunnel_pending[i].active) pop++;
+    }
+    msg.population = pop;
 
     for (int f = 0; f < FACE_COUNT; f++) {
         if (chamber.entries[f] >= 0) {

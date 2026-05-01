@@ -177,4 +177,7 @@ private:
 
     // Debug: pheromone overlay
     void _draw_phero_overlay(const Chamber& ch);
+
+    // Weather particle effects
+    void _draw_weather();
 };

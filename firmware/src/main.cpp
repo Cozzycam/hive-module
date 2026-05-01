@@ -27,6 +27,7 @@
 #include "touch.h"
 #include "events.h"
 #include "time_of_day.h"
+#include "weather.h"
 #include "hud.h"
 #include "topology.h"
 #include <WiFi.h>
@@ -191,6 +192,34 @@ static void process_serial_line(const char* line) {
         enter_ota_mode();
     } else if (strcmp(line, "push") == 0) {
         ota_push();
+    } else if (strcmp(line, "weather") == 0) {
+        if (g_weather.valid) {
+            static const char* wx[] = {"clear","partly cloudy","overcast","fog","drizzle","rain","heavy rain","snow","thunderstorm"};
+            static const char* tp[] = {"freezing","cold","mild","warm","hot","extreme heat"};
+            static const char* wn[] = {"calm","breezy","windy","high wind","storm"};
+            Serial.printf("[weather] %s, %.1fC (%s), wind %.0f km/h (%s)\n",
+                wx[g_weather.condition], g_weather.temperature_c, tp[g_weather.temp],
+                g_weather.wind_speed_kmh, wn[g_weather.wind]);
+        } else {
+            Serial.println("[weather] no data yet");
+        }
+    } else if (strncmp(line, "wx ", 3) == 0) {
+        const char* arg = line + 3;
+        struct { const char* name; WeatherCondition c; } wxmap[] = {
+            {"clear", WX_CLEAR}, {"cloudy", WX_PARTLY_CLOUDY},
+            {"overcast", WX_OVERCAST}, {"fog", WX_FOG},
+            {"drizzle", WX_DRIZZLE}, {"rain", WX_RAIN},
+            {"heavy", WX_HEAVY_RAIN}, {"snow", WX_SNOW},
+            {"storm", WX_THUNDERSTORM},
+        };
+        for (auto& w : wxmap) {
+            if (strcmp(arg, w.name) == 0) {
+                g_weather.condition = w.c;
+                g_weather.valid = true;
+                Serial.printf("[weather] forced: %s\n", w.name);
+                break;
+            }
+        }
     } else if (strcmp(line, "topology") == 0) {
         sim.coordinator.print_topology();
     } else if (strlen(line) == 1) {
@@ -309,6 +338,7 @@ void loop() {
     if (last_sim_ms == 0) last_sim_ms = millis();
 
     topology_poll();
+    weather_tick();
 
     // Satellite: check for OTA cascade from queen
     if (!sim.coordinator.is_queen()) {

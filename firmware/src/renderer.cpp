@@ -14,6 +14,8 @@
 #include "palette.h"
 #include "sprites.h"
 #include "time_of_day.h"
+#include "weather.h"
+#include "rng.h"
 #include <pgmspace.h>
 #include <algorithm>
 #include <cmath>
@@ -431,6 +433,7 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
     _draw_tunnel_entrances(ch);
     if (debug_phero) _draw_phero_overlay(ch);
     _draw_anims();
+    _draw_weather();
 
     // Check for milestone leaf growth (queen chamber only)
     if (ch.has_queen) _check_milestone(ch);
@@ -1536,6 +1539,182 @@ void Renderer::_draw_phero_overlay(const Chamber& ch) {
 
             uint16_t col = _rgb565(r, g, b);
             _gfx->fillRect(px, py, pw, ph, col);
+        }
+    }
+}
+
+// ================================================================
+//  Weather particle effects — persistent particles
+// ================================================================
+
+static constexpr int WX_MAX_DROPS = 50;
+static struct { float x, y, vy; } _wx_drops[WX_MAX_DROPS];
+static int _wx_drop_count = 0;
+static constexpr int WX_MAX_SNOW = 25;
+static struct { float x, y, phase; } _wx_snow[WX_MAX_SNOW];
+static int _wx_snow_count = 0;
+static constexpr int WX_FOG_WISPS = 8;
+static float _wx_fog_y[WX_FOG_WISPS];
+static float _wx_fog_x[WX_FOG_WISPS];
+static float _wx_fog_hw[WX_FOG_WISPS];
+// Pre-computed pixel offsets per wisp (stable, no flicker)
+static constexpr int WX_FOG_PTS = 40;
+static int8_t _wx_fog_dx[WX_FOG_WISPS][WX_FOG_PTS];
+static int8_t _wx_fog_dy[WX_FOG_WISPS][WX_FOG_PTS];
+static WeatherCondition _wx_prev = WX_CLEAR;
+static int _wx_lightning_cooldown = 0;
+static int _wx_lightning_flash = 0;   // frames remaining for current flash
+static int _wx_flash_x = 0;          // lightning bolt x position
+
+static void _wx_init_drops(int count, float vy_min, float vy_max) {
+    _wx_drop_count = count;
+    for (int i = 0; i < count; i++) {
+        _wx_drops[i].x  = g_rng.rand_float() * SCREEN_W;
+        _wx_drops[i].y  = g_rng.rand_float() * SCREEN_H;
+        _wx_drops[i].vy = vy_min + g_rng.rand_float() * (vy_max - vy_min);
+    }
+}
+
+static void _wx_init_snow(int count) {
+    _wx_snow_count = count;
+    for (int i = 0; i < count; i++) {
+        _wx_snow[i].x     = g_rng.rand_float() * SCREEN_W;
+        _wx_snow[i].y     = g_rng.rand_float() * SCREEN_H;
+        _wx_snow[i].phase = g_rng.rand_float() * 6.28f;
+    }
+}
+
+static void _wx_init_fog() {
+    for (int i = 0; i < WX_FOG_WISPS; i++) {
+        _wx_fog_y[i]  = g_rng.rand_float() * SCREEN_H;
+        _wx_fog_x[i]  = g_rng.rand_float() * SCREEN_W * 1.5f - SCREEN_W * 0.25f;
+        _wx_fog_hw[i] = 90.0f + g_rng.rand_float() * 80.0f;
+        // Pre-compute scattered pixel offsets (Gaussian-ish via sum of randoms)
+        int hw = (int)_wx_fog_hw[i];
+        int hh = 8 + (i & 3) * 3;
+        for (int p = 0; p < WX_FOG_PTS; p++) {
+            // Sum two randoms for softer distribution (peaks at center)
+            _wx_fog_dx[i][p] = (int8_t)((g_rng.rand_int(-hw, hw) + g_rng.rand_int(-hw, hw)) / 2);
+            _wx_fog_dy[i][p] = (int8_t)((g_rng.rand_int(-hh, hh) + g_rng.rand_int(-hh, hh)) / 2);
+        }
+    }
+}
+
+void Renderer::_draw_weather() {
+    if (!g_weather.valid) return;
+
+    // Re-init particles when condition changes
+    WeatherCondition wx = g_weather.condition;
+    if (wx != _wx_prev) {
+        _wx_prev = wx;
+        _wx_drop_count = 0;
+        _wx_snow_count = 0;
+        _wx_lightning_cooldown = 0;
+        _wx_lightning_flash = 0;
+        switch (wx) {
+        case WX_DRIZZLE:    _wx_init_drops(12, 2.0f, 3.0f); break;
+        case WX_RAIN:       _wx_init_drops(35, 4.0f, 6.0f); break;
+        case WX_HEAVY_RAIN: _wx_init_drops(50, 7.0f, 10.0f); break;
+        case WX_THUNDERSTORM: _wx_init_drops(40, 5.0f, 7.0f); break;
+        case WX_SNOW:       _wx_init_snow(20); break;
+        case WX_FOG:        _wx_init_fog(); break;
+        default: break;
+        }
+    }
+
+    // --- Rain / Drizzle / Heavy Rain ---
+    if (wx == WX_DRIZZLE || wx == WX_RAIN || wx == WX_HEAVY_RAIN ||
+        (wx == WX_THUNDERSTORM && _wx_drop_count > 0)) {
+        uint16_t col;
+        int len;
+        if (wx == WX_DRIZZLE) {
+            col = _rgb565(150, 165, 190); len = 2;
+        } else if (wx == WX_RAIN) {
+            col = _rgb565(130, 145, 180); len = 3;
+        } else {
+            col = _rgb565(110, 125, 170); len = 4;
+        }
+        for (int i = 0; i < _wx_drop_count; i++) {
+            auto& d = _wx_drops[i];
+            d.y += d.vy;
+            d.x += 0.4f;  // slight wind drift
+            if (d.y > SCREEN_H + 5) {
+                d.y = g_rng.rand_float() * -30.0f;
+                d.x = g_rng.rand_float() * SCREEN_W;
+            }
+            if (d.x > SCREEN_W) d.x -= SCREEN_W;
+            int px = (int)d.x, py = (int)d.y;
+            if (py >= 0 && py < SCREEN_H - len)
+                _gfx->drawFastVLine(px, py, len, col);
+        }
+    }
+
+    // --- Snow ---
+    if (wx == WX_SNOW) {
+        uint16_t col = _rgb565(215, 220, 230);
+        for (int i = 0; i < _wx_snow_count; i++) {
+            auto& s = _wx_snow[i];
+            s.y += 1.5f;                             // gentle fall
+            s.x += sinf(s.phase) * 0.4f;             // gentle wobble
+            s.phase += 0.05f;
+            if (s.y > SCREEN_H + 2) {
+                s.y = -2.0f;
+                s.x = g_rng.rand_float() * SCREEN_W;
+            }
+            if (s.x < 0) s.x += SCREEN_W;
+            if (s.x >= SCREEN_W) s.x -= SCREEN_W;
+            int px = (int)s.x, py = (int)s.y;
+            if (py >= 0 && py < SCREEN_H - 1)
+                _gfx->fillRect(px, py, 2, 2, col);
+        }
+    }
+
+    // --- Fog ---
+    if (wx == WX_FOG) {
+        uint16_t col1 = _rgb565(180, 175, 162);
+        uint16_t col2 = _rgb565(165, 162, 155);
+        for (int i = 0; i < WX_FOG_WISPS; i++) {
+            _wx_fog_x[i] += 0.10f + i * 0.015f;  // very slow drift
+            if (_wx_fog_x[i] > SCREEN_W + _wx_fog_hw[i])
+                _wx_fog_x[i] = -_wx_fog_hw[i] * 2;
+
+            int cx = (int)_wx_fog_x[i];
+            int cy = (int)_wx_fog_y[i];
+            uint16_t col = (i & 1) ? col1 : col2;
+            // Draw pre-computed pattern (stable, no flicker)
+            for (int p = 0; p < WX_FOG_PTS; p++) {
+                int px = cx + _wx_fog_dx[i][p];
+                int py = cy + _wx_fog_dy[i][p];
+                if (px >= 0 && px < SCREEN_W && py >= 0 && py < SCREEN_H)
+                    _gfx->drawPixel(px, py, col);
+            }
+        }
+    }
+
+    // --- Thunderstorm lightning ---
+    if (wx == WX_THUNDERSTORM) {
+        if (_wx_lightning_flash > 0) {
+            // Active flash — draw a jagged bolt + ambient glow
+            _wx_lightning_flash--;
+            uint16_t bolt_col = _rgb565(240, 240, 255);
+            uint16_t glow_col = _rgb565(200, 200, 230);
+            // Zigzag bolt
+            int bx = _wx_flash_x;
+            for (int sy = 0; sy < SCREEN_H; sy += 12) {
+                int ey = sy + 10;
+                if (ey > SCREEN_H) ey = SCREEN_H;
+                int ex = bx + g_rng.rand_int(-8, 8);
+                _gfx->drawLine(bx, sy, ex, ey, bolt_col);
+                _gfx->drawLine(bx + 1, sy, ex + 1, ey, glow_col);
+                bx = ex;
+            }
+        } else {
+            _wx_lightning_cooldown--;
+            if (_wx_lightning_cooldown <= 0 && g_rng.rand_float() < 0.008f) {
+                _wx_lightning_flash = 3;   // flash for 3 frames (~100ms)
+                _wx_flash_x = g_rng.rand_int(40, SCREEN_W - 40);
+                _wx_lightning_cooldown = 90;  // minimum 3 seconds between bolts
+            }
         }
     }
 }

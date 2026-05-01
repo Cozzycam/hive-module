@@ -8,6 +8,7 @@
  */
 #include "hud.h"
 #include "time_of_day.h"
+#include "weather.h"
 #include "config.h"
 #include "pin_config.h"
 #include <Preferences.h>
@@ -481,8 +482,13 @@ void hud_draw(Arduino_Canvas* gfx, const Chamber& ch) {
     x += 5;
     x += _draw_text(gfx, x, text_y, "days food", ink2);
 
-    // --- Right-aligned: time + day phase + pulse dot ---
+    // --- Right-aligned: weather + time + day phase + pulse dot ---
     static const char* DAY_PHASE_LABELS[] = { "night", "dawn", "day", "dusk" };
+    static const char* WX_LABELS[] = {
+        "clear", "cloudy", "overcast", "fog",
+        "drizzle", "rain", "heavy rain", "snow", "storm"
+    };
+
     const char* phase_str = DAY_PHASE_LABELS[g_tod.phase];
     snprintf(buf, sizeof(buf), "%d:%02d", g_tod.local_hour, g_tod.local_minute);
 
@@ -493,6 +499,14 @@ void hud_draw(Arduino_Canvas* gfx, const Chamber& ch) {
     int time_w = _text_width(buf);
     int phase_x = dot_cx - 6 - phase_w;
     int time_x = phase_x - 6 - time_w;
+
+    // Weather label (left of time)
+    if (g_weather.valid) {
+        const char* wx_str = WX_LABELS[g_weather.condition];
+        int wx_w = _text_width(wx_str);
+        int wx_x = time_x - 8 - wx_w;
+        _draw_text(gfx, wx_x, text_y, wx_str, ink2);
+    }
 
     _draw_text(gfx, time_x, text_y, buf, ink);
     _draw_text(gfx, phase_x, text_y, phase_str, ink2);

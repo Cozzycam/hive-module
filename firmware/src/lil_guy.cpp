@@ -721,13 +721,20 @@ void LilGuy::_do_idle(Chamber& ch) {
         }
     }
 
+    // Time-of-day determines idle style:
+    //   Day/Dawn  — wander freely, no queen bias
+    //   Dusk      — drift toward queen, huddle near her
+    //   Night     — huddle around queen, sleep
+    bool queen_pull = ch.has_queen && ch.queen_obj.alive
+                   && (g_tod.phase == PHASE_DUSK || g_tod.phase == PHASE_NIGHT);
+
     // True rest: drift and huddle need new target cells
     if (idle_ticks_remaining > 0) {
         if (idle_microstate == 1) {
-            // Random drift with queen bias
+            // Drift — queen bias only at dusk/night
             int cx = cell_x(), cy = cell_y();
             int dx, dy;
-            if (ch.has_queen && g_rng.rand_float() < 0.5f) {
+            if (queen_pull && g_rng.rand_float() < 0.5f) {
                 dx = (ch.queen_obj.x > cx) ? 1 : ((ch.queen_obj.x < cx) ? -1 : 0);
                 dy = (ch.queen_obj.y > cy) ? 1 : ((ch.queen_obj.y < cy) ? -1 : 0);
             } else {
@@ -741,8 +748,7 @@ void LilGuy::_do_idle(Chamber& ch) {
 
             _set_target_cell(cx + dx, cy + dy, ch);
         } else if (idle_microstate == 3) {
-            // Huddle: drift toward nearest idle neighbor or queen,
-            // but stop when adjacent — orbit rather than overlap
+            // Huddle: drift toward nearest idle neighbor (and queen at dusk/night)
             int cx = cell_x(), cy = cell_y();
             int best_dist = 999;
             int tx = cx, ty = cy;
@@ -761,8 +767,8 @@ void LilGuy::_do_idle(Chamber& ch) {
                 }
             }
 
-            // Queen is also a huddle target (preferred if close)
-            if (ch.has_queen && ch.queen_obj.alive) {
+            // Queen is a huddle target only at dusk/night
+            if (queen_pull) {
                 int d = abs(ch.queen_obj.x - cx) + abs(ch.queen_obj.y - cy);
                 if (d > 0 && (d < best_dist || g_rng.rand_float() < 0.4f)) {
                     tx = ch.queen_obj.x; ty = ch.queen_obj.y;
@@ -774,17 +780,14 @@ void LilGuy::_do_idle(Chamber& ch) {
             // Close enough? Orbit tangentially instead of piling on
             int comfort = target_is_queen ? (Cfg::QUEEN_BODY_HALF_W + 1) : 2;
             if (best_dist <= comfort) {
-                // Tangential drift: perpendicular to the approach direction
                 int dx = (tx > cx) ? 1 : ((tx < cx) ? -1 : 0);
                 int dy = (ty > cy) ? 1 : ((ty < cy) ? -1 : 0);
-                // Rotate 90 degrees (pick one direction randomly)
                 int tdx, tdy;
                 if (g_rng.rand_float() < 0.5f) { tdx = -dy; tdy = dx; }
                 else                            { tdx = dy;  tdy = -dx; }
                 if (tdx == 0 && tdy == 0) tdx = g_rng.rand_sign();
                 _set_target_cell(cx + tdx, cy + tdy, ch);
             } else {
-                // Approach
                 int dx = (tx > cx) ? 1 : ((tx < cx) ? -1 : 0);
                 int dy = (ty > cy) ? 1 : ((ty < cy) ? -1 : 0);
                 if (dx != 0 && dy != 0) {
@@ -800,7 +803,7 @@ void LilGuy::_do_idle(Chamber& ch) {
     // Wander (non-resting idle, legacy path)
     int cx = cell_x(), cy = cell_y();
     int dx, dy;
-    if (ch.has_queen && g_rng.rand_float() < 0.5f) {
+    if (queen_pull && g_rng.rand_float() < 0.5f) {
         dx = (ch.queen_obj.x > cx) ? 1 : ((ch.queen_obj.x < cx) ? -1 : 0);
         dy = (ch.queen_obj.y > cy) ? 1 : ((ch.queen_obj.y < cy) ? -1 : 0);
     } else {
