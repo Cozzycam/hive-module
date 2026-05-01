@@ -13,7 +13,7 @@ struct Queen {
     bool   founding_done = false;   // one-way: true after founding eggs laid
     float  egg_accum    = 0.0f;     // fractional egg accumulator
 
-    bool needs_feeding() const { return hunger > 0.3f; }
+    bool needs_feeding() const { return hunger > 20.0f; }
 
     void init(int8_t px, int8_t py);
     void tick(Chamber& ch, float dt);

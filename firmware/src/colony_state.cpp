@@ -11,7 +11,7 @@ float ColonyState::food_pressure() const {
     float burn = daily_burn();
     float target = burn * Cfg::FOOD_PRESSURE_BUFFER_DAYS;
     if (target <= 0.0f) return 0.5f;
-    float ratio = food_total / target;
+    float ratio = food_store / target;
     float pressure = 1.0f - fminf(1.0f, ratio / 2.0f);
     return fmaxf(0.0f, pressure);
 }

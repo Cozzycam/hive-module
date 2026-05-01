@@ -118,6 +118,7 @@ struct LilGuy {
     void _tick_idle(Chamber& ch);
     void _pick_idle_microstate(Chamber& ch);
     float _colony_idle_budget(Chamber& ch);
+    void _do_eating(Chamber& ch);
     void _do_cannibalize(Chamber& ch);
     void _do_zoomies(Chamber& ch);
     bool _target_still_valid(Chamber& ch);

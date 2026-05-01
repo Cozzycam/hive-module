@@ -18,16 +18,16 @@ void Queen::init(int8_t px, int8_t py) {
 void Queen::tick(Chamber& ch, float dt) {
     if (!alive) return;
 
-    // ---- Metabolism ----
-    // Food consumption is centralized in sim.cpp via daily_burn().
-    // During founding, queen eats from reserves (handled in sim.cpp).
-    // Here we only manage hunger when food_store is empty.
-    if (ch.colony->food_store <= 0.0f && reserves <= 0.0f) {
-        hunger += dt / (Cfg::QUEEN_SURVIVAL_DAYS * Cfg::SECS_PER_DAY);
-        if (hunger >= 1.0f) { alive = false; return; }
-    } else if (hunger > 0.0f) {
-        hunger = fmaxf(0.0f, hunger - dt / (Cfg::QUEEN_SURVIVAL_DAYS * Cfg::SECS_PER_DAY));
+    // ---- Hunger ----
+    // Hunger rises continuously; workers feed queen to reset it.
+    // During founding, queen feeds herself from reserves.
+    hunger += Cfg::QUEEN_HUNGER_PER_DAY / Cfg::SECS_PER_DAY * dt;
+    if (!founding_done && reserves > 0.0f && hunger >= 30.0f) {
+        float meal = fminf(Cfg::QUEEN_MEAL_COST, reserves);
+        reserves -= meal;
+        hunger = 0.0f;
     }
+    if (hunger >= Cfg::HUNGER_STARVE) { alive = false; return; }
 
     // ---- Founding brood care ----
     if (!founding_done) {

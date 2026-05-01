@@ -12,12 +12,13 @@ enum BroodStage : uint8_t { STAGE_EGG = 0, STAGE_LARVA = 1, STAGE_PUPA = 2, STAG
 enum AntState : uint8_t {
     STATE_IDLE = 0, STATE_TEND_QUEEN = 1, STATE_TEND_BROOD = 2,
     STATE_TO_FOOD = 3, STATE_TO_HOME = 4, STATE_CANNIBALIZE = 5,
-    STATE_ZOOMIES = 6
+    STATE_ZOOMIES = 6,
+    STATE_EATING = 7
 };
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 33;
+constexpr uint32_t FW_VERSION = 38;
 
 namespace Cfg {
 
@@ -49,6 +50,14 @@ constexpr float WORKER_FOOD_PER_DAY   = 2.0f;
 constexpr float LARVA_FOOD_PER_DAY    = 1.5f;
 constexpr float EGG_FOOD_COST         = 1.0f;    // food per egg laid
 constexpr float LARVA_TOTAL_FOOD      = LARVA_FOOD_PER_DAY * LARVA_DURATION_DAYS; // 3.0
+
+// ---- Hunger (individual meal cycle) ----
+constexpr float WORKER_HUNGER_PER_DAY = 100.0f;   // 0→100 in 1 day without eating
+constexpr float QUEEN_HUNGER_PER_DAY  = 200.0f;   // 0→100 in 0.5 days (needs 2x feeding)
+constexpr float WORKER_MEAL_COST      = WORKER_FOOD_PER_DAY / 3.0f;  // ~0.67 per meal
+constexpr float QUEEN_MEAL_COST       = QUEEN_FOOD_PER_DAY / 6.0f;   // 0.50 per feeding
+constexpr float HUNGER_STARVE         = 100.0f;    // death threshold
+constexpr float HUNGER_SLOWDOWN       = 80.0f;     // speed penalty starts
 
 // ---- Queen laying (real-time) ----
 constexpr int   FOUNDING_EGG_COUNT        = 10;
@@ -147,8 +156,8 @@ constexpr float MAX_GATHERER_FRACTION     = 0.80f;
 // ---- Starvation cascade ----
 constexpr float FAMINE_SLOWDOWN_PRESSURE   = 0.9f;
 constexpr float FAMINE_BROOD_CULL_PRESSURE = 0.8f;
-constexpr float FAMINE_BROOD_CULL_HUNGER   = 0.3f;   // normalized 0-1
-constexpr float QUEEN_PRIORITY_HUNGER      = 0.3f;   // normalized 0-1
+constexpr float FAMINE_BROOD_CULL_HUNGER   = 30.0f;  // queen hunger threshold for brood cull
+constexpr float QUEEN_PRIORITY_HUNGER      = 60.0f;  // famine override: feed queen urgently
 
 // ---- Brood cannibalism ----
 constexpr float BROOD_CANNIBALISM_PRESSURE  = 0.95f;

@@ -84,22 +84,22 @@ void LilGuy::tick(Chamber& ch, float dt) {
         return;
     }
 
-    // Metabolism — centralized in sim.cpp via daily_burn()
-    // Here we only manage hunger
-    if (ch.colony->food_store > 0 || food_carried > 0) {
-        if (hunger > 0.0f) {
-            hunger = fmaxf(0.0f, hunger - dt / (Cfg::WORKER_SURVIVAL_DAYS * Cfg::SECS_PER_DAY));
-        }
-    } else {
-        hunger += dt / (Cfg::WORKER_SURVIVAL_DAYS * Cfg::SECS_PER_DAY);
-        if (hunger >= 1.0f) {
-            alive = false;
-            if (ch.colony->worker_census > 0) ch.colony->worker_census--;
-            Event ev; ev.type = EVT_LIL_GUY_DIED; ev.tick = ch.tick_num;
-            ev.position = {static_cast<int8_t>(cell_x()), static_cast<int8_t>(cell_y())};
-            ch.emit(ev);
-            return;
-        }
+    // Hunger rises continuously — eating is the only way to reduce it
+    hunger += Cfg::WORKER_HUNGER_PER_DAY / Cfg::SECS_PER_DAY * dt;
+    if (hunger >= Cfg::HUNGER_STARVE) {
+        alive = false;
+        if (ch.colony->worker_census > 0) ch.colony->worker_census--;
+        Event ev; ev.type = EVT_LIL_GUY_DIED; ev.tick = ch.tick_num;
+        ev.position = {static_cast<int8_t>(cell_x()), static_cast<int8_t>(cell_y())};
+        ch.emit(ev);
+        return;
+    }
+
+    // Speed penalty when starving (80-100: linearly reduce to 30%)
+    if (hunger > Cfg::HUNGER_SLOWDOWN) {
+        float penalty = (hunger - Cfg::HUNGER_SLOWDOWN)
+                      / (Cfg::HUNGER_STARVE - Cfg::HUNGER_SLOWDOWN);
+        speed = Cfg::ROLE_PARAMS[role].speed * (1.0f - penalty * 0.7f);
     }
 
     // Track time away from queen chamber
@@ -140,12 +140,18 @@ void LilGuy::tick(Chamber& ch, float dt) {
                 x = below.x; y = below.y;
             }
             // Sleeping ants show snooze sprite, skip grooming
+            // Wake on famine or personal hunger crisis
             if (sleeping) {
-                anim_type = LG_ANIM_SNOOZE;
-                if (millis() >= sleep_until_ms) {
+                bool swake = (millis() >= sleep_until_ms)
+                          || ch.colony->food_pressure() > Cfg::FAMINE_SLOWDOWN_PRESSURE
+                          || hunger > 60.0f;
+                if (swake) {
                     sleeping = false;
                     anim_type = LG_ANIM_NONE;
                     sleep_cooldown_ms = millis() + 4UL * 3600UL * 1000UL;
+                    stack_on = -1;  // unstack to go hustle
+                } else {
+                    anim_type = LG_ANIM_SNOOZE;
                 }
             } else if (anim_type == LG_ANIM_TOPPLE) {
                 // Toppling — let the main animation handler deal with it
@@ -174,11 +180,17 @@ void LilGuy::tick(Chamber& ch, float dt) {
     }
 
     // Sleeping: stay put, skip normal behavior until wake time
+    // Wake up early during famine or if starving
     if (sleeping) {
-        if (millis() >= sleep_until_ms) {
+        bool wake = (millis() >= sleep_until_ms);
+        if (!wake && (ch.colony->food_pressure() > Cfg::FAMINE_SLOWDOWN_PRESSURE
+                      || hunger > 60.0f)) {
+            wake = true;
+        }
+        if (wake) {
             sleeping = false;
             anim_type = LG_ANIM_NONE;
-            sleep_cooldown_ms = millis() + 4UL * 3600UL * 1000UL;  // 4 hour cooldown
+            sleep_cooldown_ms = millis() + 4UL * 3600UL * 1000UL;
         } else {
             anim_type = LG_ANIM_SNOOZE;
             return;
@@ -230,6 +242,7 @@ void LilGuy::tick(Chamber& ch, float dt) {
             case STATE_CANNIBALIZE: _do_cannibalize(ch); break;
             case STATE_TO_FOOD:     _do_to_food(ch);     break;
             case STATE_TO_HOME:     _do_to_home(ch);     break;
+            case STATE_EATING:      _do_eating(ch);      break;
             case STATE_ZOOMIES:     _do_zoomies(ch);     break;
             default:                _do_idle(ch);        break;
         }
@@ -346,6 +359,25 @@ void LilGuy::_pick_task(Chamber& ch) {
     float feed_per_visit = Cfg::LARVA_FOOD_PER_DAY / 10.0f;
     bool has_food = col->food_store >= feed_per_visit;
 
+    // ---- Hunger-driven eating ----
+    // Probability ramps with hunger level; at 61+ it's top priority
+    {
+        float eat_chance = 0.0f;
+        if (hunger > 60.0f)      eat_chance = 1.0f;
+        else if (hunger > 40.0f) eat_chance = 0.60f;
+        else if (hunger > 20.0f) eat_chance = 0.15f;
+
+        if (eat_chance > 0.0f && ch.queen_obj.alive
+                && col->food_store >= Cfg::WORKER_MEAL_COST
+                && g_rng.rand_float() < eat_chance) {
+            state = STATE_EATING;
+            target_x = ch.queen_obj.x; target_y = ch.queen_obj.y;
+            has_target = true;
+            has_target_cell = false;
+            return;
+        }
+    }
+
     // Famine override -- feed queen first (bypasses idle)
     if (pressure > Cfg::FAMINE_SLOWDOWN_PRESSURE
             && ch.queen_obj.alive
@@ -359,10 +391,11 @@ void LilGuy::_pick_task(Chamber& ch) {
         return;
     }
 
-    // Sleep check — independent of idle budget, bypasses founding suppression
+    // Sleep check — skip during famine so some workers keep hustling
     if (!was_sleeping && !sleeping
             && g_tod.phase == PHASE_NIGHT
             && millis() >= sleep_cooldown_ms
+            && pressure <= Cfg::FAMINE_SLOWDOWN_PRESSURE
             && g_rng.rand_float() < 0.25f) {
         stack_on = was_stacked;
         sleeping = true;
@@ -675,10 +708,10 @@ void LilGuy::_do_tend_queen(Chamber& ch) {
     if (!has_target) { state = STATE_IDLE; has_target_cell = false; return; }
     int cx = cell_x(), cy = cell_y();
     if (abs(target_x - cx) + abs(target_y - cy) <= 1) {
-        float feed_amt = Cfg::QUEEN_FOOD_PER_DAY / 10.0f;
+        float feed_amt = Cfg::QUEEN_MEAL_COST;
         if (ch.colony->food_store >= feed_amt) {
             ch.colony->food_store -= feed_amt;
-            ch.queen_obj.hunger = fmaxf(0.0f, ch.queen_obj.hunger - 0.1f);
+            ch.queen_obj.hunger = 0.0f;
             // Grooming animation: lean toward queen
             anim_type = LG_ANIM_GROOMING;
             anim_remaining_ticks = Cfg::GREETING_DURATION_TICKS;
@@ -706,6 +739,35 @@ void LilGuy::_do_tend_queen(Chamber& ch) {
         return;
     }
     _step_toward_cell(target_x, target_y, ch);
+}
+
+void LilGuy::_do_eating(Chamber& ch) {
+    if (!ch.has_queen || !ch.queen_obj.alive) {
+        state = STATE_IDLE; has_target = false; has_target_cell = false;
+        return;
+    }
+    int cx = cell_x(), cy = cell_y();
+    if (abs(ch.queen_obj.x - cx) + abs(ch.queen_obj.y - cy) <= 1) {
+        if (ch.colony->food_store >= Cfg::WORKER_MEAL_COST) {
+            ch.colony->food_store -= Cfg::WORKER_MEAL_COST;
+            hunger = 0.0f;
+            speed = Cfg::ROLE_PARAMS[role].speed;  // clear any starvation penalty
+            // Eating animation: lean toward queen
+            anim_type = LG_ANIM_GROOMING;
+            anim_remaining_ticks = Cfg::GREETING_DURATION_TICKS;
+            float qdx = ch.queen_obj.x - x, qdy = ch.queen_obj.y - y;
+            if (fabsf(qdx) >= fabsf(qdy)) {
+                anim_lean_dx = (qdx > 0) ? 1 : -1; anim_lean_dy = 0;
+            } else {
+                anim_lean_dx = 0; anim_lean_dy = (qdy > 0) ? 1 : -1;
+            }
+        }
+        has_target = false;
+        has_target_cell = false;
+        _pick_task(ch);
+        return;
+    }
+    _step_toward_cell(ch.queen_obj.x, ch.queen_obj.y, ch);
 }
 
 void LilGuy::_do_idle(Chamber& ch) {
@@ -984,7 +1046,7 @@ float LilGuy::_colony_idle_budget(Chamber& ch) {
 bool LilGuy::_target_still_valid(Chamber& ch) {
     if (state == STATE_IDLE || state == STATE_TO_FOOD
             || state == STATE_TO_HOME || state == STATE_CANNIBALIZE
-            || state == STATE_ZOOMIES)
+            || state == STATE_ZOOMIES || state == STATE_EATING)
         return true;
     if (!has_target) return false;
     if (state == STATE_TEND_QUEEN) {

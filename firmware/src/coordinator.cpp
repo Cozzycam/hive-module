@@ -65,33 +65,6 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
     // Sync topology neighbour state into chamber entries
     _sync_topology_to_chamber();
 
-    // ---- Centralized food drain (real-time) ----
-    float burn_this_tick = colony.daily_burn() / Cfg::SECS_PER_DAY * dt;
-
-    // During founding, queen eats from reserves
-    if (chamber.has_queen &&
-        !chamber.queen_obj.founding_done && chamber.queen_obj.reserves > 0) {
-        float queen_portion = Cfg::QUEEN_FOOD_PER_DAY / Cfg::SECS_PER_DAY * dt;
-        float from_reserves = fminf(queen_portion, chamber.queen_obj.reserves);
-        chamber.queen_obj.reserves -= from_reserves;
-        burn_this_tick -= from_reserves;
-        if (burn_this_tick < 0) burn_this_tick = 0;
-    }
-
-    colony.food_store = fmaxf(0.0f, colony.food_store - burn_this_tick);
-
-    // ---- Credit larva food investment ----
-    if (colony.food_store > 0.0f ||
-        (chamber.has_queen &&
-         !chamber.queen_obj.founding_done && chamber.queen_obj.reserves > 0)) {
-        float per_larva = Cfg::LARVA_FOOD_PER_DAY / Cfg::SECS_PER_DAY * dt;
-        for (int i = 0; i < chamber.brood_count; i++) {
-            if (chamber.brood[i].stage == STAGE_LARVA && chamber.brood[i].alive()) {
-                chamber.brood[i].food_invested += per_larva;
-            }
-        }
-    }
-
     // ---- Receive incoming handoffs (workers arriving from other modules) ----
     _receive_handoffs(bus, tick_num);
 
