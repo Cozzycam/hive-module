@@ -50,6 +50,7 @@ void LilGuy::init(int8_t px, int8_t py, Role c, bool pioneer) {
     zoomie_target = -1;
     zoomie_ticks = 0;
     tint_seed = static_cast<uint8_t>(g_rng.rand_int(1, 255));
+    arrival_face = -1;
 
     role = c;
     is_pioneer = pioneer;
@@ -78,6 +79,9 @@ void LilGuy::tick(Chamber& ch, float dt) {
     if (millis() - born_at_ms >= lifespan_ms) {
         alive = false;
         if (ch.colony->worker_census > 0) ch.colony->worker_census--;
+        extern uint16_t g_deaths_old_age;
+        g_deaths_old_age++;
+        Serial.printf("[death] OLD AGE hunger=%.0f state=%d\n", hunger, state);
         Event ev; ev.type = EVT_LIL_GUY_DIED; ev.tick = ch.tick_num;
         ev.position = {static_cast<int8_t>(cell_x()), static_cast<int8_t>(cell_y())};
         ch.emit(ev);
@@ -89,6 +93,10 @@ void LilGuy::tick(Chamber& ch, float dt) {
     if (hunger >= Cfg::HUNGER_STARVE) {
         alive = false;
         if (ch.colony->worker_census > 0) ch.colony->worker_census--;
+        extern uint16_t g_deaths_starved;
+        g_deaths_starved++;
+        Serial.printf("[death] STARVED hunger=%.0f state=%d food=%.1f\n",
+                      hunger, state, ch.colony->food_store);
         Event ev; ev.type = EVT_LIL_GUY_DIED; ev.tick = ch.tick_num;
         ev.position = {static_cast<int8_t>(cell_x()), static_cast<int8_t>(cell_y())};
         ch.emit(ev);
@@ -367,11 +375,12 @@ void LilGuy::_pick_task(Chamber& ch) {
         else if (hunger > 40.0f) eat_chance = 0.60f;
         else if (hunger > 20.0f) eat_chance = 0.15f;
 
-        if (eat_chance > 0.0f && ch.queen_obj.alive
+        if (eat_chance > 0.0f && ch.has_queen
                 && col->food_store >= Cfg::WORKER_MEAL_COST
                 && g_rng.rand_float() < eat_chance) {
             state = STATE_EATING;
-            target_x = ch.queen_obj.x; target_y = ch.queen_obj.y;
+            int8_t fx, fy; ch.food_store_pos(fx, fy);
+            target_x = fx; target_y = fy;
             has_target = true;
             has_target_cell = false;
             return;
@@ -742,20 +751,20 @@ void LilGuy::_do_tend_queen(Chamber& ch) {
 }
 
 void LilGuy::_do_eating(Chamber& ch) {
-    if (!ch.has_queen || !ch.queen_obj.alive) {
+    if (!ch.has_queen) {
         state = STATE_IDLE; has_target = false; has_target_cell = false;
         return;
     }
+    int8_t fx, fy; ch.food_store_pos(fx, fy);
     int cx = cell_x(), cy = cell_y();
-    if (abs(ch.queen_obj.x - cx) + abs(ch.queen_obj.y - cy) <= 1) {
+    if (abs(fx - cx) + abs(fy - cy) <= 1) {
         if (ch.colony->food_store >= Cfg::WORKER_MEAL_COST) {
             ch.colony->food_store -= Cfg::WORKER_MEAL_COST;
             hunger = 0.0f;
             speed = Cfg::ROLE_PARAMS[role].speed;  // clear any starvation penalty
-            // Eating animation: lean toward queen
             anim_type = LG_ANIM_GROOMING;
             anim_remaining_ticks = Cfg::GREETING_DURATION_TICKS;
-            float qdx = ch.queen_obj.x - x, qdy = ch.queen_obj.y - y;
+            float qdx = fx - x, qdy = fy - y;
             if (fabsf(qdx) >= fabsf(qdy)) {
                 anim_lean_dx = (qdx > 0) ? 1 : -1; anim_lean_dy = 0;
             } else {
@@ -767,7 +776,7 @@ void LilGuy::_do_eating(Chamber& ch) {
         _pick_task(ch);
         return;
     }
-    _step_toward_cell(ch.queen_obj.x, ch.queen_obj.y, ch);
+    _step_toward_cell(fx, fy, ch);
 }
 
 void LilGuy::_do_idle(Chamber& ch) {

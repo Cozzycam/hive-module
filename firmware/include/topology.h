@@ -11,7 +11,8 @@ enum TopoMsgType : uint8_t {
     TOPO_REPLY     = 0x02,
     TOPO_GOODBYE   = 0x03,
     TOPO_HEARTBEAT = 0x04,
-    TOPO_HANDOFF   = 0x10,  // worker transfer (LilGuyTransfer payload)
+    TOPO_HANDOFF       = 0x10,  // worker transfer (LilGuyTransfer payload)
+    TOPO_HANDOFF_ACK   = 0x14,  // receiver confirms worker placement
     TOPO_POP_SYNC  = 0x11,  // satellite population broadcast
     TOPO_PHERO_SYNC = 0x12, // boundary pheromone mirror
     TOPO_STATE_SYNC = 0x13, // queen colony state broadcast (tod + stats)
@@ -111,6 +112,13 @@ struct BoundaryPheroData {
     uint32_t last_rx_ms;
 };
 
+// Handoff ACK message (receiver → sender)
+struct __attribute__((packed)) HandoffAck {
+    uint8_t  msg_type;    // TOPO_HANDOFF_ACK
+    uint16_t acker_id;    // module that received the ant
+    uint8_t  seq;         // matches seq in LilGuyTransfer
+};
+
 // Send raw payload to a face's neighbour (for handoff transfers)
 bool topology_send_to_face(Face f, const uint8_t* data, int len);
 
@@ -120,6 +128,13 @@ struct PendingHandoff {
     int     len;
 };
 int  topology_drain_handoffs(PendingHandoff* out, int max_out);
+
+// Handoff ACK receive buffer — coordinator drains these each tick
+struct PendingAck {
+    uint8_t data[8];
+    int     len;
+};
+int  topology_drain_handoff_acks(PendingAck* out, int max_out);
 
 // Remote population tracking (queen reads these)
 uint16_t topology_remote_population(Face f);

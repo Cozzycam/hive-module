@@ -10,6 +10,11 @@
 #include <Preferences.h>
 #endif
 
+// Handoff counters (defined in main.cpp)
+extern uint32_t g_handoffs_out;
+extern uint32_t g_handoffs_in;
+extern uint32_t g_handoffs_dropped;
+
 static const char* role_str(ModuleRole r) {
     switch (r) {
         case MODULE_QUEEN:     return "queen";
@@ -68,6 +73,9 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
     // ---- Receive incoming handoffs (workers arriving from other modules) ----
     _receive_handoffs(bus, tick_num);
 
+    // ---- Service pending outgoing handoffs (ACK processing, retries, timeouts) ----
+    _service_pending_handoffs();
+
     // ---- Apply neighbour boundary pheromones (before chamber tick so workers sense them) ----
     _apply_boundary_pheromones();
 
@@ -91,10 +99,13 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
 }
 
 void Coordinator::_aggregate_colony_stats() {
-    // Local population + workers in tunnel transit
+    // Local population + workers in tunnel transit + pending outgoing
     uint16_t local_pop = chamber.lil_guy_count;
     for (int i = 0; i < MAX_TUNNEL_PENDING; i++) {
         if (_tunnel_pending[i].active) local_pop++;
+    }
+    for (int i = 0; i < MAX_PENDING_OUT; i++) {
+        if (_pending_out[i].active) local_pop++;
     }
 
     // Queen: add remote satellite populations
@@ -146,6 +157,9 @@ void Coordinator::_broadcast_population() {
     uint16_t pop = chamber.lil_guy_count;
     for (int i = 0; i < MAX_TUNNEL_PENDING; i++) {
         if (_tunnel_pending[i].active) pop++;
+    }
+    for (int i = 0; i < MAX_PENDING_OUT; i++) {
+        if (_pending_out[i].active) pop++;
     }
     msg.population = pop;
 
@@ -377,10 +391,8 @@ void Coordinator::_check_edge_crossings(EventBus& bus, uint32_t tick_num) {
         int face = chamber._entry_face_at(cx, cy);
         if (face < 0 || chamber.entries[face] < 0) continue;
 
-        // Anti-bounce: empty TO_FOOD workers can't retreat through home_face
-        // until they've explored a bit (prevents immediate bounce-back on arrival)
-        if (w.state == STATE_TO_FOOD && w.food_carried <= 0.0f
-            && face == chamber.home_face && w.chamber_steps < 16) continue;
+        // Anti-bounce: recently arrived workers can't exit through arrival face
+        if (w.chamber_steps < 16 && w.arrival_face >= 0 && face == w.arrival_face) continue;
 
         const Neighbour& nb = topology_neighbour(static_cast<Face>(face));
         if (!nb.present) continue;
@@ -407,21 +419,43 @@ void Coordinator::_check_edge_crossings(EventBus& bus, uint32_t tick_num) {
             }
         }
 
+        // Check pending out slots — need enough for entire stack
+        int free_slots = 0;
+        for (int j = 0; j < MAX_PENDING_OUT; j++)
+            if (!_pending_out[j].active) free_slots++;
+        if (free_slots < stack_count) continue;  // not enough slots, ant stays
+
         // Compute entry offset: distance from face center along the entry zone
         // N/S faces: offset = cx - ENTRY_X, W/E faces: offset = cy - ENTRY_Y
         int8_t entry_offset = (Cfg::FACE_DY[face] != 0)
             ? (int8_t)(cx - Cfg::ENTRY_X[face])
             : (int8_t)(cy - Cfg::ENTRY_Y[face]);
 
-        // Send all stack members (bottom first)
+        // Serialize, store in pending out, and send (ACK-gated)
         int sent_count = 0;
         for (int s = 0; s < stack_count; s++) {
             LilGuyTransfer payload;
             lil_guy_to_transfer(chamber.lil_guys[stack[s]], payload,
                                 TOPO_HANDOFF, topology_my_id(), arrival_face, entry_offset);
-            if (topology_send_to_face(static_cast<Face>(face),
-                                      (const uint8_t*)&payload, sizeof(payload)))
-                sent_count++;
+            payload.seq = _handoff_seq++;
+
+            // Find free pending slot
+            int slot = -1;
+            for (int j = 0; j < MAX_PENDING_OUT; j++) {
+                if (!_pending_out[j].active) { slot = j; break; }
+            }
+            if (slot < 0) break;  // shouldn't happen, we checked above
+
+            _pending_out[slot].payload = payload;
+            _pending_out[slot].sent_ms = millis();
+            _pending_out[slot].retries = 0;
+            _pending_out[slot].face = static_cast<uint8_t>(face);
+            _pending_out[slot].active = true;
+
+            topology_send_to_face(static_cast<Face>(face),
+                                  (const uint8_t*)&payload, sizeof(payload));
+            sent_count++;
+            g_handoffs_out++;
         }
 
         if (sent_count == 0) continue;
@@ -501,6 +535,8 @@ void Coordinator::_place_arrival(const LilGuyTransfer& t, EventBus& bus,
         chamber.pheromones.deposit_food(entry_x, entry_y, Cfg::BASE_MARKER_INTENSITY * 0.5f);
     }
 
+    g_handoffs_in++;
+
     Serial.printf("[handoff] IN slot %d from 0x%04X face %s (state=%d food=%.1f%s)\n",
         idx, t.sender_id, face_letter(af), t.state, t.food_carried,
         w.stack_on >= 0 ? " stacked" : "");
@@ -517,25 +553,68 @@ void Coordinator::_receive_handoffs(EventBus& bus, uint32_t tick_num) {
     uint32_t now = millis();
 
     // Drain ESP-NOW handoffs into the tunnel delay buffer
-    PendingHandoff pending[4];
-    int n = topology_drain_handoffs(pending, 4);
+    PendingHandoff pending[16];
+    int n = topology_drain_handoffs(pending, 16);
     for (int h = 0; h < n; h++) {
         if (pending[h].len < (int)sizeof(LilGuyTransfer)) continue;
         const LilGuyTransfer& t = *reinterpret_cast<const LilGuyTransfer*>(pending[h].data);
         if (t.msg_type != TOPO_HANDOFF) continue;
         if (t.arrival_face >= FACE_COUNT) continue;
 
+        // Find which face this sender is connected to (for dedup + ACK)
+        int src_face = -1;
+        for (int f = 0; f < FACE_COUNT; f++) {
+            const Neighbour& nb = topology_neighbour(static_cast<Face>(f));
+            if (nb.present && nb.module_id == t.sender_id) {
+                src_face = f;
+                break;
+            }
+        }
+
+        // Dedup: if seq matches last seen from this face, re-send ACK but skip placement
+        if (src_face >= 0 && t.seq == _last_seen_seq[src_face]) {
+            HandoffAck ack;
+            ack.msg_type = TOPO_HANDOFF_ACK;
+            ack.acker_id = topology_my_id();
+            ack.seq = t.seq;
+            topology_send_to_face(static_cast<Face>(src_face),
+                                  (const uint8_t*)&ack, sizeof(ack));
+            continue;
+        }
+
         // Find a free slot in the tunnel buffer
+        bool found = false;
         for (int i = 0; i < MAX_TUNNEL_PENDING; i++) {
             if (!_tunnel_pending[i].active) {
                 _tunnel_pending[i].transfer = t;
                 _tunnel_pending[i].appear_at_ms = now + TUNNEL_TRAVEL_MS;
                 _tunnel_pending[i].active = true;
+                found = true;
                 Serial.printf("[handoff] IN tunnel (appear in %lums)\n",
                     (unsigned long)TUNNEL_TRAVEL_MS);
                 break;
             }
         }
+
+        if (!found) {
+            g_handoffs_dropped++;
+            Serial.println("[handoff] tunnel buffer full -- dropped");
+            continue;  // don't send ACK — sender will retry then restore
+        }
+
+        // Send ACK to sender
+        if (src_face >= 0) {
+            _last_seen_seq[src_face] = t.seq;
+            HandoffAck ack;
+            ack.msg_type = TOPO_HANDOFF_ACK;
+            ack.acker_id = topology_my_id();
+            ack.seq = t.seq;
+            topology_send_to_face(static_cast<Face>(src_face),
+                                  (const uint8_t*)&ack, sizeof(ack));
+        }
+
+        // Force immediate PopSync so queen sees new count without 1s delay
+        _last_pop_broadcast_ms = 0;
     }
 
     // Place workers whose tunnel travel time has elapsed
@@ -544,6 +623,61 @@ void Coordinator::_receive_handoffs(EventBus& bus, uint32_t tick_num) {
         if (_tunnel_pending[i].active && now >= _tunnel_pending[i].appear_at_ms) {
             _place_arrival(_tunnel_pending[i].transfer, bus, tick_num, first_idx);
             _tunnel_pending[i].active = false;
+        }
+    }
+#endif
+}
+
+void Coordinator::_service_pending_handoffs() {
+#ifdef ARDUINO
+    // 1. Drain ACK buffer — mark matched pending entries as done
+    PendingAck acks[16];
+    int ack_count = topology_drain_handoff_acks(acks, 16);
+    for (int i = 0; i < ack_count; i++) {
+        if (acks[i].len < (int)sizeof(HandoffAck)) continue;
+        const HandoffAck& ack = *reinterpret_cast<const HandoffAck*>(acks[i].data);
+        if (ack.msg_type != TOPO_HANDOFF_ACK) continue;
+        for (int j = 0; j < MAX_PENDING_OUT; j++) {
+            if (_pending_out[j].active && _pending_out[j].payload.seq == ack.seq) {
+                _pending_out[j].active = false;
+                break;
+            }
+        }
+    }
+
+    // 2. Handle retries and timeouts
+    uint32_t now = millis();
+    for (int i = 0; i < MAX_PENDING_OUT; i++) {
+        if (!_pending_out[i].active) continue;
+        if (now - _pending_out[i].sent_ms < 500) continue;
+
+        if (_pending_out[i].retries < 3) {
+            // Resend
+            topology_send_to_face(static_cast<Face>(_pending_out[i].face),
+                                  (const uint8_t*)&_pending_out[i].payload,
+                                  sizeof(LilGuyTransfer));
+            _pending_out[i].retries++;
+            _pending_out[i].sent_ms = now;
+        } else {
+            // Timeout — restore ant to chamber
+            int f = _pending_out[i].face;
+            float ex = static_cast<float>(Cfg::ENTRY_X[f]);
+            float ey = static_cast<float>(Cfg::ENTRY_Y[f]);
+            float fdx = static_cast<float>(-Cfg::FACE_DX[f]);
+            float fdy = static_cast<float>(-Cfg::FACE_DY[f]);
+
+            if (chamber.lil_guy_count < Cfg::MAX_LIL_GUYS) {
+                int idx = chamber.lil_guy_count++;
+                LilGuy& w = chamber.lil_guys[idx];
+                transfer_to_lil_guy(_pending_out[i].payload, w, ex, ey, fdx, fdy);
+                w.arrival_face = static_cast<int8_t>(f);  // prevent immediate re-exit
+                Serial.println("[handoff] TIMEOUT -- restoring worker");
+            } else {
+                Serial.println("[handoff] TIMEOUT -- chamber full, worker lost");
+            }
+
+            _pending_out[i].active = false;
+            g_handoffs_dropped++;
         }
     }
 #endif

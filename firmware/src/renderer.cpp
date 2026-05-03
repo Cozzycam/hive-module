@@ -192,6 +192,7 @@ static constexpr float SCALE_WORKER_PIONEER = 2.3f;   // 10x10 base → 23px  (0
 static constexpr float SCALE_EGG            = 3.5f;   //  4x4  base → 14px  (0.16)
 static constexpr float SCALE_LARVA          = 4.4f;   //  6x6  base → 26px  (0.30)
 static constexpr float SCALE_PUPA           = 3.2f;   //  8x8  base → 26px  (0.29)
+static constexpr float SCALE_FOOD_PILE      = 1.5f;   // 12x8  base → 18x12
 
 // ---- Sprite frame lookup ----
 // Returns sprite data for a given role + animation frame.
@@ -914,7 +915,7 @@ void Renderer::_build_floor_sprites(const Chamber& ch) {
         sd.sort_y   = ch.food_piles[i].y * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
         sd.render_x = ch.food_piles[i].x * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
         sd.render_y = static_cast<int16_t>(sd.sort_y);
-        sd.size_px  = 8;
+        sd.size_px  = static_cast<uint16_t>(FOOD_PILE_W * SCALE_FOOD_PILE + 0.5f);
         sd.kind     = SK_FOOD_PILE;
         sd.flags    = 0;
         sd.entity_idx = i;
@@ -1112,20 +1113,9 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
     bool flip = (sd.flags & 1);
     switch (sd.kind) {
         case SK_FOOD_PILE: {
-            int cx = sd.render_x, cy = sd.render_y;
-            float amt = ch.food_piles[sd.entity_idx].amount;
-            _mark_dirty(cx - 6, cy - 4, 12, 8);
-            if (amt <= 15) {
-                _gfx->fillRect(cx - 2, cy - 1, 4, 3, _pal_food_light);
-            } else if (amt <= 50) {
-                _gfx->fillRect(cx - 4, cy - 2, 4, 3, _pal_food_dark);
-                _gfx->fillRect(cx,     cy,     4, 3, _pal_food_light);
-            } else {
-                _gfx->fillRect(cx - 4, cy - 2, 4, 3, _pal_food_dark);
-                _gfx->fillRect(cx,     cy,     4, 3, _pal_food_light);
-                _gfx->fillRect(cx + 2, cy - 2, 4, 3, _pal_food_dark);
-                _gfx->fillRect(cx - 2, cy + 2, 4, 3, _pal_food_light);
-            }
+            _draw_sprite_scaled(sd.render_x, sd.render_y,
+                                FOOD_PILE, FOOD_PILE_W, FOOD_PILE_H,
+                                SCALE_FOOD_PILE);
             break;
         }
         case SK_EGG:

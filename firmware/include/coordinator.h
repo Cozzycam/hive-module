@@ -58,8 +58,24 @@ private:
     uint32_t _last_pop_broadcast_ms = 0;
     uint32_t _last_state_broadcast_ms = 0;
 
+    // Pending outgoing handoffs (ACK-gated, retried on timeout)
+    static constexpr int MAX_PENDING_OUT = 8;
+    struct PendingOut {
+        LilGuyTransfer payload;
+        uint32_t sent_ms;
+        uint8_t  retries;
+        uint8_t  face;
+        bool     active = false;
+    };
+    PendingOut _pending_out[MAX_PENDING_OUT];
+    uint8_t    _handoff_seq = 0;
+    void _service_pending_handoffs();
+
+    // Dedup table for incoming handoffs (one seq per face)
+    uint8_t _last_seen_seq[FACE_COUNT] = {0xFF, 0xFF, 0xFF, 0xFF};
+
     // Tunnel travel delay — workers wait here before appearing in the chamber
-    static constexpr int MAX_TUNNEL_PENDING = 8;
+    static constexpr int MAX_TUNNEL_PENDING = 16;
     static constexpr uint32_t TUNNEL_TRAVEL_MS = 2000;
     struct TunnelPending {
         LilGuyTransfer transfer;

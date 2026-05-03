@@ -45,10 +45,19 @@ static TopologyMessage _rx_msgs[RX_BUF_SIZE];
 static uint8_t         _rx_macs[RX_BUF_SIZE][6];
 
 // Handoff receive buffer (ISR -> coordinator via drain)
-static const int HO_BUF_SIZE = 4;
+static const int HO_BUF_SIZE = 16;
 static volatile int _ho_write = 0;
 static volatile int _ho_count = 0;
 static PendingHandoff _ho_buf[HO_BUF_SIZE];
+
+// Handoff ACK receive buffer (ISR -> coordinator via drain)
+static const int ACK_BUF_SIZE = 16;
+static volatile int _ack_write = 0;
+static volatile int _ack_count = 0;
+static PendingAck _ack_buf[ACK_BUF_SIZE];
+
+// Handoff drop counter (extern, defined in main.cpp)
+extern uint32_t g_handoffs_dropped;
 
 // Remote population per face (updated by TOPO_POP_SYNC messages)
 static volatile uint16_t _remote_pop[FACE_COUNT] = {0, 0, 0, 0};
@@ -160,12 +169,23 @@ static void _on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int l
     uint8_t msg_type = data[0];
     if (msg_type == TOPO_HANDOFF) {
         // Worker transfer — buffer for coordinator
-        if (_ho_count >= HO_BUF_SIZE || len > 250) return;
+        if (_ho_count >= HO_BUF_SIZE || len > 250) {
+            g_handoffs_dropped++;
+            return;
+        }
         int idx = _ho_write;
         memcpy(_ho_buf[idx].data, data, len);
         _ho_buf[idx].len = len;
         _ho_write = (idx + 1) % HO_BUF_SIZE;
         _ho_count++;
+    } else if (msg_type == TOPO_HANDOFF_ACK) {
+        // Handoff ACK — buffer for coordinator
+        if (_ack_count >= ACK_BUF_SIZE || len > 8) return;
+        int idx = _ack_write;
+        memcpy(_ack_buf[idx].data, data, len);
+        _ack_buf[idx].len = len;
+        _ack_write = (idx + 1) % ACK_BUF_SIZE;
+        _ack_count++;
     } else if (msg_type == TOPO_PHERO_SYNC && len >= 5) {
         // Boundary pheromone mirror — decode and store
         const PheroSyncMessage* ps = reinterpret_cast<const PheroSyncMessage*>(data);
@@ -450,6 +470,17 @@ int topology_drain_handoffs(PendingHandoff* out, int max_out) {
         int idx = (_ho_write - _ho_count + HO_BUF_SIZE) % HO_BUF_SIZE;
         out[n] = _ho_buf[idx];
         _ho_count--;
+        n++;
+    }
+    return n;
+}
+
+int topology_drain_handoff_acks(PendingAck* out, int max_out) {
+    int n = 0;
+    while (_ack_count > 0 && n < max_out) {
+        int idx = (_ack_write - _ack_count + ACK_BUF_SIZE) % ACK_BUF_SIZE;
+        out[n] = _ack_buf[idx];
+        _ack_count--;
         n++;
     }
     return n;

@@ -55,6 +55,10 @@ public:
     float take_food(int x, int y, float amount);
     bool  nearest_food_within(int x, int y, int radius, int8_t& out_x, int8_t& out_y);
     float total_food() const;
+    // Where workers go to eat from food_store (queen now, granary later)
+    void food_store_pos(int8_t& out_x, int8_t& out_y) const {
+        out_x = queen_obj.x; out_y = queen_obj.y;
+    }
 
     // ---- pheromone deposits (with diffusion + mirror) ----
     void deposit_home(int x, int y, float amount);

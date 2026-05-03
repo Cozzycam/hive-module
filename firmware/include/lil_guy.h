@@ -93,6 +93,7 @@ struct LilGuy {
     int16_t  zoomie_ticks         = 0;   // countdown to end
 
     uint8_t  tint_seed            = 0;   // per-worker colour variation (set at init)
+    int8_t   arrival_face        = -1;  // face this ant arrived from (-1 = locally spawned)
 
     int8_t   last_cell_x, last_cell_y;     // for pheromone deposit gating
 

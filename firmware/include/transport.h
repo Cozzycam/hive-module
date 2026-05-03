@@ -10,6 +10,7 @@ struct __attribute__((packed)) LilGuyTransfer {
     uint16_t sender_id;       // sender module ID
     uint8_t  arrival_face;    // face on RECEIVER the worker enters from
     int8_t   entry_offset;   // offset from center within entry zone (-1, 0, +1)
+    uint8_t  seq;            // sender's sequence number for ACK matching
     // -- sim state --
     uint8_t  state;           // AntState
     uint8_t  role;            // Role
@@ -42,6 +43,7 @@ inline void lil_guy_to_transfer(const LilGuy& w, LilGuyTransfer& t,
     t.sender_id       = sender_id;
     t.arrival_face    = arrival_face;
     t.entry_offset    = entry_offset;
+    t.seq             = 0;  // caller overrides for ACK matching
     t.state           = w.state;
     t.role            = w.role;
     t.is_pioneer      = w.is_pioneer ? 1 : 0;
@@ -126,6 +128,7 @@ inline void transfer_to_lil_guy(const LilGuyTransfer& t, LilGuy& w,
     w.zoomie_target        = -1;
     w.zoomie_ticks         = 0;
     w.tint_seed            = t.tint_seed;
+    w.arrival_face         = static_cast<int8_t>(t.arrival_face);
     w.last_cell_x          = static_cast<int8_t>(entry_x);
     w.last_cell_y          = static_cast<int8_t>(entry_y);
 }

@@ -105,6 +105,15 @@ static unsigned long tick_interval_ms() {
 static unsigned long last_tick_ms = 0;
 static unsigned long last_frame_ms = 0;
 
+// -- Death tracking (queryable via serial 'deaths') ----------------------
+uint16_t g_deaths_starved = 0;
+uint16_t g_deaths_old_age = 0;
+
+// -- Handoff tracking (queryable via serial 'deaths') --------------------
+uint32_t g_handoffs_out = 0;
+uint32_t g_handoffs_in = 0;
+uint32_t g_handoffs_dropped = 0;
+
 // -- OTA mode (queen only) -------------------------------------------
 
 static void enter_ota_mode() {
@@ -192,6 +201,11 @@ static void process_serial_line(const char* line) {
         enter_ota_mode();
     } else if (strcmp(line, "push") == 0) {
         ota_push();
+    } else if (strcmp(line, "deaths") == 0) {
+        Serial.printf("Deaths: %d starved, %d old age | Handoffs: %lu out, %lu in, %lu dropped\n",
+            g_deaths_starved, g_deaths_old_age,
+            (unsigned long)g_handoffs_out, (unsigned long)g_handoffs_in,
+            (unsigned long)g_handoffs_dropped);
     } else if (strcmp(line, "weather") == 0) {
         if (g_weather.valid) {
             static const char* wx[] = {"clear","partly cloudy","overcast","fog","drizzle","rain","heavy rain","snow","thunderstorm"};
