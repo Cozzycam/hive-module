@@ -51,6 +51,7 @@ void LilGuy::init(int8_t px, int8_t py, Role c, bool pioneer) {
     zoomie_ticks = 0;
     tint_seed = static_cast<uint8_t>(g_rng.rand_int(1, 255));
     arrival_face = -1;
+    arrival_ms = 0;
 
     role = c;
     is_pioneer = pioneer;
@@ -322,9 +323,9 @@ void LilGuy::_advance_toward_target(Chamber& ch) {
 }
 
 void LilGuy::_on_enter_cell(int cx, int cy, Chamber& ch) {
+    chamber_steps++;
     if (state == STATE_TO_FOOD) {
         steps_walked++;
-        chamber_steps++;
     } else if (state == STATE_TO_HOME) {
         if (food_carried > 0) {
             float intensity = Cfg::BASE_MARKER_INTENSITY * expf(-Cfg::MARKER_STEP_DECAY * steps_walked);

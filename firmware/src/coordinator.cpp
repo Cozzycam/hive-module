@@ -45,6 +45,9 @@ void Coordinator::init() {
     role = MODULE_UNCONFIGURED;  // desktop builds default to queen
 #endif
 
+    boot_id = static_cast<uint16_t>(esp_random() & 0xFFFF);
+    Serial.printf("[coord] boot_id: 0x%04X\n", boot_id);
+
     bool queen = is_queen();
     colony = ColonyState();
     chamber.init(&colony, queen);  // sets food_total for queen
@@ -126,6 +129,21 @@ void Coordinator::_aggregate_colony_stats() {
         if (w.state == STATE_TO_FOOD
                 || (w.state == STATE_TO_HOME && w.food_carried > 0))
             gatherers++;
+    }
+    // Count pending outgoing + tunnel arrivals as gatherers if they were foraging
+    for (int i = 0; i < MAX_PENDING_OUT; i++) {
+        if (_pending_out[i].active) {
+            uint8_t s = _pending_out[i].payload.state;
+            if (s == STATE_TO_FOOD || (s == STATE_TO_HOME && _pending_out[i].payload.food_carried > 0))
+                gatherers++;
+        }
+    }
+    for (int i = 0; i < MAX_TUNNEL_PENDING; i++) {
+        if (_tunnel_pending[i].active) {
+            uint8_t s = _tunnel_pending[i].transfer.state;
+            if (s == STATE_TO_FOOD || (s == STATE_TO_HOME && _tunnel_pending[i].transfer.food_carried > 0))
+                gatherers++;
+        }
     }
     colony.gatherer_count = gatherers;
 
@@ -210,6 +228,7 @@ void Coordinator::on_topology_change(Face face, bool connected, uint16_t module_
         ann.parent_face    = face;
         ann.your_id        = module_id;
         ann.your_home_face = satellite_home;
+        ann.boot_id        = boot_id;
 
         topology_send_to_face(face, (const uint8_t*)&ann, sizeof(ann));
 
@@ -359,19 +378,22 @@ void Coordinator::_sync_topology_to_chamber() {
         AnnounceMessage ann;
         if (topology_has_announce(&ann)) {
             chamber.home_face = ann.your_home_face;
-            // Clear stale workers/brood from a previous colony.
-            // After the queen reboots it starts a fresh colony — any workers
-            // still on this satellite are orphans that would inflate population.
-            if (chamber.lil_guy_count > 0 || chamber.brood_count > 0) {
-                Serial.printf("[coord] clearing %d stale workers + %d brood (queen reconnected)\n",
-                    chamber.lil_guy_count, chamber.brood_count);
-                chamber.lil_guy_count = 0;
-                chamber.brood_count = 0;
-                chamber.food_pile_count = 0;
-                colony.population = 0;
+            // Only clear workers if the queen rebooted (new boot_id).
+            // A simple reconnect after radio glitch keeps workers alive.
+            if (ann.boot_id != _last_queen_boot_id && _last_queen_boot_id != 0) {
+                if (chamber.lil_guy_count > 0 || chamber.brood_count > 0) {
+                    Serial.printf("[coord] queen rebooted (boot_id 0x%04X -> 0x%04X) -- clearing %d workers + %d brood\n",
+                        _last_queen_boot_id, ann.boot_id,
+                        chamber.lil_guy_count, chamber.brood_count);
+                    chamber.lil_guy_count = 0;
+                    chamber.brood_count = 0;
+                    chamber.food_pile_count = 0;
+                    colony.population = 0;
+                }
             }
-            Serial.printf("[coord] received announce: home_face=%s from queen 0x%04X\n",
-                face_letter(ann.your_home_face), ann.parent_id);
+            _last_queen_boot_id = ann.boot_id;
+            Serial.printf("[coord] received announce: home_face=%s from queen 0x%04X boot_id=0x%04X\n",
+                face_letter(ann.your_home_face), ann.parent_id, ann.boot_id);
         }
     }
 #endif
@@ -391,8 +413,9 @@ void Coordinator::_check_edge_crossings(EventBus& bus, uint32_t tick_num) {
         int face = chamber._entry_face_at(cx, cy);
         if (face < 0 || chamber.entries[face] < 0) continue;
 
-        // Anti-bounce: recently arrived workers can't exit through arrival face
-        if (w.chamber_steps < 16 && w.arrival_face >= 0 && face == w.arrival_face) continue;
+        // Anti-bounce: recently arrived workers can't exit through arrival face (2s window)
+        if (w.arrival_face >= 0 && face == w.arrival_face
+            && (millis() - w.arrival_ms) < 2000) continue;
 
         const Neighbour& nb = topology_neighbour(static_cast<Face>(face));
         if (!nb.present) continue;
@@ -512,6 +535,7 @@ void Coordinator::_place_arrival(const LilGuyTransfer& t, EventBus& bus,
     chamber.lil_guy_count++;
     LilGuy& w = chamber.lil_guys[idx];
     transfer_to_lil_guy(t, w, ex, ey, fdx, fdy);
+    w.arrival_ms = millis();
 
     // Auto-stack: multiple arrivals on the same face in the same tick
     if (first_idx[af] >= 0) {
@@ -671,6 +695,7 @@ void Coordinator::_service_pending_handoffs() {
                 LilGuy& w = chamber.lil_guys[idx];
                 transfer_to_lil_guy(_pending_out[i].payload, w, ex, ey, fdx, fdy);
                 w.arrival_face = static_cast<int8_t>(f);  // prevent immediate re-exit
+                w.arrival_ms = millis();
                 Serial.println("[handoff] TIMEOUT -- restoring worker");
             } else {
                 Serial.println("[handoff] TIMEOUT -- chamber full, worker lost");

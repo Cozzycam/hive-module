@@ -263,7 +263,7 @@ static int _find_face_for_msg(const TopologyMessage& msg) {
     if (msg.type == TOPO_HELLO && msg.face < FACE_COUNT) {
         Face remote_face = static_cast<Face>(msg.face);
         Face local_face  = Cfg::FACE_OPPOSITE[remote_face];
-        if (_faces[local_face].link == LINK_IDLE)
+        if (_faces[local_face].link == LINK_IDLE || _faces[local_face].link == LINK_ERROR)
             return local_face;
     }
     return -1;
@@ -361,6 +361,20 @@ static void _tick_face(Face f, const TopologyMessage* msg, const uint8_t* msg_ma
     case LINK_ERROR:
         if (detect_fell || detect_rose) {
             _disconnect_face(f, "error reset");
+            break;
+        }
+        // Rescue: if the other side sends a HELLO while we're stuck, connect immediately
+        if (msg && msg->type == TOPO_HELLO && msg->sender_id != _my_id) {
+            Serial.printf("[topo] face %s rescued from ERROR by HELLO\n", FACE_NAMES[f]);
+            _send(msg_mac, TOPO_REPLY, f);
+            _connect_face(f, msg->sender_id, msg_mac);
+            break;
+        }
+        // Self-heal: if DETECT still LOW, retry after 5s instead of staying stuck
+        if (fs.detect_low && now - fs.hello_sent_ms > 5000) {
+            Serial.printf("[topo] face %s recovering from ERROR (DETECT still LOW)\n", FACE_NAMES[f]);
+            fs.link = LINK_IDLE;
+            fs.hello_retries = 0;
         }
         break;
     }

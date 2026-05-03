@@ -80,6 +80,7 @@ struct __attribute__((packed)) AnnounceMessage {
     uint8_t  parent_face;    // face on queen this satellite is attached to
     uint16_t your_id;        // satellite's module ID (echo back for confirmation)
     uint8_t  your_home_face; // face on satellite that points toward queen
+    uint16_t boot_id;       // random ID generated at queen boot (changes on reboot)
 };
 
 // Colony state broadcast (queen → satellites)

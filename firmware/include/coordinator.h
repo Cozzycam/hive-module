@@ -26,6 +26,9 @@ public:
     Chamber     chamber;    // single chamber for now
     ModuleRole  role = MODULE_UNCONFIGURED;
 
+    uint16_t boot_id = 0;              // random, set at init, sent in ANNOUNCE
+    uint16_t _last_queen_boot_id = 0;  // satellite: last boot_id from queen
+
     // Topology graph (queen-authoritative, max 2 modules for now)
     static constexpr int MAX_MODULES = 2;
     TopoGraphEntry topo_graph[MAX_MODULES];

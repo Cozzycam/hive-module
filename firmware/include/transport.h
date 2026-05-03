@@ -129,6 +129,7 @@ inline void transfer_to_lil_guy(const LilGuyTransfer& t, LilGuy& w,
     w.zoomie_ticks         = 0;
     w.tint_seed            = t.tint_seed;
     w.arrival_face         = static_cast<int8_t>(t.arrival_face);
+    w.arrival_ms           = 0;  // caller sets to millis() after placement
     w.last_cell_x          = static_cast<int8_t>(entry_x);
     w.last_cell_y          = static_cast<int8_t>(entry_y);
 }

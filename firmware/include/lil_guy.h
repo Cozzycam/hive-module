@@ -94,6 +94,7 @@ struct LilGuy {
 
     uint8_t  tint_seed            = 0;   // per-worker colour variation (set at init)
     int8_t   arrival_face        = -1;  // face this ant arrived from (-1 = locally spawned)
+    uint32_t arrival_ms          = 0;   // millis() when placed after transfer
 
     int8_t   last_cell_x, last_cell_y;     // for pheromone deposit gating
 
