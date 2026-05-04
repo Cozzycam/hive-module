@@ -288,7 +288,12 @@ void Chamber::_detect_proximity_interactions() {
                 // Food sharing and grooming only between non-stacked ants
                 if (!in_stack[ai] && !in_stack[bi] &&
                     (a.food_carried > 0) != (b.food_carried > 0)) {
-                    if (g_rng.rand_float() < Cfg::PROXIMITY_FOOD_SHARE_CHANCE) {
+                    // social_frequency biases food share chance
+                    float social = (a.personality[PERS_SOCIAL_FREQUENCY]
+                                  + b.personality[PERS_SOCIAL_FREQUENCY]) * 0.5f;
+                    float share_chance = Cfg::PROXIMITY_FOOD_SHARE_CHANCE
+                                       * (0.5f + social);  // 0.5x to 1.5x
+                    if (g_rng.rand_float() < share_chance) {
                         uint16_t pid = event_bus->next_pair_id();
                         Event es; es.type = EVT_INTERACTION_STARTED; es.tick = tick_num;
                         es.interaction_started = {pid, INTERACT_FOOD_SHARING,
@@ -310,7 +315,12 @@ void Chamber::_detect_proximity_interactions() {
                 }
 
                 // Greeting → mutual grooming or stacking
-                if (g_rng.rand_float() < Cfg::PROXIMITY_GREETING_CHANCE) {
+                // social_frequency biases greeting chance
+                float greet_social = (a.personality[PERS_SOCIAL_FREQUENCY]
+                                    + b.personality[PERS_SOCIAL_FREQUENCY]) * 0.5f;
+                float greet_chance = Cfg::PROXIMITY_GREETING_CHANCE
+                                   * (0.5f + greet_social);
+                if (g_rng.rand_float() < greet_chance) {
                     if (!in_stack[ai] && !in_stack[bi] && g_rng.rand_float() < 0.5f) {
                         // Mutual grooming: both lean toward each other (non-stacked only)
                         a.anim_type = LG_ANIM_GROOMING;

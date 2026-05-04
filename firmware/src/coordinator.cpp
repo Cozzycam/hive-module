@@ -7,6 +7,7 @@
 #include "sd_card.h"
 #include "journal.h"
 #include <cmath>
+#include <cstring>
 
 #ifdef ARDUINO
 #include <Preferences.h>
@@ -828,6 +829,7 @@ void Coordinator::_persist_tick(uint32_t tick_num) {
             rec.is_pioneer = chamber.lil_guys[i].is_pioneer;
             rec.born_unix = g_tod.unix_time;
             rec.lifespan_ms = chamber.lil_guys[i].lifespan_ms;
+            memcpy(rec.personality, chamber.lil_guys[i].personality, sizeof(rec.personality));
             rec.last_x = chamber.lil_guys[i].x;
             rec.last_y = chamber.lil_guys[i].y;
             rec.last_state = chamber.lil_guys[i].state;
@@ -858,12 +860,19 @@ void Coordinator::_persist_tick(uint32_t tick_num) {
     // SD card health check
     sd_card_health_tick();
 
-    // Periodic flush (every 30s)
+    // Manifest + positions flush (every 30s — single file write)
     uint32_t now = millis();
-    if (now - _last_persist_flush_ms >= 30000) {
-        _last_persist_flush_ms = now;
+    static uint32_t _last_manifest_ms = 0;
+    if (now - _last_manifest_ms >= 30000) {
+        _last_manifest_ms = now;
         _persist_update_positions();
         _persist_sync_colony_state(tick_num);
+        registry.flush_manifest();
+    }
+
+    // Record flush: only processes records dirtied by lifecycle events (rare)
+    if (now - _last_persist_flush_ms >= 5000) {
+        _last_persist_flush_ms = now;
         registry.flush();
     }
 }
@@ -904,6 +913,7 @@ void Coordinator::_persist_process_hatches() {
                 rec.is_pioneer = chamber.lil_guys[i].is_pioneer;
                 rec.born_unix = g_tod.unix_time;
                 rec.lifespan_ms = chamber.lil_guys[i].lifespan_ms;
+                memcpy(rec.personality, chamber.lil_guys[i].personality, sizeof(rec.personality));
                 rec.last_x = chamber.lil_guys[i].x;
                 rec.last_y = chamber.lil_guys[i].y;
                 rec.last_state = chamber.lil_guys[i].state;
@@ -944,28 +954,13 @@ void Coordinator::_persist_process_deaths() {
 }
 
 void Coordinator::_persist_update_positions() {
-    for (int i = 0; i < chamber.lil_guy_count; i++) {
+    // Write positions into manifest's positions array (RAM only, flushed with manifest)
+    ColonyManifest& m = registry.manifest();
+    m.pos_count = 0;
+    for (int i = 0; i < chamber.lil_guy_count && m.pos_count < ColonyManifest::MAX_POS; i++) {
         LilGuy& w = chamber.lil_guys[i];
         if (w.id == 0) continue;
-        IdentityRecord* rec = registry.get(w.id);
-        if (!rec) continue;
-        rec->last_x = w.x;
-        rec->last_y = w.y;
-        rec->last_state = w.state;
-        if (rec->lifespan_ms == 0) rec->lifespan_ms = w.lifespan_ms;
-        rec->dirty = true;
-    }
-
-    // Also update brood positions/state
-    for (int i = 0; i < chamber.brood_count; i++) {
-        Brood& b = chamber.brood[i];
-        if (b.id == 0) continue;
-        BroodRecord* rec = registry.get_brood(b.id);
-        if (!rec) continue;
-        rec->stage = b.stage;
-        rec->hunger = b.hunger;
-        rec->food_invested = b.food_invested;
-        rec->stage_start_ms = b.stage_start_ms;
+        m.positions[m.pos_count++] = {w.id, w.x, w.y};
     }
 }
 
@@ -1035,6 +1030,7 @@ void Coordinator::_persist_migrate_live_colony() {
         rec.is_pioneer = w.is_pioneer;
         rec.born_unix = m.founded_unix;  // approximate
         rec.lifespan_ms = w.lifespan_ms;
+        memcpy(rec.personality, w.personality, sizeof(rec.personality));
         rec.last_x = w.x;
         rec.last_y = w.y;
         rec.last_state = w.state;
@@ -1107,21 +1103,35 @@ void Coordinator::_persist_restore_from_disk() {
     for (int i = 0; i < rec_count && chamber.lil_guy_count < Cfg::MAX_LIL_GUYS; i++) {
         IdentityRecord& r = recs[i];
         int idx = chamber.lil_guy_count;
+
+        // Find position from manifest's live positions array
+        float pos_x = r.last_x, pos_y = r.last_y;
+        for (int p = 0; p < m.pos_count; p++) {
+            if (m.positions[p].id == r.id) {
+                pos_x = m.positions[p].x;
+                pos_y = m.positions[p].y;
+                break;
+            }
+        }
+
         chamber.lil_guys[idx].init(
-            static_cast<int8_t>(r.last_x),
-            static_cast<int8_t>(r.last_y),
+            static_cast<int8_t>(pos_x),
+            static_cast<int8_t>(pos_y),
             static_cast<Role>(r.role),
             r.is_pioneer
         );
         chamber.lil_guys[idx].id = r.id;
-        // Restore float position (init sets int pos, we want exact float)
-        chamber.lil_guys[idx].x = r.last_x;
-        chamber.lil_guys[idx].y = r.last_y;
-        chamber.lil_guys[idx].prev_x = r.last_x;
-        chamber.lil_guys[idx].prev_y = r.last_y;
+        // Restore float position
+        chamber.lil_guys[idx].x = pos_x;
+        chamber.lil_guys[idx].y = pos_y;
+        chamber.lil_guys[idx].prev_x = pos_x;
+        chamber.lil_guys[idx].prev_y = pos_y;
         // Restore lifespan (init randomizes it — override with persisted value)
         if (r.lifespan_ms > 0)
             chamber.lil_guys[idx].lifespan_ms = r.lifespan_ms;
+        // Restore personality (init randomizes it — override with persisted value)
+        memcpy(chamber.lil_guys[idx].personality, r.personality,
+               sizeof(chamber.lil_guys[idx].personality));
         // born_at_ms: approximate from born_unix vs current time
         if (r.born_unix > 0 && g_tod.unix_time > r.born_unix) {
             uint32_t age_secs = g_tod.unix_time - r.born_unix;

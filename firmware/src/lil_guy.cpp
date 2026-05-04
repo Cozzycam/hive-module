@@ -56,6 +56,11 @@ void LilGuy::init(int8_t px, int8_t py, Role c, bool pioneer) {
     depart_at_ms = 0;
     depart_face = -1;
 
+    // Personality: centred random (triangular distribution around 0.5)
+    for (int i = 0; i < PERS_COUNT; i++)
+        personality[i] = (g_rng.rand_float() + g_rng.rand_float()) * 0.5f;
+    personality[PERS_RESERVE] = 0.0f;  // reserved for Phase 4+
+
     role = c;
     is_pioneer = pioneer;
     const auto& p = Cfg::ROLE_PARAMS[c];
@@ -93,7 +98,9 @@ void LilGuy::tick(Chamber& ch, float dt) {
     }
 
     // Hunger rises continuously — eating is the only way to reduce it
-    hunger += Cfg::WORKER_HUNGER_PER_DAY / Cfg::SECS_PER_DAY * dt;
+    // hardiness biases: high hardiness = slower hunger (0.8x to 1.2x rate)
+    float hardiness_scale = 1.2f - 0.4f * personality[PERS_HARDINESS];
+    hunger += Cfg::WORKER_HUNGER_PER_DAY / Cfg::SECS_PER_DAY * dt * hardiness_scale;
     if (hunger >= Cfg::HUNGER_STARVE) {
         alive = false;
         if (ch.colony->worker_census > 0) ch.colony->worker_census--;
@@ -424,15 +431,20 @@ void LilGuy::_pick_task(Chamber& ch) {
 
     // Idle budget — gates all non-critical tasks.
     // Returns 0 during famine or founding, so crisis paths still fire.
+    // work_tempo biases: high tempo workers are less likely to idle
     float budget = _colony_idle_budget(ch);
-    if (budget > 0 && g_rng.rand_float() < budget) {
+    float tempo_bias = 1.3f - 0.6f * personality[PERS_WORK_TEMPO];  // 0.7 to 1.3
+    if (budget > 0 && g_rng.rand_float() < budget * tempo_bias) {
         stack_on = was_stacked;
         sleeping = was_sleeping;
         state = STATE_IDLE;
         has_target = false;
         has_target_cell = false;
-        idle_ticks_remaining = g_rng.rand_int(Cfg::IDLE_REST_MIN_TICKS,
-                                               Cfg::IDLE_REST_MAX_TICKS);
+        {
+            float t_scale = 1.3f - 0.6f * personality[PERS_WORK_TEMPO];
+            int rest = g_rng.rand_int(Cfg::IDLE_REST_MIN_TICKS, Cfg::IDLE_REST_MAX_TICKS);
+            idle_ticks_remaining = static_cast<int16_t>(rest * t_scale);
+        }
         idle_repoll_tick = Cfg::IDLE_REPOLL_INTERVAL;
         if (was_stacked < 0 && !sleeping) {
             if (ch._food_pile_index(cell_x(), cell_y()) >= 0) {
@@ -1040,8 +1052,11 @@ void LilGuy::_pick_idle_microstate(Chamber& ch) {
         facing_dx = fdx[d];
         facing_dy = fdy[d];
     }
-    idle_micro_ticks = g_rng.rand_int(Cfg::IDLE_MICROSTATE_MIN_TICKS,
-                                       Cfg::IDLE_MICROSTATE_MAX_TICKS);
+    // work_tempo biases micro duration: high tempo = shorter micro-states
+    float tempo_scale = 1.3f - 0.6f * personality[PERS_WORK_TEMPO];  // 0.7 to 1.3
+    int micro_dur = g_rng.rand_int(Cfg::IDLE_MICROSTATE_MIN_TICKS,
+                                    Cfg::IDLE_MICROSTATE_MAX_TICKS);
+    idle_micro_ticks = static_cast<int16_t>(micro_dur * tempo_scale);
 }
 
 float LilGuy::_colony_idle_budget(Chamber& ch) {
@@ -1113,6 +1128,11 @@ bool LilGuy::_sample_markers(Chamber& ch, bool use_food, int8_t& out_dx, int8_t&
     }
 
     if (best_val <= 0) return false;
+
+    // exploration bias: chance to ignore gradient and pick random direction
+    float explore_chance = personality[PERS_EXPLORATION] * 0.25f;  // 0-25%
+    if (explore_chance > 0 && g_rng.rand_float() < explore_chance) return false;
+
     if (best_count == 1) {
         out_dx = best_dx[0]; out_dy = best_dy[0]; return true;
     }

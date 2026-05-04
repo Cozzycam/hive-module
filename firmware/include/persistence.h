@@ -35,7 +35,7 @@ struct IdentityRecord {
     uint32_t born_unix    = 0;        // wall-clock birth time
     uint32_t died_unix    = 0;        // 0 = alive
     uint32_t tended_by    = 0;        // Phase 4: lineage
-    int8_t   personality[8] = {};     // Phase 3: personality vector (zero-stub)
+    float    personality[8] = {};     // Phase 3: 0.0-1.0 per dimension
     uint32_t traits       = 0;        // Phase 5: bitmask (zero-stub)
     uint32_t lifespan_ms  = 0;        // predetermined death-of-old-age timer
     uint16_t chamber_id   = 0;        // module that owns this worker
@@ -92,6 +92,12 @@ struct ColonyManifest {
 
     // Module role
     uint8_t  module_role     = 0;     // ModuleRole enum
+
+    // Live positions (written with manifest, avoids per-record file writes)
+    static constexpr int MAX_POS = 200;
+    struct PosEntry { uint32_t id; float x, y; };
+    PosEntry positions[MAX_POS];
+    int      pos_count = 0;
 };
 
 // ---- Registry (owns RAM cache + disk I/O) ----

@@ -8,7 +8,7 @@
 #include <ArduinoJson.h>
 #include <esp_random.h>
 
-static constexpr uint32_t FLUSH_INTERVAL_MS = 30000;  // 30s periodic flush
+static constexpr uint32_t FLUSH_INTERVAL_MS = 5000;  // 5s staggered flush (max 3 records per call)
 
 // ---- Path helpers ----
 
@@ -132,6 +132,18 @@ bool LilGuyRegistry::_load_manifest() {
     _manifest.queen_state.x             = qs["x"] | (int8_t)Cfg::QUEEN_SPAWN_X;
     _manifest.queen_state.y             = qs["y"] | (int8_t)Cfg::QUEEN_SPAWN_Y;
 
+    // Live positions
+    _manifest.pos_count = 0;
+    JsonArray pos = doc["positions"];
+    for (size_t i = 0; i < pos.size() && _manifest.pos_count < ColonyManifest::MAX_POS; i++) {
+        JsonObject p = pos[i];
+        _manifest.positions[_manifest.pos_count++] = {
+            p["id"] | (uint32_t)0,
+            p["x"] | 0.0f,
+            p["y"] | 0.0f
+        };
+    }
+
     return true;
 }
 
@@ -160,9 +172,23 @@ bool LilGuyRegistry::_save_manifest() {
     qs["x"]             = _manifest.queen_state.x;
     qs["y"]             = _manifest.queen_state.y;
 
-    char buf[1024];
-    size_t len = serializeJsonPretty(doc, buf, sizeof(buf));
-    return _atomic_write("/colony/manifest.json", buf, len);
+    // Live positions (avoids per-record file writes)
+    JsonArray pos = doc["positions"].to<JsonArray>();
+    for (int i = 0; i < _manifest.pos_count; i++) {
+        JsonObject p = pos.add<JsonObject>();
+        p["id"] = _manifest.positions[i].id;
+        p["x"]  = _manifest.positions[i].x;
+        p["y"]  = _manifest.positions[i].y;
+    }
+
+    // Use PSRAM-allocated buffer for larger manifest with positions
+    size_t buf_size = 512 + _manifest.pos_count * 40;
+    char* buf = (char*)malloc(buf_size);
+    if (!buf) return false;
+    size_t len = serializeJson(doc, buf, buf_size);
+    bool ok = _atomic_write("/colony/manifest.json", buf, len);
+    free(buf);
+    return ok;
 }
 
 // ---- Record I/O ----
@@ -282,7 +308,7 @@ bool LilGuyRegistry::_load_living_records() {
 
                         JsonArray pers = doc["personality"];
                         for (int i = 0; i < 8 && i < (int)pers.size(); i++)
-                            r.personality[i] = pers[i] | 0;
+                            r.personality[i] = pers[i] | 0.0f;
 
                         JsonObject pos = doc["last_pos"];
                         r.chamber_id = pos["chamber"] | 0;
@@ -516,6 +542,8 @@ void LilGuyRegistry::flush() {
     if (_state != PERSIST_OK) return;
     if (sd_card_state() != SD_OK) return;
 
+    // Only write records with actual state changes (not position-only updates).
+    // Position persistence is handled via the manifest's positions array.
     int flushed = 0;
     for (int i = 0; i < _alive_count; i++) {
         if (_alive[i].dirty) {
@@ -526,16 +554,9 @@ void LilGuyRegistry::flush() {
         }
     }
 
-    // Brood records are small — flush all on periodic
-    for (int i = 0; i < _brood_count; i++) {
-        _write_brood(_brood[i]);
-    }
-
-    _save_manifest();
     _last_flush_ms = millis();
-
     if (flushed > 0)
-        Serial.printf("[persist] flushed %d dirty records\n", flushed);
+        Serial.printf("[persist] flushed %d records\n", flushed);
 }
 
 void LilGuyRegistry::flush_manifest() {

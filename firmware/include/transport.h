@@ -12,6 +12,7 @@ struct __attribute__((packed)) LilGuyTransfer {
     int8_t   entry_offset;   // offset from center within entry zone (-1, 0, +1)
     uint16_t seq;            // sender's sequence number for ACK matching
     uint32_t lilguy_id;      // persistent identity (survives handoff)
+    uint8_t  personality[8]; // 0-255 mapped to 0.0-1.0 (compact transport)
     // -- sim state --
     uint8_t  state;           // AntState
     uint8_t  role;            // Role
@@ -46,6 +47,8 @@ inline void lil_guy_to_transfer(const LilGuy& w, LilGuyTransfer& t,
     t.entry_offset    = entry_offset;
     t.seq             = 0;  // caller overrides for ACK matching
     t.lilguy_id       = w.id;
+    for (int i = 0; i < 8; i++)
+        t.personality[i] = static_cast<uint8_t>(w.personality[i] * 255.0f);
     t.state           = w.state;
     t.role            = w.role;
     t.is_pioneer      = w.is_pioneer ? 1 : 0;
@@ -85,8 +88,10 @@ inline void transfer_to_lil_guy(const LilGuyTransfer& t, LilGuy& w,
     w.last_dx = face_dx;
     w.last_dy = face_dy;
 
-    // Identity
+    // Identity + personality
     w.id              = t.lilguy_id;
+    for (int i = 0; i < 8; i++)
+        w.personality[i] = t.personality[i] / 255.0f;
 
     // Sim state
     w.state           = static_cast<AntState>(t.state);
