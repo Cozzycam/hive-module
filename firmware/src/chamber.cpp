@@ -52,8 +52,11 @@ void Chamber::tick(float dt) {
             // Transfer brood ID to newly-hatched worker
             if (brood_id != 0) {
                 lil_guys[lil_guy_count - 1].id = brood_id;
-                if (hatch_count < MAX_LIFECYCLE)
-                    hatch_ids[hatch_count++] = brood_id;
+                if (hatch_count < MAX_LIFECYCLE) {
+                    hatch_ids[hatch_count] = brood_id;
+                    hatch_tended_by[hatch_count] = brood[i].tended_by;
+                    hatch_count++;
+                }
             }
             colony->total_workers_born++;
             colony->worker_census++;

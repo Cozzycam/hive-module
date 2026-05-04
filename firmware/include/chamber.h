@@ -43,7 +43,8 @@ public:
     struct DeathNotice { uint32_t id; uint8_t cause; };  // 0=old_age, 1=starved
     DeathNotice deaths[MAX_LIFECYCLE];
     int      death_count = 0;
-    uint32_t hatch_ids[MAX_LIFECYCLE];     // IDs of brood that hatched into workers
+    uint32_t hatch_ids[MAX_LIFECYCLE];         // IDs of brood that hatched into workers
+    uint32_t hatch_tended_by[MAX_LIFECYCLE];  // carer IDs for personality inheritance
     int      hatch_count = 0;
 
     void init(ColonyState* col, bool with_queen);

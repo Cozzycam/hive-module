@@ -20,6 +20,9 @@ enum JournalType : uint8_t {
     JEVT_CHAMBER_CROSSING,
     JEVT_MILESTONE,
     JEVT_COLONY_EVENT,
+    JEVT_TENDED_BY_ASSIGNED,
+    JEVT_BOND_FORMED,
+    JEVT_BOND_BROKEN,
     JEVT_COUNT
 };
 
@@ -41,6 +44,8 @@ struct JournalEntry {
         struct { uint16_t from_module; uint16_t to_module; uint8_t face; } crossing;
         struct { uint8_t kind; uint32_t value; } milestone;  // kind enum below
         struct { uint8_t kind; uint16_t module_id; } colony_event;  // kind enum below
+        struct { uint32_t carer_id; } tended_by;
+        struct { uint32_t target_id; } bond;  // formed or broken
     };
 };
 

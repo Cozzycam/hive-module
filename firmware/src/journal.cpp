@@ -11,7 +11,8 @@
 static const char* JEVT_NAMES[] = {
     "hatch", "death", "role_change", "food_tap",
     "food_discovered", "food_delivered", "chamber_crossing",
-    "milestone", "colony_event"
+    "milestone", "colony_event", "tended_by_assigned",
+    "bond_formed", "bond_broken"
 };
 
 static const char* DEATH_CAUSE[] = { "old_age", "starvation" };
@@ -81,6 +82,13 @@ void EventJournal::_serialize_entry(const JournalEntry& e, char* buf, size_t buf
         data["kind"] = COLONY_EVT_NAMES[e.colony_event.kind];
         if (e.colony_event.module_id != 0)
             data["module_id"] = e.colony_event.module_id;
+        break;
+    case JEVT_TENDED_BY_ASSIGNED:
+        data["carer_id"] = e.tended_by.carer_id;
+        break;
+    case JEVT_BOND_FORMED:
+    case JEVT_BOND_BROKEN:
+        data["target_id"] = e.bond.target_id;
         break;
     }
 

@@ -15,8 +15,9 @@ void Sim::init() {
         // Initialize persistence registry
         PersistenceState ps = coordinator.registry.init();
 
-        // Init journal after registry (needs SD + time)
+        // Init journal and bonds after registry (needs SD + time)
         coordinator.journal.init();
+        coordinator.bonds.init();
 
         bool has_manifest = (ps == PERSIST_OK &&
                              coordinator.registry.manifest().colony_id[0] != '\0');
@@ -24,6 +25,7 @@ void Sim::init() {
         if (has_manifest) {
             // Case C: SD card with manifest — restore from disk
             coordinator._persist_restore_from_disk();
+            coordinator._bond_load();
             tick_count = coordinator.registry.manifest().last_tick;
         } else {
             // Case A (no SD) or Case B (SD, no manifest): run normal init + debug spawn

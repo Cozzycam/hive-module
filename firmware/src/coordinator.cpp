@@ -6,6 +6,10 @@
 #include "rng.h"
 #include "sd_card.h"
 #include "journal.h"
+#include "bonds.h"
+#include "names.h"
+#include <SD_MMC.h>
+#include <ArduinoJson.h>
 #include <cmath>
 #include <cstring>
 
@@ -110,6 +114,9 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
 
     // ---- Persistence: assign IDs, process hatches/deaths, periodic flush ----
     if (is_queen()) _persist_tick(tick_num);
+
+    // ---- Bonds: decay + proximity detection ----
+    if (is_queen()) _bond_tick(tick_num);
 
     // ---- Journal: flush buffered events to disk periodically ----
     if (is_queen()) journal.tick();
@@ -823,8 +830,8 @@ void Coordinator::_persist_tick(uint32_t tick_num) {
             // Create a record for this worker
             IdentityRecord rec;
             rec.id = chamber.lil_guys[i].id;
-            snprintf(rec.name, sizeof(rec.name), "LilGuy_%lu",
-                     (unsigned long)rec.id);
+            name_from_id(rec.id, rec.name, sizeof(rec.name));
+            name_from_id(rec.id, rec.name, sizeof(rec.name));
             rec.role = chamber.lil_guys[i].role;
             rec.is_pioneer = chamber.lil_guys[i].is_pioneer;
             rec.born_unix = g_tod.unix_time;
@@ -860,7 +867,7 @@ void Coordinator::_persist_tick(uint32_t tick_num) {
     // SD card health check
     sd_card_health_tick();
 
-    // Manifest + positions flush (every 30s — single file write)
+    // Manifest + positions + bonds flush (every 30s — two file writes)
     uint32_t now = millis();
     static uint32_t _last_manifest_ms = 0;
     if (now - _last_manifest_ms >= 30000) {
@@ -868,6 +875,7 @@ void Coordinator::_persist_tick(uint32_t tick_num) {
         _persist_update_positions();
         _persist_sync_colony_state(tick_num);
         registry.flush_manifest();
+        _bond_persist();
     }
 
     // Record flush: only processes records dirtied by lifecycle events (rare)
@@ -899,20 +907,36 @@ void Coordinator::_persist_assign_new_brood_ids() {
 void Coordinator::_persist_process_hatches() {
     for (int h = 0; h < chamber.hatch_count; h++) {
         uint32_t id = chamber.hatch_ids[h];
+        uint32_t carer_id = chamber.hatch_tended_by[h];
+
         // Remove brood record
         registry.remove_brood(id);
 
         // Find the worker with this ID and create its IdentityRecord
         for (int i = 0; i < chamber.lil_guy_count; i++) {
             if (chamber.lil_guys[i].id == id) {
+                // Personality inheritance from carer (0.7 random + 0.3 carer)
+                if (carer_id != 0) {
+                    IdentityRecord* carer_rec = registry.get(carer_id);
+                    if (carer_rec) {
+                        for (int d = 0; d < PERS_COUNT; d++) {
+                            float random_part = chamber.lil_guys[i].personality[d];
+                            chamber.lil_guys[i].personality[d] =
+                                0.7f * random_part + 0.3f * carer_rec->personality[d];
+                        }
+                    }
+                    // Initial bond: child → carer at 0.3
+                    bonds.set(id, carer_id, 0.3f);
+                }
+
                 IdentityRecord rec;
                 rec.id = id;
-                snprintf(rec.name, sizeof(rec.name), "LilGuy_%lu",
-                         (unsigned long)id);
+                name_from_id(id, rec.name, sizeof(rec.name));
                 rec.role = chamber.lil_guys[i].role;
                 rec.is_pioneer = chamber.lil_guys[i].is_pioneer;
                 rec.born_unix = g_tod.unix_time;
                 rec.lifespan_ms = chamber.lil_guys[i].lifespan_ms;
+                rec.tended_by = carer_id;
                 memcpy(rec.personality, chamber.lil_guys[i].personality, sizeof(rec.personality));
                 rec.last_x = chamber.lil_guys[i].x;
                 rec.last_y = chamber.lil_guys[i].y;
@@ -941,6 +965,7 @@ void Coordinator::_persist_process_deaths() {
         uint8_t cause = chamber.deaths[d].cause;
         registry.mark_dead(id, g_tod.unix_time);
         registry.manifest().total_workers_died++;
+        bonds.remove_owner(id);
 
         // Journal: death event
         JournalEntry je = {};
@@ -1025,7 +1050,7 @@ void Coordinator::_persist_migrate_live_colony() {
         w.id = registry.allocate_id();
         IdentityRecord rec;
         rec.id = w.id;
-        snprintf(rec.name, sizeof(rec.name), "LilGuy_%lu", (unsigned long)rec.id);
+        name_from_id(rec.id, rec.name, sizeof(rec.name));
         rec.role = w.role;
         rec.is_pioneer = w.is_pioneer;
         rec.born_unix = m.founded_unix;  // approximate
@@ -1162,4 +1187,148 @@ void Coordinator::_persist_restore_from_disk() {
 
     Serial.printf("[persist] restored %d workers, %d brood, food=%.0f\n",
                   chamber.lil_guy_count, chamber.brood_count, colony.food_store);
+}
+
+// ================================================================
+//  Bonds
+// ================================================================
+
+void Coordinator::_bond_tick(uint32_t tick_num) {
+    // Decay every 1000 ticks (~2 min)
+    if (tick_num - _bond_decay_tick >= BondStore::DECAY_INTERVAL) {
+        _bond_decay_tick = tick_num;
+        uint32_t broken_owners[16], broken_targets[16];
+        int broken_count = 0;
+        bonds.decay(broken_owners, broken_targets, broken_count, 16);
+
+        for (int i = 0; i < broken_count; i++) {
+            JournalEntry je = {};
+            je.tick = tick_num;
+            je.unix_time = g_tod.unix_time;
+            je.type = JEVT_BOND_BROKEN;
+            je.lilguy_id = broken_owners[i];
+            je.bond.target_id = broken_targets[i];
+            journal.emit(je);
+        }
+    }
+
+    // Proximity-based bond formation every 200 ticks (~25s)
+    if (tick_num - _bond_proximity_tick >= 200) {
+        _bond_proximity_tick = tick_num;
+        _bond_detect_proximity(tick_num);
+    }
+}
+
+void Coordinator::_bond_detect_proximity(uint32_t tick_num) {
+    // Scan for worker pairs within 3 cells that are both active (non-idle)
+    for (int i = 0; i < chamber.lil_guy_count; i++) {
+        LilGuy& a = chamber.lil_guys[i];
+        if (a.id == 0 || a.departing || !a.alive) continue;
+
+        for (int j = i + 1; j < chamber.lil_guy_count; j++) {
+            LilGuy& b = chamber.lil_guys[j];
+            if (b.id == 0 || b.departing || !b.alive) continue;
+
+            int dist = abs(a.cell_x() - b.cell_x()) + abs(a.cell_y() - b.cell_y());
+            if (dist > 3) continue;
+
+            float increment = 0.0f;
+
+            // Co-tending: both in TEND_BROOD targeting same cell
+            if (a.state == STATE_TEND_BROOD && b.state == STATE_TEND_BROOD
+                && a.target_x == b.target_x && a.target_y == b.target_y) {
+                increment = 0.04f;
+            }
+            // Co-foraging: both in TO_FOOD or TO_HOME (actively working)
+            else if ((a.state == STATE_TO_FOOD || a.state == STATE_TO_HOME)
+                  && (b.state == STATE_TO_FOOD || b.state == STATE_TO_HOME)) {
+                increment = 0.01f;
+            }
+            // Idle proximity
+            else if (a.state == STATE_IDLE && b.state == STATE_IDLE) {
+                increment = 0.003f;
+            }
+
+            if (increment > 0) {
+                bool formed_ab = bonds.increment(a.id, b.id, increment);
+                bool formed_ba = bonds.increment(b.id, a.id, increment);
+
+                if (formed_ab) {
+                    JournalEntry je = {};
+                    je.tick = tick_num;
+                    je.unix_time = g_tod.unix_time;
+                    je.type = JEVT_BOND_FORMED;
+                    je.lilguy_id = a.id;
+                    je.bond.target_id = b.id;
+                    journal.emit(je);
+                }
+                if (formed_ba) {
+                    JournalEntry je = {};
+                    je.tick = tick_num;
+                    je.unix_time = g_tod.unix_time;
+                    je.type = JEVT_BOND_FORMED;
+                    je.lilguy_id = b.id;
+                    je.bond.target_id = a.id;
+                    journal.emit(je);
+                }
+            }
+        }
+    }
+}
+
+void Coordinator::_bond_persist() {
+    if (sd_card_state() != SD_OK || bonds.count() == 0) return;
+
+    // Write all bonds to a single file (avoids per-worker file stutter)
+    JsonDocument doc;
+    doc["schema"] = 1;
+    JsonArray arr = doc["bonds"].to<JsonArray>();
+    const BondEntry* pool = bonds.pool();
+    for (int i = 0; i < bonds.count(); i++) {
+        JsonObject b = arr.add<JsonObject>();
+        b["o"] = pool[i].owner;
+        b["t"] = pool[i].target;
+        b["s"] = pool[i].strength;
+    }
+
+    size_t buf_size = 128 + bonds.count() * 32;
+    char* buf = (char*)malloc(buf_size);
+    if (!buf) return;
+    size_t len = serializeJson(doc, buf, buf_size);
+
+    // Atomic write
+    File f = SD_MMC.open("/colony/bonds.json.tmp", FILE_WRITE);
+    if (f) {
+        f.write((const uint8_t*)buf, len);
+        f.flush();
+        f.close();
+        if (SD_MMC.exists("/colony/bonds.json")) SD_MMC.remove("/colony/bonds.json");
+        SD_MMC.rename("/colony/bonds.json.tmp", "/colony/bonds.json");
+        sd_card_write_ok();
+    }
+    free(buf);
+}
+
+void Coordinator::_bond_load() {
+    File f = SD_MMC.open("/colony/bonds.json", FILE_READ);
+    if (!f) return;
+
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, f);
+    f.close();
+    if (err) return;
+
+    JsonArray arr = doc["bonds"];
+    int n = 0;
+    static BondEntry entries[BondStore::POOL_CAP];
+    for (size_t i = 0; i < arr.size() && n < BondStore::POOL_CAP; i++) {
+        JsonObject b = arr[i];
+        entries[n++] = {
+            b["o"] | (uint32_t)0,
+            b["t"] | (uint32_t)0,
+            b["s"] | 0.0f
+        };
+    }
+    bonds.load(entries, n);
+    Serial.printf("[bonds] loaded %d bonds\n", n);
 }

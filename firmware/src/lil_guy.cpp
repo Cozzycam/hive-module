@@ -697,6 +697,9 @@ void LilGuy::_do_tend_brood(Chamber& ch) {
                     if (!b.needs_feeding()) break;
                     ch.colony->food_store -= feed_amt;
                     b.feed(feed_amt);
+                    // Lineage: first carer becomes tended_by
+                    if (b.tended_by == 0 && id != 0)
+                        b.tended_by = id;
                     // Grooming animation: lean toward brood
                     anim_type = LG_ANIM_GROOMING;
                     anim_remaining_ticks = Cfg::GREETING_DURATION_TICKS;

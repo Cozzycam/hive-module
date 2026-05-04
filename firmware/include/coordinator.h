@@ -8,6 +8,7 @@
 #include "transport.h"
 #include "persistence.h"
 #include "journal.h"
+#include "bonds.h"
 
 enum ModuleRole : uint8_t {
     MODULE_UNCONFIGURED = 0,
@@ -28,6 +29,7 @@ public:
     Chamber        chamber;    // single chamber for now
     LilGuyRegistry registry;
     EventJournal   journal;
+    BondStore      bonds;
     ModuleRole     role = MODULE_UNCONFIGURED;
 
     uint16_t boot_id = 0;              // random, set at init, sent in ANNOUNCE
@@ -56,6 +58,7 @@ public:
     // Persistence — called from Sim::init() for boot cases
     void _persist_migrate_live_colony();
     void _persist_restore_from_disk();
+    void _bond_load();
 
     // Journal — called from main.cpp with drained EventBus events
     void _journal_from_bus_events(const Event* events, int count, uint32_t tick_num);
@@ -95,6 +98,13 @@ private:
     // Incoming worker placement (immediate — visual delay is on sender side)
     void _place_arrival(const LilGuyTransfer& t, EventBus& bus, uint32_t tick_num,
                         int* first_idx_per_face);
+
+    // Bonds
+    uint32_t _bond_decay_tick = 0;
+    uint32_t _bond_proximity_tick = 0;
+    void _bond_tick(uint32_t tick_num);
+    void _bond_detect_proximity(uint32_t tick_num);
+    void _bond_persist();
 
     // Persistence (internal)
     uint32_t _last_persist_flush_ms = 0;

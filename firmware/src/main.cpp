@@ -242,6 +242,15 @@ static void process_serial_line(const char* line) {
         Serial.println("[test] Killing WiFi radio to simulate ESP-NOW death...");
         WiFi.mode(WIFI_OFF);
         Serial.println("[test] WiFi.mode(WIFI_OFF) — ESP-NOW is now dead. Watch for reinit.");
+    } else if (strcmp(line, "names") == 0) {
+        auto& reg = sim.coordinator.registry;
+        IdentityRecord* recs = reg.living_records();
+        Serial.println("[names] living workers:");
+        for (int i = 0; i < reg.living_count(); i++) {
+            Serial.printf("  id=%lu %s (role=%d pioneer=%d)\n",
+                (unsigned long)recs[i].id, recs[i].name,
+                recs[i].role, recs[i].is_pioneer);
+        }
     } else if (strcmp(line, "journal") == 0) {
         auto& j = sim.coordinator.journal;
         Serial.printf("[journal] pending: %d, total flushed: %d\n",
