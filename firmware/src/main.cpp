@@ -234,6 +234,10 @@ static void process_serial_line(const char* line) {
                 break;
             }
         }
+    } else if (strcmp(line, "kill-radio") == 0) {
+        Serial.println("[test] Killing WiFi radio to simulate ESP-NOW death...");
+        WiFi.mode(WIFI_OFF);
+        Serial.println("[test] WiFi.mode(WIFI_OFF) — ESP-NOW is now dead. Watch for reinit.");
     } else if (strcmp(line, "topology") == 0) {
         sim.coordinator.print_topology();
     } else if (strlen(line) == 1) {
@@ -352,7 +356,8 @@ void loop() {
     if (last_sim_ms == 0) last_sim_ms = millis();
 
     topology_poll();
-    weather_tick();
+    if (sim.coordinator.is_queen())
+        weather_tick();
 
     // Satellite: check for OTA cascade from queen
     if (!sim.coordinator.is_queen()) {

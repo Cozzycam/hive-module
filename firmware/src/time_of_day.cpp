@@ -423,8 +423,8 @@ bool tod_wifi_connect(uint32_t timeout_ms) {
     while (WiFi.status() != WL_CONNECTED) {
         if (millis() - start > timeout_ms) {
             Serial.println("[wifi] Connect timeout");
-            WiFi.disconnect(true);
-            WiFi.mode(WIFI_OFF);
+            WiFi.disconnect();
+            esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
             return false;
         }
         delay(100);

@@ -36,6 +36,11 @@ static FaceState _faces[FACE_COUNT];
 static Neighbour _neighbours[FACE_COUNT];
 static TopologyCallback _callback = nullptr;
 static uint32_t _last_poll_ms = 0;
+static uint32_t _reinit_fail_count = 0;
+static const uint32_t REINIT_THRESHOLD = 12;  // ~60s of failure (12 × 5s ERROR recovery)
+static uint32_t _last_any_connect_ms = 0;     // timestamp of last successful connection
+static uint32_t _send_fail_count = 0;         // consecutive esp_now_send failures
+static uint32_t _first_send_fail_ms = 0;      // timestamp of first failure in current streak
 
 // Receive ring buffer (ISR -> main loop) — topology messages
 static const int RX_BUF_SIZE = 8;
@@ -110,7 +115,15 @@ static void _send(const uint8_t* mac, uint8_t type, uint8_t face) {
     msg.sender_id = _my_id;
     msg.face      = face;
     msg.reserved  = 0;
-    esp_now_send(mac, (const uint8_t*)&msg, sizeof(msg));
+    esp_err_t err = esp_now_send(mac, (const uint8_t*)&msg, sizeof(msg));
+    if (err != ESP_OK) {
+        if (_send_fail_count == 0) _first_send_fail_ms = millis();
+        _send_fail_count++;
+        if (_send_fail_count == 1)
+            Serial.printf("[topo] send failed (err=0x%x)\n", err);
+    } else {
+        _send_fail_count = 0;
+    }
 }
 
 static void _ensure_peer(FaceState& fs, const uint8_t* mac) {
@@ -138,6 +151,9 @@ static void _connect_face(Face f, uint16_t id, const uint8_t* mac) {
     _neighbours[f].present      = true;
     _neighbours[f].last_seen_ms = millis();
 
+    _reinit_fail_count = 0;
+    _send_fail_count = 0;
+    _last_any_connect_ms = millis();
     Serial.printf("[topo] face %s connected to module 0x%04X\n", FACE_NAMES[f], id);
     if (_callback) _callback(f, true, id);
 }
@@ -372,12 +388,60 @@ static void _tick_face(Face f, const TopologyMessage* msg, const uint8_t* msg_ma
         }
         // Self-heal: if DETECT still LOW, retry after 5s instead of staying stuck
         if (fs.detect_low && now - fs.hello_sent_ms > 5000) {
-            Serial.printf("[topo] face %s recovering from ERROR (DETECT still LOW)\n", FACE_NAMES[f]);
+            _reinit_fail_count++;
+            Serial.printf("[topo] face %s recovering from ERROR (DETECT still LOW) [fail %lu/%lu]\n",
+                FACE_NAMES[f], (unsigned long)_reinit_fail_count, (unsigned long)REINIT_THRESHOLD);
             fs.link = LINK_IDLE;
             fs.hello_retries = 0;
         }
         break;
     }
+}
+
+// ---------------------------------------------------------------------------
+//  ESP-NOW reinit — recover from dead radio (WiFi.mode(WIFI_OFF), channel drift)
+// ---------------------------------------------------------------------------
+
+static void _espnow_reinit() {
+    Serial.println("[topo] ESP-NOW reinit — radio may be dead");
+
+    // Tear down
+    esp_now_deinit();
+
+    // Ensure WiFi STA is alive
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect();
+    esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
+
+    // Re-init ESP-NOW
+    if (esp_now_init() != ESP_OK) {
+        Serial.println("[topo] ESP-NOW reinit FAILED");
+        return;
+    }
+    esp_now_register_recv_cb(_on_recv);
+
+    // Re-add broadcast peer
+    esp_now_peer_info_t bp = {};
+    memcpy(bp.peer_addr, BROADCAST, 6);
+    bp.channel = 0;
+    bp.encrypt = false;
+    esp_now_add_peer(&bp);
+
+    // Re-add any connected face peers
+    for (int f = 0; f < FACE_COUNT; f++) {
+        _faces[f].peer_added = false;  // force re-add on next send
+    }
+
+    _reinit_fail_count = 0;
+    _send_fail_count = 0;
+
+    // Re-read DETECT pins (WiFi.mode(WIFI_OFF) may have affected GPIO state)
+    for (int f = 0; f < FACE_COUNT; f++) {
+        _faces[f].detect_low = (digitalRead(DETECT_PINS[f]) == LOW);
+        _faces[f].prev_detect_low = _faces[f].detect_low;
+    }
+
+    Serial.println("[topo] ESP-NOW reinit OK");
 }
 
 // ---------------------------------------------------------------------------
@@ -430,6 +494,7 @@ void topology_init(TopologyCallback cb) {
         _faces[f].prev_detect_low = _faces[f].detect_low;
     }
 
+    _last_any_connect_ms = millis();
     Serial.println("[topo] ready");
 }
 
@@ -464,6 +529,33 @@ void topology_poll() {
     // Tick each face (for timeouts, detect edges, heartbeat tx)
     for (int f = 0; f < FACE_COUNT; f++) {
         _tick_face(static_cast<Face>(f), nullptr, nullptr);
+    }
+
+    // ESP-NOW reinit — multiple trigger conditions
+    bool need_reinit = false;
+
+    // Trigger 1: error recovery counter (normal path)
+    if (_reinit_fail_count >= REINIT_THRESHOLD)
+        need_reinit = true;
+
+    // Trigger 2: send failures not recovered within 30s
+    //            (catches WiFi.mode(WIFI_OFF) where detect pins may read wrong)
+    if (_send_fail_count > 0 && now - _first_send_fail_ms > 30000)
+        need_reinit = true;
+
+    // Trigger 3: DETECT LOW on any face but no connection for 60s
+    bool any_detect_low = false;
+    bool any_connected = false;
+    for (int f = 0; f < FACE_COUNT; f++) {
+        if (_faces[f].detect_low) any_detect_low = true;
+        if (_faces[f].link == LINK_CONNECTED) any_connected = true;
+    }
+    if (any_detect_low && !any_connected && now - _last_any_connect_ms > 60000)
+        need_reinit = true;
+
+    if (need_reinit) {
+        _espnow_reinit();
+        _last_any_connect_ms = now;  // prevent rapid re-triggers
     }
 }
 
