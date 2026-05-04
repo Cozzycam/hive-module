@@ -27,6 +27,12 @@
 // ---- TCA9554 I/O expander ----
 #define TCA9554_ADDR    0x20
 #define TCA9554_LCD_RST 1   // P1 = LCD_RST
+#define TCA9554_SD_CS   3   // P3 = SD card DAT3/CS (active-high for SD_MMC mode)
+
+// ---- SD card (SD_MMC 1-bit mode) ----
+#define SD_MMC_CLK     11
+#define SD_MMC_CMD     10
+#define SD_MMC_D0       9
 
 // ---- AXP2101 PMU (not needed for basic display, listed for reference) ----
 #define AXP2101_ADDR    0x34

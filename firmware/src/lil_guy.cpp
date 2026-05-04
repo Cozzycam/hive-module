@@ -52,6 +52,9 @@ void LilGuy::init(int8_t px, int8_t py, Role c, bool pioneer) {
     tint_seed = static_cast<uint8_t>(g_rng.rand_int(1, 255));
     arrival_face = -1;
     arrival_ms = 0;
+    departing = false;
+    depart_at_ms = 0;
+    depart_face = -1;
 
     role = c;
     is_pioneer = pioneer;

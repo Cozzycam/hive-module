@@ -11,6 +11,7 @@ struct __attribute__((packed)) LilGuyTransfer {
     uint8_t  arrival_face;    // face on RECEIVER the worker enters from
     int8_t   entry_offset;   // offset from center within entry zone (-1, 0, +1)
     uint16_t seq;            // sender's sequence number for ACK matching
+    uint32_t lilguy_id;      // persistent identity (survives handoff)
     // -- sim state --
     uint8_t  state;           // AntState
     uint8_t  role;            // Role
@@ -44,6 +45,7 @@ inline void lil_guy_to_transfer(const LilGuy& w, LilGuyTransfer& t,
     t.arrival_face    = arrival_face;
     t.entry_offset    = entry_offset;
     t.seq             = 0;  // caller overrides for ACK matching
+    t.lilguy_id       = w.id;
     t.state           = w.state;
     t.role            = w.role;
     t.is_pioneer      = w.is_pioneer ? 1 : 0;
@@ -82,6 +84,9 @@ inline void transfer_to_lil_guy(const LilGuyTransfer& t, LilGuy& w,
     w.facing_dy = face_dy;
     w.last_dx = face_dx;
     w.last_dy = face_dy;
+
+    // Identity
+    w.id              = t.lilguy_id;
 
     // Sim state
     w.state           = static_cast<AntState>(t.state);
@@ -130,6 +135,9 @@ inline void transfer_to_lil_guy(const LilGuyTransfer& t, LilGuy& w,
     w.tint_seed            = t.tint_seed;
     w.arrival_face         = static_cast<int8_t>(t.arrival_face);
     w.arrival_ms           = 0;  // caller sets to millis() after placement
+    w.departing            = false;
+    w.depart_at_ms         = 0;
+    w.depart_face          = -1;
     w.last_cell_x          = static_cast<int8_t>(entry_x);
     w.last_cell_y          = static_cast<int8_t>(entry_y);
 }

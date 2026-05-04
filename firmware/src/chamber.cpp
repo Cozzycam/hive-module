@@ -27,6 +27,10 @@ void Chamber::init(ColonyState* col, bool with_queen) {
 }
 
 void Chamber::tick(float dt) {
+    // Clear lifecycle notifications from previous tick
+    death_count = 0;
+    hatch_count = 0;
+
     // Pheromone decay
     pheromones.decay();
 
@@ -43,7 +47,14 @@ void Chamber::tick(float dt) {
         case BROOD_HATCH: {
             bool pioneer = colony->total_workers_born < Cfg::FOUNDING_EGG_COUNT;
             int8_t bx = brood[i].x, by = brood[i].y;
+            uint32_t brood_id = brood[i].id;
             add_lil_guy(bx, by, brood[i].role, pioneer);
+            // Transfer brood ID to newly-hatched worker
+            if (brood_id != 0) {
+                lil_guys[lil_guy_count - 1].id = brood_id;
+                if (hatch_count < MAX_LIFECYCLE)
+                    hatch_ids[hatch_count++] = brood_id;
+            }
             colony->total_workers_born++;
             colony->worker_census++;
             if (!queen_obj.founding_done) queen_obj.founding_done = true;
@@ -127,6 +138,9 @@ void Chamber::tick(float dt) {
         if (lil_guys[i].departing) continue;  // frozen, waiting for transfer
         lil_guys[i].tick(*this, dt);
         if (!lil_guys[i].alive) {
+            // Record death for persistence before removal
+            if (lil_guys[i].id != 0 && death_count < MAX_LIFECYCLE)
+                death_ids[death_count++] = lil_guys[i].id;
             if (lil_guys[i].food_carried > 0)
                 add_food(lil_guys[i].cell_x(), lil_guys[i].cell_y(),
                          lil_guys[i].food_carried);

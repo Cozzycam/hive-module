@@ -4,11 +4,16 @@
 #include "transport.h"
 #include "time_of_day.h"
 #include "rng.h"
+#include "sd_card.h"
 #include <cmath>
 
 #ifdef ARDUINO
 #include <Preferences.h>
 #endif
+
+// Death counters (defined in main.cpp)
+extern uint16_t g_deaths_starved;
+extern uint16_t g_deaths_old_age;
 
 // Handoff counters (defined in main.cpp)
 extern uint32_t g_handoffs_out;
@@ -100,6 +105,9 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
 
     // ---- Aggregate colony stats ----
     _aggregate_colony_stats();
+
+    // ---- Persistence: assign IDs, process hatches/deaths, periodic flush ----
+    if (is_queen()) _persist_tick(tick_num);
 }
 
 void Coordinator::_aggregate_colony_stats() {
@@ -525,8 +533,8 @@ void Coordinator::_service_departures(EventBus& bus, uint32_t tick_num) {
             Serial.printf("[handoff] OUT stack of %d via face %s to 0x%04X\n",
                 sent_count, face_letter(face), nb.module_id);
         else
-            Serial.printf("[handoff] OUT worker %d via face %s to 0x%04X (state=%d food=%.1f)\n",
-                i, face_letter(face), nb.module_id, w.state, w.food_carried);
+            Serial.printf("[handoff] OUT id=%lu via face %s to 0x%04X (state=%d food=%.1f)\n",
+                (unsigned long)w.id, face_letter(face), nb.module_id, w.state, w.food_carried);
 
         // Fire events
         for (int s = 0; s < sent_count; s++) {
@@ -593,8 +601,8 @@ void Coordinator::_place_arrival(const LilGuyTransfer& t, EventBus& bus,
 
     g_handoffs_in++;
 
-    Serial.printf("[handoff] IN slot %d from 0x%04X face %s (state=%d food=%.1f%s)\n",
-        idx, t.sender_id, face_letter(af), t.state, t.food_carried,
+    Serial.printf("[handoff] IN id=%lu from 0x%04X face %s (state=%d food=%.1f%s)\n",
+        (unsigned long)w.id, t.sender_id, face_letter(af), t.state, t.food_carried,
         w.stack_on >= 0 ? " stacked" : "");
 
     Event ev;
@@ -708,7 +716,8 @@ void Coordinator::_service_pending_handoffs() {
                 transfer_to_lil_guy(_pending_out[i].payload, w, ex, ey, fdx, fdy);
                 w.arrival_face = static_cast<int8_t>(f);  // prevent immediate re-exit
                 w.arrival_ms = millis();
-                Serial.println("[handoff] TIMEOUT -- restoring worker");
+                Serial.printf("[handoff] TIMEOUT -- restoring id=%lu\n",
+                              (unsigned long)w.id);
             } else {
                 Serial.println("[handoff] TIMEOUT -- chamber full, worker lost");
             }
@@ -718,4 +727,307 @@ void Coordinator::_service_pending_handoffs() {
         }
     }
 #endif
+}
+
+// ================================================================
+//  Persistence integration
+// ================================================================
+
+void Coordinator::_persist_tick(uint32_t tick_num) {
+    if (registry.state() == PERSIST_DEGRADED || registry.state() == PERSIST_UNINIT)
+        return;
+
+    // Assign IDs to newly-laid brood (id == 0)
+    _persist_assign_new_brood_ids();
+
+    // Process hatches — create IdentityRecords, remove BroodRecords
+    _persist_process_hatches();
+
+    // Process deaths — mark_dead in registry
+    _persist_process_deaths();
+
+    // Assign IDs to workers that somehow have id==0 (handoff from old firmware, etc.)
+    for (int i = 0; i < chamber.lil_guy_count; i++) {
+        if (chamber.lil_guys[i].id == 0) {
+            chamber.lil_guys[i].id = registry.allocate_id();
+            // Create a record for this worker
+            IdentityRecord rec;
+            rec.id = chamber.lil_guys[i].id;
+            snprintf(rec.name, sizeof(rec.name), "LilGuy_%lu",
+                     (unsigned long)rec.id);
+            rec.role = chamber.lil_guys[i].role;
+            rec.is_pioneer = chamber.lil_guys[i].is_pioneer;
+            rec.born_unix = g_tod.unix_time;
+            rec.lifespan_ms = chamber.lil_guys[i].lifespan_ms;
+            rec.last_x = chamber.lil_guys[i].x;
+            rec.last_y = chamber.lil_guys[i].y;
+            rec.last_state = chamber.lil_guys[i].state;
+            registry.create(rec);
+        }
+    }
+
+    // SD card health check
+    sd_card_health_tick();
+
+    // Periodic flush (every 30s)
+    uint32_t now = millis();
+    if (now - _last_persist_flush_ms >= 30000) {
+        _last_persist_flush_ms = now;
+        _persist_update_positions();
+        _persist_sync_colony_state(tick_num);
+        registry.flush();
+    }
+}
+
+void Coordinator::_persist_assign_new_brood_ids() {
+    for (int i = 0; i < chamber.brood_count; i++) {
+        if (chamber.brood[i].id == 0) {
+            chamber.brood[i].id = registry.allocate_id();
+            BroodRecord rec;
+            rec.id = chamber.brood[i].id;
+            rec.stage = chamber.brood[i].stage;
+            rec.role = chamber.brood[i].role;
+            rec.x = chamber.brood[i].x;
+            rec.y = chamber.brood[i].y;
+            rec.hunger = chamber.brood[i].hunger;
+            rec.food_invested = chamber.brood[i].food_invested;
+            rec.stage_start_ms = chamber.brood[i].stage_start_ms;
+            rec.born_unix = g_tod.unix_time;
+            registry.create_brood(rec);
+        }
+    }
+}
+
+void Coordinator::_persist_process_hatches() {
+    for (int h = 0; h < chamber.hatch_count; h++) {
+        uint32_t id = chamber.hatch_ids[h];
+        // Remove brood record
+        registry.remove_brood(id);
+
+        // Find the worker with this ID and create its IdentityRecord
+        for (int i = 0; i < chamber.lil_guy_count; i++) {
+            if (chamber.lil_guys[i].id == id) {
+                IdentityRecord rec;
+                rec.id = id;
+                snprintf(rec.name, sizeof(rec.name), "LilGuy_%lu",
+                         (unsigned long)id);
+                rec.role = chamber.lil_guys[i].role;
+                rec.is_pioneer = chamber.lil_guys[i].is_pioneer;
+                rec.born_unix = g_tod.unix_time;
+                rec.lifespan_ms = chamber.lil_guys[i].lifespan_ms;
+                rec.last_x = chamber.lil_guys[i].x;
+                rec.last_y = chamber.lil_guys[i].y;
+                rec.last_state = chamber.lil_guys[i].state;
+                registry.create(rec);
+                break;
+            }
+        }
+    }
+}
+
+void Coordinator::_persist_process_deaths() {
+    for (int d = 0; d < chamber.death_count; d++) {
+        uint32_t id = chamber.death_ids[d];
+        registry.mark_dead(id, g_tod.unix_time);
+        registry.manifest().total_workers_died++;
+    }
+}
+
+void Coordinator::_persist_update_positions() {
+    for (int i = 0; i < chamber.lil_guy_count; i++) {
+        LilGuy& w = chamber.lil_guys[i];
+        if (w.id == 0) continue;
+        IdentityRecord* rec = registry.get(w.id);
+        if (!rec) continue;
+        rec->last_x = w.x;
+        rec->last_y = w.y;
+        rec->last_state = w.state;
+        if (rec->lifespan_ms == 0) rec->lifespan_ms = w.lifespan_ms;
+        rec->dirty = true;
+    }
+
+    // Also update brood positions/state
+    for (int i = 0; i < chamber.brood_count; i++) {
+        Brood& b = chamber.brood[i];
+        if (b.id == 0) continue;
+        BroodRecord* rec = registry.get_brood(b.id);
+        if (!rec) continue;
+        rec->stage = b.stage;
+        rec->hunger = b.hunger;
+        rec->food_invested = b.food_invested;
+        rec->stage_start_ms = b.stage_start_ms;
+    }
+}
+
+void Coordinator::_persist_sync_colony_state(uint32_t tick_num) {
+    ColonyManifest& m = registry.manifest();
+    m.last_tick = tick_num;
+    m.food_store = colony.food_store;
+    m.food_total = colony.food_total;
+    m.total_workers_born = colony.total_workers_born;
+    m.worker_census = colony.worker_census;
+    m.module_role = role;
+
+    // Queen state
+    if (chamber.has_queen) {
+        m.queen_state.reserves = chamber.queen_obj.reserves;
+        m.queen_state.hunger = chamber.queen_obj.hunger;
+        m.queen_state.founding_done = chamber.queen_obj.founding_done;
+        m.queen_state.eggs_laid = chamber.queen_obj.eggs_laid;
+        m.queen_state.egg_accum = chamber.queen_obj.egg_accum;
+        m.queen_state.x = chamber.queen_obj.x;
+        m.queen_state.y = chamber.queen_obj.y;
+    }
+}
+
+void Coordinator::_persist_migrate_live_colony() {
+    // Case B: first boot with SD — migrate existing live colony to persistence.
+    // Called when SD is available but no manifest exists.
+    Serial.println("[persist] migrating live colony to persistence (Case B)...");
+
+    ColonyManifest& m = registry.manifest();
+    m.schema = 1;
+    registry.generate_colony_id();
+
+    // Read founding time from HUD's NVS if available
+    Preferences prefs;
+    prefs.begin("hive", true);
+    m.founded_unix = prefs.getULong("founded", g_tod.unix_time);
+    prefs.end();
+    if (m.founded_unix == 0) m.founded_unix = g_tod.unix_time;
+
+    m.module_role = role;
+    m.food_store = colony.food_store;
+    m.food_total = colony.food_total;
+    m.total_workers_born = colony.total_workers_born;
+    m.worker_census = colony.worker_census;
+
+    // Queen gets ID 0 (special)
+    if (chamber.has_queen) {
+        chamber.queen_obj.id = registry.allocate_id();
+        m.queen_state.reserves = chamber.queen_obj.reserves;
+        m.queen_state.hunger = chamber.queen_obj.hunger;
+        m.queen_state.founding_done = chamber.queen_obj.founding_done;
+        m.queen_state.eggs_laid = chamber.queen_obj.eggs_laid;
+        m.queen_state.egg_accum = chamber.queen_obj.egg_accum;
+        m.queen_state.x = chamber.queen_obj.x;
+        m.queen_state.y = chamber.queen_obj.y;
+    }
+
+    // Migrate all living workers
+    for (int i = 0; i < chamber.lil_guy_count; i++) {
+        LilGuy& w = chamber.lil_guys[i];
+        w.id = registry.allocate_id();
+        IdentityRecord rec;
+        rec.id = w.id;
+        snprintf(rec.name, sizeof(rec.name), "LilGuy_%lu", (unsigned long)rec.id);
+        rec.role = w.role;
+        rec.is_pioneer = w.is_pioneer;
+        rec.born_unix = m.founded_unix;  // approximate
+        rec.lifespan_ms = w.lifespan_ms;
+        rec.last_x = w.x;
+        rec.last_y = w.y;
+        rec.last_state = w.state;
+        registry.create(rec);
+    }
+
+    // Migrate brood
+    for (int i = 0; i < chamber.brood_count; i++) {
+        Brood& b = chamber.brood[i];
+        b.id = registry.allocate_id();
+        BroodRecord rec;
+        rec.id = b.id;
+        rec.stage = b.stage;
+        rec.role = b.role;
+        rec.x = b.x;
+        rec.y = b.y;
+        rec.hunger = b.hunger;
+        rec.food_invested = b.food_invested;
+        rec.stage_start_ms = b.stage_start_ms;
+        rec.born_unix = m.founded_unix;
+        registry.create_brood(rec);
+    }
+
+    registry.flush();
+    Serial.printf("[persist] migration complete — %d workers, %d brood, colony_id=%s\n",
+                  chamber.lil_guy_count, chamber.brood_count, m.colony_id);
+}
+
+void Coordinator::_persist_restore_from_disk() {
+    // Case C: manifest exists — restore colony from disk.
+    Serial.println("[persist] restoring colony from disk (Case C)...");
+
+    ColonyManifest& m = registry.manifest();
+
+    // Restore colony state
+    colony.food_store = m.food_store;
+    colony.food_total = m.food_total;
+    colony.total_workers_born = m.total_workers_born;
+    colony.worker_census = m.worker_census;
+
+    // Restore queen
+    if (chamber.has_queen) {
+        chamber.queen_obj.id = 1;  // queen is always first allocated
+        chamber.queen_obj.reserves = m.queen_state.reserves;
+        chamber.queen_obj.hunger = m.queen_state.hunger;
+        chamber.queen_obj.founding_done = m.queen_state.founding_done;
+        chamber.queen_obj.eggs_laid = m.queen_state.eggs_laid;
+        chamber.queen_obj.egg_accum = m.queen_state.egg_accum;
+        chamber.queen_obj.x = m.queen_state.x;
+        chamber.queen_obj.y = m.queen_state.y;
+    }
+
+    // Restore workers from living records
+    IdentityRecord* recs = registry.living_records();
+    int rec_count = registry.living_count();
+    chamber.lil_guy_count = 0;
+
+    for (int i = 0; i < rec_count && chamber.lil_guy_count < Cfg::MAX_LIL_GUYS; i++) {
+        IdentityRecord& r = recs[i];
+        int idx = chamber.lil_guy_count;
+        chamber.lil_guys[idx].init(
+            static_cast<int8_t>(r.last_x),
+            static_cast<int8_t>(r.last_y),
+            static_cast<Role>(r.role),
+            r.is_pioneer
+        );
+        chamber.lil_guys[idx].id = r.id;
+        // Restore float position (init sets int pos, we want exact float)
+        chamber.lil_guys[idx].x = r.last_x;
+        chamber.lil_guys[idx].y = r.last_y;
+        chamber.lil_guys[idx].prev_x = r.last_x;
+        chamber.lil_guys[idx].prev_y = r.last_y;
+        // Restore lifespan (init randomizes it — override with persisted value)
+        if (r.lifespan_ms > 0)
+            chamber.lil_guys[idx].lifespan_ms = r.lifespan_ms;
+        // born_at_ms: approximate from born_unix vs current time
+        if (r.born_unix > 0 && g_tod.unix_time > r.born_unix) {
+            uint32_t age_secs = g_tod.unix_time - r.born_unix;
+            chamber.lil_guys[idx].born_at_ms = millis() - (age_secs * 1000);
+        }
+        chamber.lil_guy_count++;
+    }
+
+    // Restore brood
+    BroodRecord* brecs = registry.brood_records();
+    int brood_count = registry.brood_count();
+    chamber.brood_count = 0;
+
+    for (int i = 0; i < brood_count && chamber.brood_count < Cfg::MAX_BROOD; i++) {
+        BroodRecord& br = brecs[i];
+        int idx = chamber.brood_count;
+        chamber.brood[idx].init(br.x, br.y, static_cast<Role>(br.role));
+        chamber.brood[idx].id = br.id;
+        chamber.brood[idx].stage = static_cast<BroodStage>(br.stage);
+        chamber.brood[idx].hunger = br.hunger;
+        chamber.brood[idx].food_invested = br.food_invested;
+        // stage_start_ms already converted from elapsed to absolute in _load_brood_records
+        chamber.brood[idx].stage_start_ms = br.stage_start_ms;
+        chamber.brood_count++;
+    }
+
+    colony.population = chamber.lil_guy_count;
+
+    Serial.printf("[persist] restored %d workers, %d brood, food=%.0f\n",
+                  chamber.lil_guy_count, chamber.brood_count, colony.food_store);
 }

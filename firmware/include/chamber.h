@@ -38,6 +38,13 @@ public:
     uint8_t food_delivery_signal = 0;
     int     cannibalism_cooldown = 0;
 
+    // Lifecycle notifications — populated during tick(), drained by Coordinator
+    static constexpr int MAX_LIFECYCLE = 16;
+    uint32_t death_ids[MAX_LIFECYCLE];     // IDs of workers that died this tick
+    int      death_count = 0;
+    uint32_t hatch_ids[MAX_LIFECYCLE];     // IDs of brood that hatched into workers
+    int      hatch_count = 0;
+
     void init(ColonyState* col, bool with_queen);
     void tick(float dt);
 

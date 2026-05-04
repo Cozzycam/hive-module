@@ -1,5 +1,6 @@
 /* Real-world time of day — RTC, NTP, solar calculation, phase. */
 #include "time_of_day.h"
+#include "weather.h"
 #include <Arduino.h>
 #include <Wire.h>
 #include <WiFi.h>
@@ -17,8 +18,8 @@ static constexpr int NTP_RESYNC_HOURS       = 24;
 
 // ---- WiFi credentials ----
 // Set via environment or replace locally (do not commit real credentials)
-static const char* WIFI_SSID = "YOUR_SSID";
-static const char* WIFI_PASS = "YOUR_PASS";
+static const char* WIFI_SSID = "EE-52GKNR";
+static const char* WIFI_PASS = "F7QMktKEtvP6MqFH";
 
 // ---- PCF85063 RTC ----
 static constexpr uint8_t RTC_ADDR = 0x51;
@@ -391,6 +392,9 @@ static bool _ntp_sync() {
 
     // Write to RTC for offline persistence
     _rtc_write(g_tod.unix_time);
+
+    // Piggyback weather fetch while WiFi is up
+    weather_fetch();
 
     _wifi_teardown();
     return true;

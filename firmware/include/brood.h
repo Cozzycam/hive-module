@@ -12,6 +12,7 @@ enum BroodTransition : uint8_t {
 };
 
 struct Brood {
+    uint32_t   id = 0;  // persistent identity (shared allocator with LilGuy)
     int8_t     x, y;
     BroodStage stage        = STAGE_EGG;
     Role       role         = ROLE_MINOR;

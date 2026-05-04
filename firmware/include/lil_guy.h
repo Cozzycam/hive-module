@@ -36,6 +36,7 @@ enum LilGuySpriteFrame : uint8_t {
 class Chamber;  // forward declaration
 
 struct LilGuy {
+    uint32_t id             = 0;           // persistent identity (0 = unassigned)
     float    x, y, prev_x, prev_y;        // float cell-center coords
     AntState state          = STATE_IDLE;
     int8_t   target_x, target_y;           // high-level task target (queen/brood pos)

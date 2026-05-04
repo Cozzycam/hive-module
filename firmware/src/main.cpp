@@ -33,6 +33,9 @@
 #include <WiFi.h>
 #include <ArduinoOTA.h>
 #include "ota_push.h"
+#include "sd_card.h"
+#include <SD_MMC.h>
+#include <Preferences.h>
 
 // Event type names for serial logging
 static const char* EVT_NAMES[] = {
@@ -84,6 +87,7 @@ Arduino_Canvas *gfx = new Arduino_Canvas(LCD_WIDTH, LCD_HEIGHT, panel);
 static Sim sim;
 static Renderer renderer;
 static bool topo_overlay = false;  // debug overlay toggle
+static bool force_daytime = false; // debug: lock to midday
 
 // Topology callback trampoline (sim is file-static, safe to reference)
 static void topo_callback(Face face, bool connected, uint16_t module_id) {
@@ -238,8 +242,81 @@ static void process_serial_line(const char* line) {
         Serial.println("[test] Killing WiFi radio to simulate ESP-NOW death...");
         WiFi.mode(WIFI_OFF);
         Serial.println("[test] WiFi.mode(WIFI_OFF) — ESP-NOW is now dead. Watch for reinit.");
+    } else if (strcmp(line, "reset colony") == 0) {
+        Serial.println("[reset] wiping colony data...");
+        // Remove colony directory tree from SD
+        if (sd_card_state() == SD_OK) {
+            // Walk and remove files — SD_MMC.rmdir only works on empty dirs
+            const char* dirs[] = {"/colony/lilguys", "/colony/brood"};
+            for (auto base : dirs) {
+                File root = SD_MMC.open(base);
+                if (root && root.isDirectory()) {
+                    File shard = root.openNextFile();
+                    while (shard) {
+                        if (shard.isDirectory()) {
+                            File entry = shard.openNextFile();
+                            while (entry) {
+                                char p[128];
+                                strlcpy(p, entry.path(), sizeof(p));
+                                entry.close();
+                                SD_MMC.remove(p);
+                                entry = shard.openNextFile();
+                            }
+                            char sp[128];
+                            strlcpy(sp, shard.path(), sizeof(sp));
+                            shard.close();
+                            SD_MMC.rmdir(sp);
+                        } else {
+                            shard.close();
+                        }
+                        shard = root.openNextFile();
+                    }
+                    root.close();
+                }
+                SD_MMC.rmdir(base);
+            }
+            SD_MMC.remove("/colony/manifest.json");
+            SD_MMC.rmdir("/colony");
+            Serial.println("[reset] SD colony data removed");
+        }
+        // Clear NVS founding time
+        Preferences prefs;
+        prefs.begin("hive", false);
+        prefs.remove("founded");
+        prefs.remove("founded_ok");
+        prefs.end();
+        Serial.println("[reset] NVS founding time cleared");
+        Serial.println("[reset] rebooting...");
+        delay(100);
+        ESP.restart();
+    } else if (strcmp(line, "daytime") == 0) {
+        force_daytime = !force_daytime;
+        Serial.printf("[debug] force daytime: %s\n", force_daytime ? "ON" : "OFF");
     } else if (strcmp(line, "topology") == 0) {
         sim.coordinator.print_topology();
+    } else if (strcmp(line, "sd") == 0) {
+        Serial.printf("[sd] state: %s\n",
+            sd_card_state() == SD_OK ? "OK" :
+            sd_card_state() == SD_ERROR ? "ERROR" : "NOT_MOUNTED");
+        if (sd_card_state() == SD_OK) {
+            Serial.printf("[sd] %.1f MB total, %.1f MB used\n",
+                sd_card_total_bytes() / (1024.0 * 1024.0),
+                sd_card_used_bytes()  / (1024.0 * 1024.0));
+        }
+    } else if (strcmp(line, "persist") == 0) {
+        auto& reg = sim.coordinator.registry;
+        const char* ps[] = {"UNINIT","OK","DEGRADED","ERROR"};
+        Serial.printf("[persist] state: %s\n", ps[reg.state()]);
+        if (reg.state() == PERSIST_OK) {
+            auto& m = reg.manifest();
+            Serial.printf("[persist] colony_id: %s\n", m.colony_id);
+            Serial.printf("[persist] next_id: %lu, last_tick: %lu\n",
+                (unsigned long)m.next_lilguy_id, (unsigned long)m.last_tick);
+            Serial.printf("[persist] alive: %d, brood: %d\n",
+                reg.living_count(), reg.brood_count());
+            Serial.printf("[persist] food: %.1f, workers_born: %d, census: %d\n",
+                m.food_store, m.total_workers_born, m.worker_census);
+        }
     } else if (strlen(line) == 1) {
         // Single-char commands
         char c = line[0];
@@ -326,6 +403,11 @@ void setup() {
         while (true) delay(1000);
     }
     gfx->setRotation(1);
+
+    // SD card — mount before sim so persistence can load
+    if (!sd_card_init()) {
+        Serial.println("[setup] SD not available — running without persistence");
+    }
 
     touch_init();
     time_of_day_init();
@@ -441,6 +523,12 @@ void loop() {
         } else if (!tod_synced) {
             Serial.println("[tod] synced to queen time");
             tod_synced = true;
+        }
+        if (force_daytime) {
+            g_tod.phase = PHASE_DAY;
+            g_tod.night_factor = 0.0f;
+            g_tod.day_progress = 0.5f;
+            g_tod.local_hour = 12;
         }
     }
 

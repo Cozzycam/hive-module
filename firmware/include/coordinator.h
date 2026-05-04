@@ -6,6 +6,7 @@
 #include "colony_state.h"
 #include "events.h"
 #include "transport.h"
+#include "persistence.h"
 
 enum ModuleRole : uint8_t {
     MODULE_UNCONFIGURED = 0,
@@ -22,9 +23,10 @@ struct TopoGraphEntry {
 
 class Coordinator {
 public:
-    ColonyState colony;
-    Chamber     chamber;    // single chamber for now
-    ModuleRole  role = MODULE_UNCONFIGURED;
+    ColonyState    colony;
+    Chamber        chamber;    // single chamber for now
+    LilGuyRegistry registry;
+    ModuleRole     role = MODULE_UNCONFIGURED;
 
     uint16_t boot_id = 0;              // random, set at init, sent in ANNOUNCE
     uint16_t _last_queen_boot_id = 0;  // satellite: last boot_id from queen
@@ -48,6 +50,10 @@ public:
 
     // Write role to NVS (does NOT reboot — caller should).
     static void set_role_nvs(ModuleRole r);
+
+    // Persistence — called from Sim::init() for boot cases
+    void _persist_migrate_live_colony();
+    void _persist_restore_from_disk();
 
 private:
     void _aggregate_colony_stats();
@@ -85,4 +91,12 @@ private:
     void _place_arrival(const LilGuyTransfer& t, EventBus& bus, uint32_t tick_num,
                         int* first_idx_per_face);
 
+    // Persistence (internal)
+    uint32_t _last_persist_flush_ms = 0;
+    void _persist_tick(uint32_t tick_num);
+    void _persist_assign_new_brood_ids();
+    void _persist_process_hatches();
+    void _persist_process_deaths();
+    void _persist_update_positions();
+    void _persist_sync_colony_state(uint32_t tick_num);
 };

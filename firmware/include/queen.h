@@ -5,6 +5,7 @@
 class Chamber;
 
 struct Queen {
+    uint32_t id = 0;  // persistent identity
     int8_t x, y;
     float  reserves    = 0.0f;
     float  hunger      = 0.0f;
