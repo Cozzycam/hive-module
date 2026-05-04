@@ -958,7 +958,7 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
     // Workers
     for (int i = 0; i < ch.lil_guy_count; i++) {
         auto& w = ch.lil_guys[i];
-        if (!w.alive) continue;
+        if (!w.alive || w.departing) continue;
 
         float fx = w.prev_x + (w.x - w.prev_x) * t;
         float fy = w.prev_y + (w.y - w.prev_y) * t;

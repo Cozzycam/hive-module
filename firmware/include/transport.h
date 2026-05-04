@@ -10,7 +10,7 @@ struct __attribute__((packed)) LilGuyTransfer {
     uint16_t sender_id;       // sender module ID
     uint8_t  arrival_face;    // face on RECEIVER the worker enters from
     int8_t   entry_offset;   // offset from center within entry zone (-1, 0, +1)
-    uint8_t  seq;            // sender's sequence number for ACK matching
+    uint16_t seq;            // sender's sequence number for ACK matching
     // -- sim state --
     uint8_t  state;           // AntState
     uint8_t  role;            // Role

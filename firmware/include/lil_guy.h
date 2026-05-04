@@ -96,6 +96,11 @@ struct LilGuy {
     int8_t   arrival_face        = -1;  // face this ant arrived from (-1 = locally spawned)
     uint32_t arrival_ms          = 0;   // millis() when placed after transfer
 
+    // Departing state — worker is visually gone but still owned by this module
+    bool     departing           = false;
+    uint32_t depart_at_ms        = 0;   // when to actually send the handoff
+    int8_t   depart_face         = -1;  // which face to depart through
+
     int8_t   last_cell_x, last_cell_y;     // for pheromone deposit gating
 
     // Helper: current grid cell from float position

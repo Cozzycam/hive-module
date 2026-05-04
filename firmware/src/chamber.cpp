@@ -124,6 +124,7 @@ void Chamber::tick(float dt) {
 
     // Worker ticks + death
     for (int i = lil_guy_count - 1; i >= 0; i--) {
+        if (lil_guys[i].departing) continue;  // frozen, waiting for transfer
         lil_guys[i].tick(*this, dt);
         if (!lil_guys[i].alive) {
             if (lil_guys[i].food_carried > 0)

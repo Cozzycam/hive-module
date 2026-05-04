@@ -117,7 +117,7 @@ struct BoundaryPheroData {
 struct __attribute__((packed)) HandoffAck {
     uint8_t  msg_type;    // TOPO_HANDOFF_ACK
     uint16_t acker_id;    // module that received the ant
-    uint8_t  seq;         // matches seq in LilGuyTransfer
+    uint16_t seq;         // matches seq in LilGuyTransfer
 };
 
 // Send raw payload to a face's neighbour (for handoff transfers)

@@ -56,7 +56,7 @@ static volatile int _ho_count = 0;
 static PendingHandoff _ho_buf[HO_BUF_SIZE];
 
 // Handoff ACK receive buffer (ISR -> coordinator via drain)
-static const int ACK_BUF_SIZE = 16;
+static const int ACK_BUF_SIZE = 32;
 static volatile int _ack_write = 0;
 static volatile int _ack_count = 0;
 static PendingAck _ack_buf[ACK_BUF_SIZE];
@@ -161,6 +161,10 @@ static void _connect_face(Face f, uint16_t id, const uint8_t* mac) {
 static void _disconnect_face(Face f, const char* reason) {
     FaceState& fs = _faces[f];
     uint16_t old_id = fs.neighbour_id;
+    if (fs.peer_added) {
+        esp_now_del_peer(fs.neighbour_mac);
+        fs.peer_added = false;
+    }
     fs.link         = LINK_IDLE;
     fs.neighbour_id = 0;
     fs.hello_retries = 0;

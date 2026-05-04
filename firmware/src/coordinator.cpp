@@ -87,6 +87,7 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
 
     // ---- Edge crossing detection + outgoing handoff ----
     _check_edge_crossings(bus, tick_num);
+    _service_departures(bus, tick_num);
 
     // ---- Send our boundary pheromones to neighbours ----
     _send_boundary_pheromones(tick_num);
@@ -102,14 +103,8 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
 }
 
 void Coordinator::_aggregate_colony_stats() {
-    // Local population + workers in tunnel transit + pending outgoing
+    // Local population (departing workers are still in chamber, counted naturally)
     uint16_t local_pop = chamber.lil_guy_count;
-    for (int i = 0; i < MAX_TUNNEL_PENDING; i++) {
-        if (_tunnel_pending[i].active) local_pop++;
-    }
-    for (int i = 0; i < MAX_PENDING_OUT; i++) {
-        if (_pending_out[i].active) local_pop++;
-    }
 
     // Queen: add remote satellite populations
     uint16_t remote_pop = 0;
@@ -121,7 +116,14 @@ void Coordinator::_aggregate_colony_stats() {
     }
 #endif
 
-    colony.population = local_pop + remote_pop;
+    // Throttle population display updates to avoid transit fluctuation
+    uint16_t new_pop = local_pop + remote_pop;
+    static uint32_t _last_pop_update_ms = 0;
+    uint32_t now = millis();
+    if (colony.population == 0 || now - _last_pop_update_ms >= 5000) {
+        colony.population = new_pop;
+        _last_pop_update_ms = now;
+    }
 
     int gatherers = 0;
     for (int i = 0; i < chamber.lil_guy_count; i++) {
@@ -130,21 +132,7 @@ void Coordinator::_aggregate_colony_stats() {
                 || (w.state == STATE_TO_HOME && w.food_carried > 0))
             gatherers++;
     }
-    // Count pending outgoing + tunnel arrivals as gatherers if they were foraging
-    for (int i = 0; i < MAX_PENDING_OUT; i++) {
-        if (_pending_out[i].active) {
-            uint8_t s = _pending_out[i].payload.state;
-            if (s == STATE_TO_FOOD || (s == STATE_TO_HOME && _pending_out[i].payload.food_carried > 0))
-                gatherers++;
-        }
-    }
-    for (int i = 0; i < MAX_TUNNEL_PENDING; i++) {
-        if (_tunnel_pending[i].active) {
-            uint8_t s = _tunnel_pending[i].transfer.state;
-            if (s == STATE_TO_FOOD || (s == STATE_TO_HOME && _tunnel_pending[i].transfer.food_carried > 0))
-                gatherers++;
-        }
-    }
+    // Departing workers are still in chamber.lil_guys, counted naturally above
     colony.gatherer_count = gatherers;
 
     uint16_t eggs, larvae, pupae;
@@ -166,20 +154,13 @@ void Coordinator::_broadcast_population() {
     if (is_queen()) return;  // only satellites broadcast
 
     uint32_t now = millis();
-    if (now - _last_pop_broadcast_ms < 1000) return;
+    if (now - _last_pop_broadcast_ms < 5000) return;
     _last_pop_broadcast_ms = now;
 
     PopSyncMessage msg;
     msg.msg_type   = TOPO_POP_SYNC;
     msg.sender_id  = topology_my_id();
-    uint16_t pop = chamber.lil_guy_count;
-    for (int i = 0; i < MAX_TUNNEL_PENDING; i++) {
-        if (_tunnel_pending[i].active) pop++;
-    }
-    for (int i = 0; i < MAX_PENDING_OUT; i++) {
-        if (_pending_out[i].active) pop++;
-    }
-    msg.population = pop;
+    msg.population = chamber.lil_guy_count;
 
     for (int f = 0; f < FACE_COUNT; f++) {
         if (chamber.entries[f] >= 0) {
@@ -401,9 +382,11 @@ void Coordinator::_sync_topology_to_chamber() {
 
 void Coordinator::_check_edge_crossings(EventBus& bus, uint32_t tick_num) {
 #ifdef ARDUINO
-    // Scan workers for edge crossings — iterate backwards since we may remove
-    for (int i = chamber.lil_guy_count - 1; i >= 0; i--) {
+    // Scan workers for edge crossings — mark as departing (sprite vanishes, still counted here)
+    for (int i = 0; i < chamber.lil_guy_count; i++) {
         LilGuy& w = chamber.lil_guys[i];
+
+        if (!w.alive || w.departing) continue;
 
         // Skip stacked workers — their bottom worker handles the whole stack
         if (w.stack_on >= 0) continue;
@@ -420,9 +403,65 @@ void Coordinator::_check_edge_crossings(EventBus& bus, uint32_t tick_num) {
         const Neighbour& nb = topology_neighbour(static_cast<Face>(face));
         if (!nb.present) continue;
 
+        // Mark this worker (and any stacked on it) as departing
+        w.departing = true;
+        w.depart_at_ms = millis() + DEPART_DELAY_MS;
+        w.depart_face = static_cast<int8_t>(face);
+
+        // Also mark stacked workers
+        int cur = i;
+        bool more = true;
+        while (more) {
+            more = false;
+            for (int j = 0; j < chamber.lil_guy_count; j++) {
+                if (chamber.lil_guys[j].alive && chamber.lil_guys[j].stack_on == cur) {
+                    chamber.lil_guys[j].departing = true;
+                    chamber.lil_guys[j].depart_at_ms = w.depart_at_ms;
+                    chamber.lil_guys[j].depart_face = w.depart_face;
+                    cur = j;
+                    more = true;
+                    break;
+                }
+            }
+        }
+
+        // Phantom pheromone deposit — food trail only
+        if (w.state == STATE_TO_HOME && w.food_carried > 0) {
+            int ex = Cfg::ENTRY_X[face], ey = Cfg::ENTRY_Y[face];
+            chamber.pheromones.deposit_food(ex, ey, Cfg::BASE_MARKER_INTENSITY * 0.5f);
+        }
+    }
+#endif
+}
+
+void Coordinator::_service_departures(EventBus& bus, uint32_t tick_num) {
+#ifdef ARDUINO
+    uint32_t now = millis();
+
+    // Find departing workers whose delay has elapsed — send them out
+    for (int i = chamber.lil_guy_count - 1; i >= 0; i--) {
+        LilGuy& w = chamber.lil_guys[i];
+        if (!w.departing || w.stack_on >= 0) continue;  // only process bottom of stack
+        if (now < w.depart_at_ms) continue;
+
+        int face = w.depart_face;
+        const Neighbour& nb = topology_neighbour(static_cast<Face>(face));
+
+        // If neighbour disconnected while waiting, cancel departure
+        if (!nb.present) {
+            w.departing = false;
+            w.depart_face = -1;
+            // Unmark stacked workers too
+            for (int j = 0; j < chamber.lil_guy_count; j++) {
+                if (chamber.lil_guys[j].departing && chamber.lil_guys[j].depart_face == face)
+                    chamber.lil_guys[j].departing = false;
+            }
+            continue;
+        }
+
         uint8_t arrival_face = Cfg::FACE_OPPOSITE[face];
 
-        // Collect the entire stack: this worker (bottom) + anyone stacked on it
+        // Collect the stack
         int stack[16];
         int stack_count = 0;
         stack[stack_count++] = i;
@@ -442,19 +481,19 @@ void Coordinator::_check_edge_crossings(EventBus& bus, uint32_t tick_num) {
             }
         }
 
-        // Check pending out slots — need enough for entire stack
+        // Check pending out slots
         int free_slots = 0;
         for (int j = 0; j < MAX_PENDING_OUT; j++)
             if (!_pending_out[j].active) free_slots++;
-        if (free_slots < stack_count) continue;  // not enough slots, ant stays
+        if (free_slots < stack_count) continue;  // wait for slots
 
-        // Compute entry offset: distance from face center along the entry zone
-        // N/S faces: offset = cx - ENTRY_X, W/E faces: offset = cy - ENTRY_Y
+        // Compute entry offset
+        int cx = w.cell_x(), cy = w.cell_y();
         int8_t entry_offset = (Cfg::FACE_DY[face] != 0)
             ? (int8_t)(cx - Cfg::ENTRY_X[face])
             : (int8_t)(cy - Cfg::ENTRY_Y[face]);
 
-        // Serialize, store in pending out, and send (ACK-gated)
+        // Serialize, store in pending out, and send
         int sent_count = 0;
         for (int s = 0; s < stack_count; s++) {
             LilGuyTransfer payload;
@@ -462,15 +501,14 @@ void Coordinator::_check_edge_crossings(EventBus& bus, uint32_t tick_num) {
                                 TOPO_HANDOFF, topology_my_id(), arrival_face, entry_offset);
             payload.seq = _handoff_seq++;
 
-            // Find free pending slot
             int slot = -1;
             for (int j = 0; j < MAX_PENDING_OUT; j++) {
                 if (!_pending_out[j].active) { slot = j; break; }
             }
-            if (slot < 0) break;  // shouldn't happen, we checked above
+            if (slot < 0) break;
 
             _pending_out[slot].payload = payload;
-            _pending_out[slot].sent_ms = millis();
+            _pending_out[slot].sent_ms = now;
             _pending_out[slot].retries = 0;
             _pending_out[slot].face = static_cast<uint8_t>(face);
             _pending_out[slot].active = true;
@@ -489,12 +527,6 @@ void Coordinator::_check_edge_crossings(EventBus& bus, uint32_t tick_num) {
         else
             Serial.printf("[handoff] OUT worker %d via face %s to 0x%04X (state=%d food=%.1f)\n",
                 i, face_letter(face), nb.module_id, w.state, w.food_carried);
-
-        // Phantom pheromone deposit — food trail only
-        if (w.state == STATE_TO_HOME && w.food_carried > 0) {
-            int ex = Cfg::ENTRY_X[face], ey = Cfg::ENTRY_Y[face];
-            chamber.pheromones.deposit_food(ex, ey, Cfg::BASE_MARKER_INTENSITY * 0.5f);
-        }
 
         // Fire events
         for (int s = 0; s < sent_count; s++) {
@@ -574,11 +606,11 @@ void Coordinator::_place_arrival(const LilGuyTransfer& t, EventBus& bus,
 
 void Coordinator::_receive_handoffs(EventBus& bus, uint32_t tick_num) {
 #ifdef ARDUINO
-    uint32_t now = millis();
-
-    // Drain ESP-NOW handoffs into the tunnel delay buffer
+    // Drain ESP-NOW handoffs and place workers immediately
     PendingHandoff pending[16];
     int n = topology_drain_handoffs(pending, 16);
+    int first_idx[FACE_COUNT] = {-1, -1, -1, -1};
+
     for (int h = 0; h < n; h++) {
         if (pending[h].len < (int)sizeof(LilGuyTransfer)) continue;
         const LilGuyTransfer& t = *reinterpret_cast<const LilGuyTransfer*>(pending[h].data);
@@ -606,25 +638,14 @@ void Coordinator::_receive_handoffs(EventBus& bus, uint32_t tick_num) {
             continue;
         }
 
-        // Find a free slot in the tunnel buffer
-        bool found = false;
-        for (int i = 0; i < MAX_TUNNEL_PENDING; i++) {
-            if (!_tunnel_pending[i].active) {
-                _tunnel_pending[i].transfer = t;
-                _tunnel_pending[i].appear_at_ms = now + TUNNEL_TRAVEL_MS;
-                _tunnel_pending[i].active = true;
-                found = true;
-                Serial.printf("[handoff] IN tunnel (appear in %lums)\n",
-                    (unsigned long)TUNNEL_TRAVEL_MS);
-                break;
-            }
+        // Place worker immediately (visual delay is on sender side)
+        if (chamber.lil_guy_count >= Cfg::MAX_LIL_GUYS) {
+            g_handoffs_dropped++;
+            Serial.println("[handoff] chamber full -- dropped");
+            continue;  // don't ACK — sender will retry then restore
         }
 
-        if (!found) {
-            g_handoffs_dropped++;
-            Serial.println("[handoff] tunnel buffer full -- dropped");
-            continue;  // don't send ACK — sender will retry then restore
-        }
+        _place_arrival(t, bus, tick_num, first_idx);
 
         // Send ACK to sender
         if (src_face >= 0) {
@@ -637,17 +658,8 @@ void Coordinator::_receive_handoffs(EventBus& bus, uint32_t tick_num) {
                                   (const uint8_t*)&ack, sizeof(ack));
         }
 
-        // Force immediate PopSync so queen sees new count without 1s delay
+        // Force immediate PopSync so queen sees new count quickly
         _last_pop_broadcast_ms = 0;
-    }
-
-    // Place workers whose tunnel travel time has elapsed
-    int first_idx[FACE_COUNT] = {-1, -1, -1, -1};
-    for (int i = 0; i < MAX_TUNNEL_PENDING; i++) {
-        if (_tunnel_pending[i].active && now >= _tunnel_pending[i].appear_at_ms) {
-            _place_arrival(_tunnel_pending[i].transfer, bus, tick_num, first_idx);
-            _tunnel_pending[i].active = false;
-        }
     }
 #endif
 }

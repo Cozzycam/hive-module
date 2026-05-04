@@ -71,21 +71,17 @@ private:
         bool     active = false;
     };
     PendingOut _pending_out[MAX_PENDING_OUT];
-    uint8_t    _handoff_seq = 0;
+    uint16_t   _handoff_seq = 0;
     void _service_pending_handoffs();
 
-    // Dedup table for incoming handoffs (one seq per face)
-    uint8_t _last_seen_seq[FACE_COUNT] = {0xFF, 0xFF, 0xFF, 0xFF};
+    // Dedup table for incoming handoffs (one seq per face, 0xFFFF = never seen)
+    uint16_t _last_seen_seq[FACE_COUNT] = {0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF};
 
-    // Tunnel travel delay — workers wait here before appearing in the chamber
-    static constexpr int MAX_TUNNEL_PENDING = 16;
-    static constexpr uint32_t TUNNEL_TRAVEL_MS = 2000;
-    struct TunnelPending {
-        LilGuyTransfer transfer;
-        uint32_t appear_at_ms;
-        bool active = false;
-    };
-    TunnelPending _tunnel_pending[MAX_TUNNEL_PENDING];
+    // Departure visual delay — worker sprite vanishes, then actual transfer happens
+    static constexpr uint32_t DEPART_DELAY_MS = 2000;
+    void _service_departures(EventBus& bus, uint32_t tick_num);
+
+    // Incoming worker placement (immediate — visual delay is on sender side)
     void _place_arrival(const LilGuyTransfer& t, EventBus& bus, uint32_t tick_num,
                         int* first_idx_per_face);
 
