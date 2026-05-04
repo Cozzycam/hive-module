@@ -3,6 +3,8 @@
 #include <Arduino.h>
 #include "sim.h"
 #include "sd_card.h"
+#include "journal.h"
+#include "time_of_day.h"
 
 void Sim::init() {
     coordinator.init();  // reads role from NVS
@@ -12,6 +14,9 @@ void Sim::init() {
     if (coordinator.is_queen()) {
         // Initialize persistence registry
         PersistenceState ps = coordinator.registry.init();
+
+        // Init journal after registry (needs SD + time)
+        coordinator.journal.init();
 
         bool has_manifest = (ps == PERSIST_OK &&
                              coordinator.registry.manifest().colony_id[0] != '\0');
@@ -67,5 +72,15 @@ void Sim::handle_touch() {
     ev.tick = tick_count;
     ev.food_tapped = {static_cast<int8_t>(cx), static_cast<int8_t>(cy)};
     event_bus.emit(ev);
+
+    // Journal: food tap
+    JournalEntry je = {};
+    je.tick = tick_count;
+    je.unix_time = g_tod.unix_time;
+    je.type = JEVT_FOOD_TAP;
+    je.lilguy_id = 0;
+    je.food_tap = {static_cast<int8_t>(cx), static_cast<int8_t>(cy), Cfg::TAP_FEED_AMOUNT};
+    coordinator.journal.emit(je);
+
     Serial.printf("[touch] fed (%d,%d) +%.0f\n", cx, cy, Cfg::TAP_FEED_AMOUNT);
 }

@@ -242,12 +242,26 @@ static void process_serial_line(const char* line) {
         Serial.println("[test] Killing WiFi radio to simulate ESP-NOW death...");
         WiFi.mode(WIFI_OFF);
         Serial.println("[test] WiFi.mode(WIFI_OFF) — ESP-NOW is now dead. Watch for reinit.");
+    } else if (strcmp(line, "journal") == 0) {
+        auto& j = sim.coordinator.journal;
+        Serial.printf("[journal] pending: %d, total flushed: %d\n",
+            j.pending_count(), j.total_flushed());
+    } else if (strcmp(line, "journal dump") == 0) {
+        // Flush pending events first, then dump today's file
+        sim.coordinator.journal.flush();
+        Serial.println("[journal] --- today's events ---");
+        sim.coordinator.journal.read_day(g_tod.unix_time,
+            [](const char* line, void*) -> bool {
+                Serial.println(line);
+                return true;
+            }, nullptr);
+        Serial.println("[journal] --- end ---");
     } else if (strcmp(line, "reset colony") == 0) {
         Serial.println("[reset] wiping colony data...");
         // Remove colony directory tree from SD
         if (sd_card_state() == SD_OK) {
             // Walk and remove files — SD_MMC.rmdir only works on empty dirs
-            const char* dirs[] = {"/colony/lilguys", "/colony/brood"};
+            const char* dirs[] = {"/colony/lilguys", "/colony/brood", "/colony/events"};
             for (auto base : dirs) {
                 File root = SD_MMC.open(base);
                 if (root && root.isDirectory()) {
@@ -483,6 +497,8 @@ void loop() {
         if (!splashing) {
             evt_count = sim.event_bus.drain(evt_buf, 64);
             renderer.receive_events(evt_buf, evt_count, sim.coordinator.chamber);
+            if (sim.coordinator.is_queen() && evt_count > 0)
+                sim.coordinator._journal_from_bus_events(evt_buf, evt_count, sim.tick_count);
         }
 
         float lerp_t = static_cast<float>(now - last_tick_ms) / interval;

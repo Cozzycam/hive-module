@@ -5,6 +5,7 @@
 #include "time_of_day.h"
 #include "rng.h"
 #include "sd_card.h"
+#include "journal.h"
 #include <cmath>
 
 #ifdef ARDUINO
@@ -108,6 +109,9 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
 
     // ---- Persistence: assign IDs, process hatches/deaths, periodic flush ----
     if (is_queen()) _persist_tick(tick_num);
+
+    // ---- Journal: flush buffered events to disk periodically ----
+    if (is_queen()) journal.tick();
 }
 
 void Coordinator::_aggregate_colony_stats() {
@@ -224,6 +228,16 @@ void Coordinator::on_topology_change(Face face, bool connected, uint16_t module_
         Serial.printf("[coord] announcing chamber on face %s -> module 0x%04X, home_face=%s\n",
             face_letter(face), module_id, face_letter(satellite_home));
 
+        // Journal: module connected
+        JournalEntry je = {};
+        je.tick = 0;  // no tick context in topology callback
+        je.unix_time = g_tod.unix_time;
+        je.type = JEVT_COLONY_EVENT;
+        je.lilguy_id = 0;
+        je.colony_event.kind = COLONY_MODULE_CONNECTED;
+        je.colony_event.module_id = module_id;
+        journal.emit(je);
+
         // Update topology graph
         // Slot 0 = queen (self)
         if (topo_module_count == 0) {
@@ -264,6 +278,16 @@ void Coordinator::on_topology_change(Face face, bool connected, uint16_t module_
         }
         Serial.printf("[coord] module 0x%04X disconnected from face %s\n",
             module_id, face_letter(face));
+
+        // Journal: module disconnected
+        JournalEntry je = {};
+        je.tick = 0;
+        je.unix_time = g_tod.unix_time;
+        je.type = JEVT_COLONY_EVENT;
+        je.lilguy_id = 0;
+        je.colony_event.kind = COLONY_MODULE_DISCONNECTED;
+        je.colony_event.module_id = module_id;
+        journal.emit(je);
     }
 #endif
 }
@@ -536,7 +560,7 @@ void Coordinator::_service_departures(EventBus& bus, uint32_t tick_num) {
             Serial.printf("[handoff] OUT id=%lu via face %s to 0x%04X (state=%d food=%.1f)\n",
                 (unsigned long)w.id, face_letter(face), nb.module_id, w.state, w.food_carried);
 
-        // Fire events
+        // Fire events + journal
         for (int s = 0; s < sent_count; s++) {
             Event ev;
             ev.type = EVT_HANDOFF_OUTGOING;
@@ -544,6 +568,16 @@ void Coordinator::_service_departures(EventBus& bus, uint32_t tick_num) {
             ev.handoff = { static_cast<uint8_t>(stack[s]),
                            static_cast<uint8_t>(face), nb.module_id };
             bus.emit(ev);
+
+            JournalEntry je = {};
+            je.tick = tick_num;
+            je.unix_time = g_tod.unix_time;
+            je.type = JEVT_CHAMBER_CROSSING;
+            je.lilguy_id = chamber.lil_guys[stack[s]].id;
+            je.crossing.from_module = topology_my_id();
+            je.crossing.to_module = nb.module_id;
+            je.crossing.face = static_cast<uint8_t>(face);
+            journal.emit(je);
         }
 
         // Remove all stack members — sort indices descending for safe removal
@@ -730,6 +764,41 @@ void Coordinator::_service_pending_handoffs() {
 }
 
 // ================================================================
+//  Journal: convert EventBus events to journal entries
+// ================================================================
+
+void Coordinator::_journal_from_bus_events(const Event* events, int count,
+                                            uint32_t tick_num) {
+    if (journal.pending_count() < 0) return;  // not active
+
+    for (int i = 0; i < count; i++) {
+        const Event& ev = events[i];
+        JournalEntry je = {};
+        je.tick = ev.tick;
+        je.unix_time = g_tod.unix_time;
+
+        switch (ev.type) {
+        case EVT_FOOD_DELIVERED:
+            if (ev.food_delivered.amount > 0.01f) {
+                je.type = JEVT_FOOD_DELIVERED;
+                je.lilguy_id = 0;
+                je.food_delivered.amount = ev.food_delivered.amount;
+                journal.emit(je);
+            }
+            break;
+
+        case EVT_PILE_DISCOVERED:
+            // Not currently emitted with enough data — skip for now
+            break;
+
+        default:
+            // Other events handled directly (hatch, death, crossing, food_tap)
+            break;
+        }
+    }
+}
+
+// ================================================================
 //  Persistence integration
 // ================================================================
 
@@ -764,6 +833,26 @@ void Coordinator::_persist_tick(uint32_t tick_num) {
             rec.last_state = chamber.lil_guys[i].state;
             registry.create(rec);
         }
+    }
+
+    // Milestone tracking
+    static uint16_t _last_milestone_born = 0;
+    uint16_t born = colony.total_workers_born;
+    if (born > 0 && born != _last_milestone_born) {
+        // Check round numbers: 10, 25, 50, 100, 200, 500, 1000...
+        bool hit = (born == 10 || born == 25 || born == 50 ||
+                    (born >= 100 && born % 100 == 0));
+        if (hit) {
+            JournalEntry je = {};
+            je.tick = tick_num;
+            je.unix_time = g_tod.unix_time;
+            je.type = JEVT_MILESTONE;
+            je.lilguy_id = 0;
+            je.milestone.kind = MILE_WORKERS_BORN;
+            je.milestone.value = born;
+            journal.emit(je);
+        }
+        _last_milestone_born = born;
     }
 
     // SD card health check
@@ -819,6 +908,17 @@ void Coordinator::_persist_process_hatches() {
                 rec.last_y = chamber.lil_guys[i].y;
                 rec.last_state = chamber.lil_guys[i].state;
                 registry.create(rec);
+
+                // Journal: hatch event
+                JournalEntry je = {};
+                je.tick = chamber.tick_num;
+                je.unix_time = g_tod.unix_time;
+                je.type = JEVT_HATCH;
+                je.lilguy_id = id;
+                je.hatch.role = chamber.lil_guys[i].role;
+                je.hatch.is_pioneer = chamber.lil_guys[i].is_pioneer;
+                je.hatch.from_brood_id = id;
+                journal.emit(je);
                 break;
             }
         }
@@ -827,9 +927,19 @@ void Coordinator::_persist_process_hatches() {
 
 void Coordinator::_persist_process_deaths() {
     for (int d = 0; d < chamber.death_count; d++) {
-        uint32_t id = chamber.death_ids[d];
+        uint32_t id = chamber.deaths[d].id;
+        uint8_t cause = chamber.deaths[d].cause;
         registry.mark_dead(id, g_tod.unix_time);
         registry.manifest().total_workers_died++;
+
+        // Journal: death event
+        JournalEntry je = {};
+        je.tick = chamber.tick_num;
+        je.unix_time = g_tod.unix_time;
+        je.type = JEVT_DEATH;
+        je.lilguy_id = id;
+        je.death.cause = cause;
+        journal.emit(je);
     }
 }
 
@@ -949,6 +1059,18 @@ void Coordinator::_persist_migrate_live_colony() {
     }
 
     registry.flush();
+
+    // Journal: colony founded event
+    JournalEntry je = {};
+    je.tick = 0;
+    je.unix_time = m.founded_unix;
+    je.type = JEVT_COLONY_EVENT;
+    je.lilguy_id = 0;
+    je.colony_event.kind = COLONY_FOUNDED;
+    je.colony_event.module_id = 0;
+    journal.emit(je);
+    journal.flush();
+
     Serial.printf("[persist] migration complete — %d workers, %d brood, colony_id=%s\n",
                   chamber.lil_guy_count, chamber.brood_count, m.colony_id);
 }

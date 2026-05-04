@@ -139,8 +139,10 @@ void Chamber::tick(float dt) {
         lil_guys[i].tick(*this, dt);
         if (!lil_guys[i].alive) {
             // Record death for persistence before removal
-            if (lil_guys[i].id != 0 && death_count < MAX_LIFECYCLE)
-                death_ids[death_count++] = lil_guys[i].id;
+            if (lil_guys[i].id != 0 && death_count < MAX_LIFECYCLE) {
+                uint8_t cause = (lil_guys[i].hunger >= Cfg::HUNGER_STARVE) ? 1 : 0;
+                deaths[death_count++] = {lil_guys[i].id, cause};
+            }
             if (lil_guys[i].food_carried > 0)
                 add_food(lil_guys[i].cell_x(), lil_guys[i].cell_y(),
                          lil_guys[i].food_carried);

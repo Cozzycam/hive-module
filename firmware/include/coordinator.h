@@ -7,6 +7,7 @@
 #include "events.h"
 #include "transport.h"
 #include "persistence.h"
+#include "journal.h"
 
 enum ModuleRole : uint8_t {
     MODULE_UNCONFIGURED = 0,
@@ -26,6 +27,7 @@ public:
     ColonyState    colony;
     Chamber        chamber;    // single chamber for now
     LilGuyRegistry registry;
+    EventJournal   journal;
     ModuleRole     role = MODULE_UNCONFIGURED;
 
     uint16_t boot_id = 0;              // random, set at init, sent in ANNOUNCE
@@ -54,6 +56,9 @@ public:
     // Persistence — called from Sim::init() for boot cases
     void _persist_migrate_live_colony();
     void _persist_restore_from_disk();
+
+    // Journal — called from main.cpp with drained EventBus events
+    void _journal_from_bus_events(const Event* events, int count, uint32_t tick_num);
 
 private:
     void _aggregate_colony_stats();

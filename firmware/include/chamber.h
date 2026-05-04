@@ -40,7 +40,8 @@ public:
 
     // Lifecycle notifications — populated during tick(), drained by Coordinator
     static constexpr int MAX_LIFECYCLE = 16;
-    uint32_t death_ids[MAX_LIFECYCLE];     // IDs of workers that died this tick
+    struct DeathNotice { uint32_t id; uint8_t cause; };  // 0=old_age, 1=starved
+    DeathNotice deaths[MAX_LIFECYCLE];
     int      death_count = 0;
     uint32_t hatch_ids[MAX_LIFECYCLE];     // IDs of brood that hatched into workers
     int      hatch_count = 0;
