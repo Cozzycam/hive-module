@@ -86,6 +86,7 @@ public:
     void draw(const Chamber& ch, float lerp_t);
     void flush();
     void force_full_redraw() { _needs_full_redraw = true; }
+    void mark_dirty_external(int x, int y, int w, int h) { _mark_dirty(x, y, w, h); }
     bool debug_phero = false;  // pheromone overlay (toggle via serial 'p')
     bool force_full_flush = RENDERER_FORCE_FULL_REDRAW;  // debug: disable dirty-rect flush
 
@@ -110,14 +111,16 @@ private:
     DirtyRect _dirty[MAX_DIRTY];
     int _dirty_count = 0;
 
-    // Flush bounding box — union of all dirty rects this frame
+    // Flush bounding box — union of previous + current frame dirty rects
     struct FlushBounds {
         int16_t x0 = 0, y0 = 0, x1 = 0, y1 = 0;
         bool any = false;
         bool full = false;  // force full-frame flush
     };
     FlushBounds _flush_bounds;
-    void _compute_flush_bounds();
+    FlushBounds _prev_flush_bounds;  // Previous frame's bounds (need re-flush after floor restore)
+    void _union_dirty_into_bounds(FlushBounds& bounds);
+    void _union_bounds(FlushBounds& dst, const FlushBounds& src);
 
     // Animation pool
     static constexpr int MAX_ANIMS = 32;

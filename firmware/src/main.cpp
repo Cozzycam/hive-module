@@ -606,11 +606,18 @@ void loop() {
         if (lerp_t > 1.0f) lerp_t = 1.0f;
 
         renderer.draw(sim.coordinator.chamber, lerp_t);
-        if (sim.coordinator.is_queen() && !renderer.is_splash_active())
+        if (sim.coordinator.is_queen() && !renderer.is_splash_active()) {
             hud_draw(gfx, sim.coordinator.chamber);
-        if (!splashing)
+            renderer.mark_dirty_external(0, 0, 480, 28);  // HUD strip
+        }
+        if (!splashing) {
             hud_draw_battery(gfx);
-        if (topo_overlay) topology_draw_overlay(gfx);
+            renderer.mark_dirty_external(480 - 30, 320 - 16, 30, 16);  // Battery indicator
+        }
+        if (topo_overlay) {
+            topology_draw_overlay(gfx);
+            renderer.mark_dirty_external(0, 0, 480, 320);  // Debug overlay = full screen
+        }
         renderer.flush();
 
         // Log events to serial (skip noisy ones; handoffs logged by coordinator)

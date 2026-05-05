@@ -295,29 +295,44 @@ void Renderer::init(Arduino_Canvas* canvas, Arduino_TFT* output) {
     Serial.printf("[renderer] Sprout leaves: %d\r\n", _sprout_leaf_count);
 }
 
-void Renderer::_compute_flush_bounds() {
-    _flush_bounds = {};
-    if (_dirty_count == 0) return;
-
-    int16_t x0 = SCREEN_W, y0 = SCREEN_H, x1 = 0, y1 = 0;
+void Renderer::_union_dirty_into_bounds(FlushBounds& bounds) {
     for (int i = 0; i < _dirty_count; i++) {
         auto& d = _dirty[i];
-        if (d.x < x0) x0 = d.x;
-        if (d.y < y0) y0 = d.y;
-        if (d.x + d.w > x1) x1 = d.x + d.w;
-        if (d.y + d.h > y1) y1 = d.y + d.h;
+        int16_t dx1 = d.x + d.w;
+        int16_t dy1 = d.y + d.h;
+        if (!bounds.any) {
+            bounds.x0 = d.x; bounds.y0 = d.y;
+            bounds.x1 = dx1; bounds.y1 = dy1;
+            bounds.any = true;
+        } else {
+            if (d.x < bounds.x0) bounds.x0 = d.x;
+            if (d.y < bounds.y0) bounds.y0 = d.y;
+            if (dx1 > bounds.x1) bounds.x1 = dx1;
+            if (dy1 > bounds.y1) bounds.y1 = dy1;
+        }
     }
     // Clamp to screen
-    if (x0 < 0) x0 = 0;
-    if (y0 < 0) y0 = 0;
-    if (x1 > SCREEN_W) x1 = SCREEN_W;
-    if (y1 > SCREEN_H) y1 = SCREEN_H;
+    if (bounds.any) {
+        if (bounds.x0 < 0) bounds.x0 = 0;
+        if (bounds.y0 < 0) bounds.y0 = 0;
+        if (bounds.x1 > SCREEN_W) bounds.x1 = SCREEN_W;
+        if (bounds.y1 > SCREEN_H) bounds.y1 = SCREEN_H;
+    }
+}
 
-    _flush_bounds.x0 = x0;
-    _flush_bounds.y0 = y0;
-    _flush_bounds.x1 = x1;
-    _flush_bounds.y1 = y1;
-    _flush_bounds.any = (x1 > x0 && y1 > y0);
+void Renderer::_union_bounds(FlushBounds& dst, const FlushBounds& src) {
+    if (!src.any) return;
+    if (src.full) { dst.full = true; return; }
+    if (!dst.any) {
+        dst.x0 = src.x0; dst.y0 = src.y0;
+        dst.x1 = src.x1; dst.y1 = src.y1;
+        dst.any = true;
+    } else {
+        if (src.x0 < dst.x0) dst.x0 = src.x0;
+        if (src.y0 < dst.y0) dst.y0 = src.y0;
+        if (src.x1 > dst.x1) dst.x1 = src.x1;
+        if (src.y1 > dst.y1) dst.y1 = src.y1;
+    }
 }
 
 void Renderer::flush() {
@@ -325,7 +340,8 @@ void Renderer::flush() {
     unsigned long t0 = millis();
 #endif
 
-    _compute_flush_bounds();
+    // Union current frame's dirty rects (new sprite positions) into flush bounds
+    _union_dirty_into_bounds(_flush_bounds);
 
     uint16_t* fb = (uint16_t*)_gfx->getFramebuffer();
     bool do_full = force_full_flush || _flush_bounds.full ||
@@ -357,6 +373,10 @@ void Renderer::flush() {
         _prof_flush_pixels_total += (unsigned long)w * h;
 #endif
     }
+
+    // Save current bounds for next frame (so restored floor regions get flushed)
+    _prev_flush_bounds = {};
+    _union_dirty_into_bounds(_prev_flush_bounds);
 
 #if RENDERER_PROFILE
     _prof_flush_total += millis() - t0;
@@ -429,8 +449,12 @@ void Renderer::_clear_dirty() {
 // ================================================================
 
 void Renderer::draw(const Chamber& ch, float lerp_t) {
-    // Reset flush bounds for this frame
+    // Capture previous frame's dirty rects as flush bounds
+    // (these regions were restored by floor blit but display still shows old sprites)
     _flush_bounds = {};
+    _union_dirty_into_bounds(_flush_bounds);
+    // Also carry over any previous full-flush flag
+    _union_bounds(_flush_bounds, _prev_flush_bounds);
 
 #if BOOT_SPLASH_ENABLED
     if (_boot_splash_active) {
@@ -498,9 +522,12 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
     _draw_sorted_sprites(_agent_sprites, _agent_sprite_count, ch);
 
     _draw_tunnel_entrances(ch);
-    if (debug_phero) _draw_phero_overlay(ch);
+    if (debug_phero) { _draw_phero_overlay(ch); _flush_bounds.full = true; }
     _draw_anims();
     _draw_weather();
+    // Weather particles cover the whole screen — force full flush when active
+    if (g_weather.valid && g_weather.condition >= WX_DRIZZLE)
+        _flush_bounds.full = true;
 
     // Check for milestone leaf growth (queen chamber only)
     if (ch.has_queen) _check_milestone(ch);
@@ -763,6 +790,8 @@ void Renderer::_draw_sprout_overlay() {
         if (_leaf_shimmer_t >= 1.0f) _leaf_shimmer_t = -1.0f;
     }
 
+    // Mark sprout region dirty (fixed position, ~40x60px area)
+    _mark_dirty(SPROUT_X - 20, SPROUT_Y - 10, 44, 60);
     _draw_sprout_direct(SPROUT_X, SPROUT_Y, tilt, _sprout_leaf_count,
                         _leaf_grow_t, _leaf_shimmer_t);
 }
