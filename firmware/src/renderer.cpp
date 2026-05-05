@@ -361,13 +361,12 @@ void Renderer::flush() {
         int16_t w = _flush_bounds.x1 - x;
         int16_t h = _flush_bounds.y1 - y;
 
-        // Push sub-region row by row (framebuffer stride = SCREEN_W)
-        _output->startWrite();
-        _output->writeAddrWindow(x, y, w, h);
+        // Use the display's draw16bitRGBBitmap which handles rotation correctly.
+        // Send row-by-row since our framebuffer stride (SCREEN_W) != dirty width.
         for (int16_t row = 0; row < h; row++) {
-            _output->writePixels(&fb[(y + row) * SCREEN_W + x], w);
+            _output->draw16bitRGBBitmap(x, y + row,
+                &fb[(y + row) * SCREEN_W + x], w, 1);
         }
-        _output->endWrite();
 
 #if RENDERER_PROFILE
         _prof_flush_pixels_total += (unsigned long)w * h;
