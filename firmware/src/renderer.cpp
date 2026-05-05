@@ -361,12 +361,11 @@ void Renderer::flush() {
         int16_t w = _flush_bounds.x1 - x;
         int16_t h = _flush_bounds.y1 - y;
 
-        // Use the display's draw16bitRGBBitmap which handles rotation correctly.
-        // Send row-by-row since our framebuffer stride (SCREEN_W) != dirty width.
-        for (int16_t row = 0; row < h; row++) {
-            _output->draw16bitRGBBitmap(x, y + row,
-                &fb[(y + row) * SCREEN_W + x], w, 1);
-        }
+        // Pass SCREEN_W as bitmap width so the TFT's strided path handles
+        // the framebuffer stride correctly. The clipping logic computes
+        // out_width = min(SCREEN_W, max_x - x + 1) and uses one window
+        // setup with per-row writePixels inside a single SPI transaction.
+        _output->draw16bitRGBBitmap(x, y, &fb[y * SCREEN_W + x], SCREEN_W, h);
 
 #if RENDERER_PROFILE
         _prof_flush_pixels_total += (unsigned long)w * h;
