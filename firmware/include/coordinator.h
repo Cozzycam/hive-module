@@ -9,6 +9,7 @@
 #include "persistence.h"
 #include "journal.h"
 #include "bonds.h"
+#include "world_condition.h"
 
 enum ModuleRole : uint8_t {
     MODULE_UNCONFIGURED = 0,
@@ -25,12 +26,13 @@ struct TopoGraphEntry {
 
 class Coordinator {
 public:
-    ColonyState    colony;
-    Chamber        chamber;    // single chamber for now
-    LilGuyRegistry registry;
-    EventJournal   journal;
-    BondStore      bonds;
-    ModuleRole     role = MODULE_UNCONFIGURED;
+    ColonyState     colony;
+    Chamber         chamber;    // single chamber for now
+    LilGuyRegistry  registry;
+    EventJournal    journal;
+    BondStore       bonds;
+    WorldCondition  world;
+    ModuleRole      role = MODULE_UNCONFIGURED;
 
     uint16_t boot_id = 0;              // random, set at init, sent in ANNOUNCE
     uint16_t _last_queen_boot_id = 0;  // satellite: last boot_id from queen
@@ -59,6 +61,10 @@ public:
     void _persist_migrate_live_colony();
     void _persist_restore_from_disk();
     void _bond_load();
+
+    // Challenges — called from serial commands
+    void challenge_start(uint8_t type, float severity, uint32_t tick_num);
+    void challenge_end(uint32_t tick_num);
 
     // Journal — called from main.cpp with drained EventBus events
     void _journal_from_bus_events(const Event* events, int count, uint32_t tick_num);
@@ -105,6 +111,11 @@ private:
     void _bond_tick(uint32_t tick_num);
     void _bond_detect_proximity(uint32_t tick_num);
     void _bond_persist();
+
+    // Traits + WorldCondition
+    uint32_t _trait_check_tick = 0;
+    void _world_tick();
+    void _trait_tick(uint32_t tick_num);
 
     // Persistence (internal)
     uint32_t _last_persist_flush_ms = 0;

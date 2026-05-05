@@ -2,6 +2,7 @@
 #include "journal.h"
 #include "sd_card.h"
 #include "time_of_day.h"
+#include "world_condition.h"
 
 #include <Arduino.h>
 #include <SD_MMC.h>
@@ -12,7 +13,17 @@ static const char* JEVT_NAMES[] = {
     "hatch", "death", "role_change", "food_tap",
     "food_discovered", "food_delivered", "chamber_crossing",
     "milestone", "colony_event", "tended_by_assigned",
-    "bond_formed", "bond_broken"
+    "bond_formed", "bond_broken", "challenge_start",
+    "challenge_end", "trait_earned"
+};
+
+static const char* CHALLENGE_NAMES[] = {
+    "none", "heatwave", "cold_snap", "drought", "storm"
+};
+
+static const char* TRAIT_NAMES[] = {
+    "pioneer", "elder", "bonded",
+    "survived_heatwave", "survived_cold_snap", "survived_drought", "survived_storm"
 };
 
 static const char* DEATH_CAUSE[] = { "old_age", "starvation" };
@@ -90,6 +101,22 @@ void EventJournal::_serialize_entry(const JournalEntry& e, char* buf, size_t buf
     case JEVT_BOND_BROKEN:
         data["target_id"] = e.bond.target_id;
         break;
+    case JEVT_CHALLENGE_START:
+    case JEVT_CHALLENGE_END:
+        if (e.challenge.challenge_type < CHALLENGE_COUNT)
+            data["type"] = CHALLENGE_NAMES[e.challenge.challenge_type];
+        data["severity"] = e.challenge.severity;
+        break;
+    case JEVT_TRAIT_EARNED: {
+        // Find trait name from bit
+        uint32_t bit = e.trait.trait_bit;
+        const char* name = "unknown";
+        for (int i = 0; i < 7; i++) {
+            if (bit == (1u << i)) { name = TRAIT_NAMES[i]; break; }
+        }
+        data["trait"] = name;
+        break;
+    }
     }
 
     size_t len = serializeJson(doc, buf, buflen - 1);

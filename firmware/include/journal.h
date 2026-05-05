@@ -23,6 +23,9 @@ enum JournalType : uint8_t {
     JEVT_TENDED_BY_ASSIGNED,
     JEVT_BOND_FORMED,
     JEVT_BOND_BROKEN,
+    JEVT_CHALLENGE_START,
+    JEVT_CHALLENGE_END,
+    JEVT_TRAIT_EARNED,
     JEVT_COUNT
 };
 
@@ -46,6 +49,8 @@ struct JournalEntry {
         struct { uint8_t kind; uint16_t module_id; } colony_event;  // kind enum below
         struct { uint32_t carer_id; } tended_by;
         struct { uint32_t target_id; } bond;  // formed or broken
+        struct { uint8_t challenge_type; float severity; } challenge;
+        struct { uint32_t trait_bit; } trait;
     };
 };
 

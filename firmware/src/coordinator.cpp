@@ -115,8 +115,14 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
     // ---- Persistence: assign IDs, process hatches/deaths, periodic flush ----
     if (is_queen()) _persist_tick(tick_num);
 
+    // ---- WorldCondition: sync time ----
+    if (is_queen()) _world_tick();
+
     // ---- Bonds: decay + proximity detection ----
     if (is_queen()) _bond_tick(tick_num);
+
+    // ---- Traits: periodic check for Elder, Bonded ----
+    if (is_queen()) _trait_tick(tick_num);
 
     // ---- Journal: flush buffered events to disk periodically ----
     if (is_queen()) journal.tick();
@@ -1331,4 +1337,149 @@ void Coordinator::_bond_load() {
     }
     bonds.load(entries, n);
     Serial.printf("[bonds] loaded %d bonds\n", n);
+}
+
+// ================================================================
+//  WorldCondition + Traits + Challenges
+// ================================================================
+
+void Coordinator::_world_tick() {
+    world.tod = g_tod;
+    world.day_of_year = g_tod.day_of_year;
+}
+
+void Coordinator::_trait_tick(uint32_t tick_num) {
+    // Check every 500 ticks (~1 min) to avoid per-tick overhead
+    if (tick_num - _trait_check_tick < 500) return;
+    _trait_check_tick = tick_num;
+
+    for (int i = 0; i < chamber.lil_guy_count; i++) {
+        LilGuy& w = chamber.lil_guys[i];
+        if (w.id == 0 || !w.alive) continue;
+
+        IdentityRecord* rec = registry.get(w.id);
+        if (!rec) continue;
+
+        uint32_t prev_traits = rec->traits;
+
+        // Pioneer: set if is_pioneer flag (already determined at hatch)
+        if (w.is_pioneer) rec->traits |= TRAIT_PIONEER;
+
+        // Elder: age > 80% of typical lifespan
+        if (w.lifespan_ms > 0) {
+            uint32_t age_ms = millis() - w.born_at_ms;
+            if (age_ms > w.lifespan_ms * 4 / 5)
+                rec->traits |= TRAIT_ELDER;
+        }
+
+        // Bonded: any bond >= 0.6 (hysteresis: clear below 0.4)
+        BondEntry worker_bonds[16];
+        int bond_count = bonds.get_bonds(w.id, worker_bonds, 16);
+        bool has_strong_bond = false;
+        for (int b = 0; b < bond_count; b++) {
+            if (worker_bonds[b].strength >= 0.6f) {
+                has_strong_bond = true;
+                break;
+            }
+        }
+        if (has_strong_bond) {
+            rec->traits |= TRAIT_BONDED;
+        } else if (rec->traits & TRAIT_BONDED) {
+            // Check hysteresis: clear only if all below 0.4
+            bool any_above = false;
+            for (int b = 0; b < bond_count; b++) {
+                if (worker_bonds[b].strength >= 0.4f) { any_above = true; break; }
+            }
+            if (!any_above) rec->traits &= ~TRAIT_BONDED;
+        }
+
+        // Emit trait_earned for newly set bits
+        uint32_t new_bits = rec->traits & ~prev_traits;
+        if (new_bits) {
+            for (int bit = 0; bit < 7; bit++) {
+                if (new_bits & (1u << bit)) {
+                    JournalEntry je = {};
+                    je.tick = tick_num;
+                    je.unix_time = g_tod.unix_time;
+                    je.type = JEVT_TRAIT_EARNED;
+                    je.lilguy_id = w.id;
+                    je.trait.trait_bit = (1u << bit);
+                    journal.emit(je);
+                }
+            }
+            rec->dirty = true;
+        }
+    }
+}
+
+void Coordinator::challenge_start(uint8_t type, float severity, uint32_t tick_num) {
+    int idx = world.start_challenge(type, severity, tick_num, g_tod.unix_time);
+    if (idx < 0) {
+        Serial.println("[challenge] max active challenges reached");
+        return;
+    }
+
+    // Journal event
+    JournalEntry je = {};
+    je.tick = tick_num;
+    je.unix_time = g_tod.unix_time;
+    je.type = JEVT_CHALLENGE_START;
+    je.lilguy_id = 0;
+    je.challenge.challenge_type = type;
+    je.challenge.severity = severity;
+    journal.emit(je);
+
+    // Mark all living workers as participants (set challenge bit on traits temporarily)
+    // We use the survival trait bit as a "participating" marker;
+    // on end, if still alive, they keep it (survived). On death during, it's cleared.
+    Serial.printf("[challenge] started type=%d severity=%.1f, %d participants\n",
+                  type, severity, chamber.lil_guy_count);
+}
+
+void Coordinator::challenge_end(uint32_t tick_num) {
+    if (world.active_count == 0) {
+        Serial.println("[challenge] no active challenge to end");
+        return;
+    }
+
+    // End the most recent challenge
+    ActiveChallenge ended = world.end_challenge(world.active_count - 1);
+
+    // Journal event
+    JournalEntry je = {};
+    je.tick = tick_num;
+    je.unix_time = g_tod.unix_time;
+    je.type = JEVT_CHALLENGE_END;
+    je.lilguy_id = 0;
+    je.challenge.challenge_type = ended.type;
+    je.challenge.severity = ended.severity;
+    journal.emit(je);
+
+    // Award survival trait to all currently alive workers
+    uint32_t survival_bit = challenge_survival_trait(ended.type);
+    if (survival_bit == 0) return;
+
+    int survivors = 0;
+    for (int i = 0; i < chamber.lil_guy_count; i++) {
+        LilGuy& w = chamber.lil_guys[i];
+        if (w.id == 0 || !w.alive) continue;
+        IdentityRecord* rec = registry.get(w.id);
+        if (!rec) continue;
+        if (!(rec->traits & survival_bit)) {
+            rec->traits |= survival_bit;
+            rec->dirty = true;
+            survivors++;
+
+            JournalEntry te = {};
+            te.tick = tick_num;
+            te.unix_time = g_tod.unix_time;
+            te.type = JEVT_TRAIT_EARNED;
+            te.lilguy_id = w.id;
+            te.trait.trait_bit = survival_bit;
+            journal.emit(te);
+        }
+    }
+
+    Serial.printf("[challenge] ended type=%d, %d survivors earned trait\n",
+                  ended.type, survivors);
 }

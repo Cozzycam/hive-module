@@ -34,6 +34,8 @@
 #include <ArduinoOTA.h>
 #include "ota_push.h"
 #include "sd_card.h"
+#include "world_condition.h"
+#include "api_json.h"
 #include <SD_MMC.h>
 #include <Preferences.h>
 
@@ -242,6 +244,33 @@ static void process_serial_line(const char* line) {
         Serial.println("[test] Killing WiFi radio to simulate ESP-NOW death...");
         WiFi.mode(WIFI_OFF);
         Serial.println("[test] WiFi.mode(WIFI_OFF) — ESP-NOW is now dead. Watch for reinit.");
+    } else if (strcmp(line, "dump colony") == 0) {
+        char* buf = (char*)malloc(4096);
+        if (buf) {
+            size_t len = api_colony_json(sim.coordinator, buf, 4096);
+            Serial.println(buf);
+            free(buf);
+        }
+    } else if (strcmp(line, "dump lilguys") == 0) {
+        char* buf = (char*)malloc(8192);
+        if (buf) {
+            size_t len = api_lilguys_json(sim.coordinator, buf, 8192, 100, 0);
+            Serial.println(buf);
+            free(buf);
+        }
+    } else if (strncmp(line, "dump lilguy ", 12) == 0) {
+        uint32_t id = atoi(line + 12);
+        char* buf = (char*)malloc(2048);
+        if (buf) {
+            size_t len = api_lilguy_detail_json(sim.coordinator, id, buf, 2048);
+            if (len > 0) Serial.println(buf);
+            else Serial.printf("[api] lilguy %lu not found\n", (unsigned long)id);
+            free(buf);
+        }
+    } else if (strcmp(line, "dump health") == 0) {
+        char buf[256];
+        api_health_json(sim.coordinator, buf, sizeof(buf));
+        Serial.println(buf);
     } else if (strcmp(line, "names") == 0) {
         auto& reg = sim.coordinator.registry;
         IdentityRecord* recs = reg.living_records();
@@ -265,6 +294,25 @@ static void process_serial_line(const char* line) {
                 return true;
             }, nullptr);
         Serial.println("[journal] --- end ---");
+    } else if (strncmp(line, "challenge start ", 16) == 0) {
+        const char* arg = line + 16;
+        struct { const char* name; uint8_t type; } types[] = {
+            {"heatwave", CHALLENGE_HEATWAVE}, {"cold", CHALLENGE_COLD_SNAP},
+            {"drought", CHALLENGE_DROUGHT}, {"storm", CHALLENGE_STORM},
+        };
+        uint8_t ctype = CHALLENGE_HEATWAVE;
+        float severity = 0.5f;
+        for (auto& t : types) {
+            if (strncmp(arg, t.name, strlen(t.name)) == 0) {
+                ctype = t.type;
+                const char* sev = strchr(arg, ' ');
+                if (sev) severity = atof(sev + 1);
+                break;
+            }
+        }
+        sim.coordinator.challenge_start(ctype, severity, sim.tick_count);
+    } else if (strcmp(line, "challenge end") == 0) {
+        sim.coordinator.challenge_end(sim.tick_count);
     } else if (strcmp(line, "reset colony") == 0) {
         Serial.println("[reset] wiping colony data...");
         // Remove colony directory tree from SD
