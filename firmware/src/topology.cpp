@@ -42,6 +42,8 @@ static uint32_t _last_any_connect_ms = 0;     // timestamp of last successful co
 static uint32_t _send_fail_count = 0;         // consecutive esp_now_send failures
 static uint32_t _first_send_fail_ms = 0;      // timestamp of first failure in current streak
 static uint8_t  _current_channel = 1;         // ESP-NOW operating channel
+static uint8_t  _scan_channel = 0;            // channel scanning: 0=disabled, 1-13=trying
+static uint8_t  _reinit_count_total = 0;      // total reinits since last connect (for channel scan trigger)
 
 // Receive ring buffer (ISR -> main loop) — topology messages
 static const int RX_BUF_SIZE = 8;
@@ -120,8 +122,19 @@ static void _send(const uint8_t* mac, uint8_t type, uint8_t face) {
     if (err != ESP_OK) {
         if (_send_fail_count == 0) _first_send_fail_ms = millis();
         _send_fail_count++;
-        if (_send_fail_count == 1)
-            Serial.printf("[topo] send failed (err=0x%x)\n", err);
+        if (_send_fail_count == 1) {
+            uint8_t actual_ch = 0;
+            wifi_second_chan_t second;
+            esp_wifi_get_channel(&actual_ch, &second);
+            Serial.printf("[topo] send failed (err=0x%x) _ch=%d actual_ch=%d\n",
+                          err, _current_channel, actual_ch);
+        }
+        // On channel error, try to fix immediately
+        if (err == 0x3069 && !WiFi.isConnected()) {
+            esp_wifi_disconnect();
+            delay(5);
+            esp_wifi_set_channel(_current_channel, WIFI_SECOND_CHAN_NONE);
+        }
     } else {
         _send_fail_count = 0;
     }
@@ -154,6 +167,8 @@ static void _connect_face(Face f, uint16_t id, const uint8_t* mac) {
 
     _reinit_fail_count = 0;
     _send_fail_count = 0;
+    _reinit_count_total = 0;
+    _scan_channel = 0;
     _last_any_connect_ms = millis();
     Serial.printf("[topo] face %s connected to module 0x%04X\n", FACE_NAMES[f], id);
     if (_callback) _callback(f, true, id);
@@ -407,16 +422,62 @@ static void _tick_face(Face f, const TopologyMessage* msg, const uint8_t* msg_ma
 //  ESP-NOW reinit — recover from dead radio (WiFi.mode(WIFI_OFF), channel drift)
 // ---------------------------------------------------------------------------
 
+static bool _set_channel_verified(uint8_t ch) {
+    esp_err_t err = esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
+    if (err != ESP_OK) {
+        Serial.printf("[topo] esp_wifi_set_channel(%d) FAILED err=0x%x\n", ch, err);
+        return false;
+    }
+    // Verify it actually took
+    uint8_t actual = 0;
+    wifi_second_chan_t second;
+    esp_wifi_get_channel(&actual, &second);
+    if (actual != ch) {
+        Serial.printf("[topo] channel set to %d but read back %d!\n", ch, actual);
+        return false;
+    }
+    return true;
+}
+
 static void _espnow_reinit() {
-    Serial.println("[topo] ESP-NOW reinit — radio may be dead");
+    _reinit_count_total++;
+
+    // Channel scanning: if we've reinit'd multiple times without connecting,
+    // the queen may be on a different channel. Try scanning 1-13.
+    if (_reinit_count_total >= 2 && !WiFi.isConnected()) {
+        _scan_channel++;
+        if (_scan_channel > 13) _scan_channel = 1;
+        _current_channel = _scan_channel;
+        Serial.printf("[topo] ESP-NOW reinit — scanning channel %d\n", _current_channel);
+    } else {
+        Serial.println("[topo] ESP-NOW reinit — radio may be dead");
+    }
 
     // Tear down
     esp_now_deinit();
 
-    // Ensure WiFi STA is alive
-    WiFi.mode(WIFI_STA);
-    WiFi.disconnect();
-    esp_wifi_set_channel(_current_channel, WIFI_SECOND_CHAN_NONE);
+    if (WiFi.isConnected()) {
+        // Queen with persistent WiFi — don't touch channel
+        // Channel is locked by STA association
+        uint8_t primary;
+        wifi_second_chan_t second;
+        esp_wifi_get_channel(&primary, &second);
+        _current_channel = primary;
+    } else {
+        // Satellite (or queen without WiFi):
+        // Must clear any stored AP connection state. WiFi.begin() from NTP at boot
+        // leaves residual state that causes esp_wifi_set_channel() to fail silently
+        // or race with auto-reconnect.
+        esp_wifi_disconnect();   // Clear pending connection (safe, doesn't tear down interface)
+        delay(10);               // Let WiFi task process
+        if (!_set_channel_verified(_current_channel)) {
+            // If channel set failed, try harder: full mode reset
+            WiFi.mode(WIFI_STA);
+            esp_wifi_disconnect();
+            delay(10);
+            _set_channel_verified(_current_channel);
+        }
+    }
 
     // Re-init ESP-NOW
     if (esp_now_init() != ESP_OK) {
@@ -432,15 +493,15 @@ static void _espnow_reinit() {
     bp.encrypt = false;
     esp_now_add_peer(&bp);
 
-    // Re-add any connected face peers
+    // Clear face peers (force re-add on next connection)
     for (int f = 0; f < FACE_COUNT; f++) {
-        _faces[f].peer_added = false;  // force re-add on next send
+        _faces[f].peer_added = false;
     }
 
     _reinit_fail_count = 0;
     _send_fail_count = 0;
 
-    // Re-read DETECT pins (WiFi.mode(WIFI_OFF) may have affected GPIO state)
+    // Re-read DETECT pins
     for (int f = 0; f < FACE_COUNT; f++) {
         _faces[f].detect_low = (digitalRead(DETECT_PINS[f]) == LOW);
         _faces[f].prev_detect_low = _faces[f].detect_low;
@@ -465,7 +526,7 @@ void topology_init(TopologyCallback cb) {
 
     // WiFi STA mode for ESP-NOW
     // If WiFi is already connected (queen staying on AP), use AP's channel.
-    // Otherwise, disconnect and use channel 1 (satellite, or no AP).
+    // Otherwise, clear any stale STA state and set channel 1.
     if (WiFi.isConnected()) {
         uint8_t primary;
         wifi_second_chan_t second;
@@ -474,9 +535,10 @@ void topology_init(TopologyCallback cb) {
         Serial.printf("[topo] WiFi connected, using AP channel %d\n", _current_channel);
     } else {
         WiFi.mode(WIFI_STA);
-        WiFi.disconnect();
+        esp_wifi_disconnect();  // Clear any stored AP from failed NTP at boot
+        delay(10);
         _current_channel = 1;
-        esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
+        _set_channel_verified(1);
     }
 
     // Read MAC / derive ID
@@ -535,11 +597,12 @@ void topology_poll() {
         if (msg.sender_id == _my_id) continue;  // ignore own broadcasts
 
         // Channel follow: if message carries a valid channel different from ours, switch
-        if (msg.channel > 0 && msg.channel != _current_channel) {
+        if (msg.channel > 0 && msg.channel != _current_channel && !WiFi.isConnected()) {
             Serial.printf("[topo] channel follow: %d -> %d (from 0x%04X)\n",
                           _current_channel, msg.channel, msg.sender_id);
             _current_channel = msg.channel;
-            esp_wifi_set_channel(_current_channel, WIFI_SECOND_CHAN_NONE);
+            esp_wifi_disconnect();  // Ensure clean state before channel change
+            _set_channel_verified(_current_channel);
         }
 
         int target = _find_face_for_msg(msg);
@@ -727,4 +790,34 @@ void topology_draw_overlay(void* canvas_ptr) {
     uint32_t up = millis() / 1000;
     snprintf(buf, sizeof(buf), "up %lum%lus", (unsigned long)(up / 60), (unsigned long)(up % 60));
     gfx->print(buf);
+}
+
+void topology_status() {
+    uint8_t actual_ch = 0;
+    wifi_second_chan_t second;
+    esp_wifi_get_channel(&actual_ch, &second);
+
+    Serial.println("[topo] --- status ---");
+    Serial.printf("  my_id:       0x%04X\n", _my_id);
+    Serial.printf("  channel:     %d (actual radio: %d)\n", _current_channel, actual_ch);
+    Serial.printf("  wifi:        %s\n", WiFi.isConnected() ? "connected" : "disconnected");
+    Serial.printf("  reinit_tot:  %d  scan_ch: %d\n", _reinit_count_total, _scan_channel);
+    Serial.printf("  send_fails:  %lu  reinit_fails: %lu/%lu\n",
+        (unsigned long)_send_fail_count, (unsigned long)_reinit_fail_count, (unsigned long)REINIT_THRESHOLD);
+
+    const char* link_names[] = {"IDLE", "DETECTED", "CONNECTED", "ERROR"};
+    for (int f = 0; f < FACE_COUNT; f++) {
+        const FaceState& fs = _faces[f];
+        Serial.printf("  face %s: %s", FACE_NAMES[f], link_names[fs.link]);
+        if (fs.link == LINK_CONNECTED) {
+            uint32_t hb_age = (millis() - fs.last_hb_rx_ms) / 1000;
+            Serial.printf("  id=0x%04X  peer=%s  hb_rx=%lus ago  mac=%02X:%02X:%02X:%02X:%02X:%02X",
+                fs.neighbour_id, fs.peer_added ? "yes" : "NO",
+                (unsigned long)hb_age,
+                fs.neighbour_mac[0], fs.neighbour_mac[1], fs.neighbour_mac[2],
+                fs.neighbour_mac[3], fs.neighbour_mac[4], fs.neighbour_mac[5]);
+        }
+        Serial.printf("  detect=%s\n", fs.detect_low ? "LOW" : "HIGH");
+    }
+    Serial.println("[topo] -----------------");
 }

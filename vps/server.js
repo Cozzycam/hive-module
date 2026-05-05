@@ -115,8 +115,8 @@ app.post('/api/v1/colonies/:colony_id/events', authMiddleware, (req, res) => {
   let parsed;
   try { parsed = JSON.parse(body); } catch { return res.status(400).json({ error: 'invalid json' }); }
 
-  // Ensure colony exists
-  stmts.upsertColony.run(colony_id, null, 0);
+  // Ensure colony row exists without overwriting snapshot data
+  db.prepare(`INSERT OR IGNORE INTO colonies (colony_id) VALUES (?)`).run(colony_id);
 
   const insertMany = db.transaction((events) => {
     for (const ev of events) {

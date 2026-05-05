@@ -383,6 +383,8 @@ static void process_serial_line(const char* line) {
         Serial.printf("[debug] force daytime: %s\n", force_daytime ? "ON" : "OFF");
     } else if (strcmp(line, "topology") == 0) {
         sim.coordinator.print_topology();
+    } else if (strcmp(line, "topo status") == 0) {
+        topology_status();
     } else if (strcmp(line, "sd") == 0) {
         Serial.printf("[sd] state: %s\n",
             sd_card_state() == SD_OK ? "OK" :
@@ -502,8 +504,14 @@ void setup() {
 
     // Queen: keep WiFi connected for HTTP server + ESP-NOW channel coexistence
     // Must be set before time_of_day_init() which does the first NTP sync
-    if (true) {  // TODO: only if is_queen, but role isn't known yet at this point
-        tod_set_persistent_wifi(true);
+    // Role isn't known yet (sim not init), so read it from NVS directly
+    {
+        Preferences _prefs;
+        _prefs.begin("hive", true);
+        uint8_t role = _prefs.getUChar("module_role", MODULE_UNCONFIGURED);
+        _prefs.end();
+        // Queen (1) or unconfigured (0) — same logic as is_queen()
+        if (role != MODULE_SATELLITE) tod_set_persistent_wifi(true);
     }
 
     time_of_day_init();

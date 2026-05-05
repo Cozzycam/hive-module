@@ -388,9 +388,10 @@ static void _rtc_write(uint32_t unix_time) {
 // ================================================================
 
 // Disconnect from AP but keep WiFi STA alive for ESP-NOW.
-// Re-pins radio to channel 1 so topology resumes immediately.
+// Erases stored AP config so it won't auto-reconnect and interfere with ESP-NOW channel.
 static void _wifi_teardown() {
-    WiFi.disconnect();
+    WiFi.disconnect(false, true);  // disconnect + erase AP config
+    delay(10);  // let WiFi task process
     esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
 }
 
