@@ -343,34 +343,22 @@ void Renderer::flush() {
     // Union current frame's dirty rects (new sprite positions) into flush bounds
     _union_dirty_into_bounds(_flush_bounds);
 
-    uint16_t* fb = (uint16_t*)_gfx->getFramebuffer();
-    bool do_full = force_full_flush || _flush_bounds.full ||
-                   !_flush_bounds.any || !_output || !fb;
-
-    if (do_full) {
-        // Full-frame flush (original path)
-        _gfx->flush();
-#if RENDERER_PROFILE
-        _prof_flush_pixels_total += SCREEN_W * SCREEN_H;
-        _prof_full_redraw_count++;
-#endif
-    } else {
-        // Windowed flush — only the dirty bounding box
-        int16_t x = _flush_bounds.x0;
-        int16_t y = _flush_bounds.y0;
-        int16_t w = _flush_bounds.x1 - x;
-        int16_t h = _flush_bounds.y1 - y;
-
-        // Pass SCREEN_W as bitmap width so the TFT's strided path handles
-        // the framebuffer stride correctly. The clipping logic computes
-        // out_width = min(SCREEN_W, max_x - x + 1) and uses one window
-        // setup with per-row writePixels inside a single SPI transaction.
-        _output->draw16bitRGBBitmap(x, y, &fb[y * SCREEN_W + x], SCREEN_W, h);
+    // Full-frame flush — windowed sub-region flush proved unreliable with the
+    // AXS15231B QSPI display (rotation/stride issues). With 16 scattered workers
+    // + HUD, the dirty bounding box covers ~100% of the screen anyway, so the
+    // windowed path provided no benefit. Keeping dirty-rect tracking infrastructure
+    // for future use (clustered layouts, companion app rendering, fewer workers).
+    _gfx->flush();
 
 #if RENDERER_PROFILE
-        _prof_flush_pixels_total += (unsigned long)w * h;
+    // Still compute flush bounds for diagnostic reporting
+    _union_dirty_into_bounds(_flush_bounds);
+    unsigned long flush_px = _flush_bounds.any ?
+        (unsigned long)(_flush_bounds.x1 - _flush_bounds.x0) * (_flush_bounds.y1 - _flush_bounds.y0) :
+        SCREEN_W * SCREEN_H;
+    _prof_flush_pixels_total += flush_px;
+    _prof_full_redraw_count++;
 #endif
-    }
 
     // Save current bounds for next frame (so restored floor regions get flushed)
     _prev_flush_bounds = {};
