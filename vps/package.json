@@ -1,0 +1,15 @@
+{
+  "name": "hive-vps",
+  "version": "1.0.0",
+  "description": "Hive colony VPS relay — receives snapshots and events from queen, serves to app",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.0",
+    "better-sqlite3": "^11.0.0",
+    "morgan": "^1.10.0"
+  }
+}

@@ -36,6 +36,8 @@
 #include "sd_card.h"
 #include "world_condition.h"
 #include "api_json.h"
+#include "http_server.h"
+#include "vps_push.h"
 #include <SD_MMC.h>
 #include <Preferences.h>
 
@@ -313,6 +315,10 @@ static void process_serial_line(const char* line) {
         sim.coordinator.challenge_start(ctype, severity, sim.tick_count);
     } else if (strcmp(line, "challenge end") == 0) {
         sim.coordinator.challenge_end(sim.tick_count);
+    } else if (strncmp(line, "vps secret ", 11) == 0) {
+        vps_push_set_secret(line + 11);
+    } else if (strncmp(line, "vps endpoint ", 13) == 0) {
+        vps_push_set_endpoint(line + 13);
     } else if (strcmp(line, "reset colony") == 0) {
         Serial.println("[reset] wiping colony data...");
         // Remove colony directory tree from SD
@@ -499,6 +505,8 @@ void setup() {
     if (queen) {
         hud_init();
         renderer.start_boot_splash();
+        http_server_start(&sim.coordinator);
+        vps_push_init();
     }
 
     last_tick_ms = millis();
@@ -611,6 +619,10 @@ void loop() {
             g_tod.local_hour = 12;
         }
     }
+
+    // VPS push (queen only, every 30s internally)
+    if (sim.coordinator.is_queen())
+        vps_push_tick(sim.coordinator);
 
     // Periodic status
     static unsigned long last_debug = 0;
