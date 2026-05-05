@@ -396,7 +396,7 @@ void hud_draw(Arduino_Canvas* gfx, const Chamber& ch) {
     // Recompute target values once per second
     if (now - _last_update_ms >= 1000) {
         _last_update_ms = now;
-        _target_pop = ch.colony->population + (ch.has_queen && ch.queen_obj.alive ? 1 : 0);
+        _target_pop = ch.colony->population;
         _target_age_days = _colony_age_days();
         _target_food_days = _food_days_remaining(ch);
         _phase = _get_phase(_target_pop);
