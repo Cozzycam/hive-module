@@ -41,6 +41,7 @@ static const uint32_t REINIT_THRESHOLD = 12;  // ~60s of failure (12 × 5s ERROR
 static uint32_t _last_any_connect_ms = 0;     // timestamp of last successful connection
 static uint32_t _send_fail_count = 0;         // consecutive esp_now_send failures
 static uint32_t _first_send_fail_ms = 0;      // timestamp of first failure in current streak
+static uint8_t  _current_channel = 1;         // ESP-NOW operating channel
 
 // Receive ring buffer (ISR -> main loop) — topology messages
 static const int RX_BUF_SIZE = 8;
@@ -114,7 +115,7 @@ static void _send(const uint8_t* mac, uint8_t type, uint8_t face) {
     msg.type      = type;
     msg.sender_id = _my_id;
     msg.face      = face;
-    msg.reserved  = 0;
+    msg.channel   = _current_channel;
     esp_err_t err = esp_now_send(mac, (const uint8_t*)&msg, sizeof(msg));
     if (err != ESP_OK) {
         if (_send_fail_count == 0) _first_send_fail_ms = millis();
@@ -415,7 +416,7 @@ static void _espnow_reinit() {
     // Ensure WiFi STA is alive
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
-    esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
+    esp_wifi_set_channel(_current_channel, WIFI_SECOND_CHAN_NONE);
 
     // Re-init ESP-NOW
     if (esp_now_init() != ESP_OK) {
@@ -462,12 +463,21 @@ void topology_init(TopologyCallback cb) {
         _neighbours[f] = Neighbour{};
     }
 
-    // WiFi STA mode for ESP-NOW (NTP may have turned WiFi off)
-    WiFi.mode(WIFI_STA);
-    WiFi.disconnect();
-
-    // Force channel 1 — after NTP, the radio may be on the AP's channel.
-    esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
+    // WiFi STA mode for ESP-NOW
+    // If WiFi is already connected (queen staying on AP), use AP's channel.
+    // Otherwise, disconnect and use channel 1 (satellite, or no AP).
+    if (WiFi.isConnected()) {
+        uint8_t primary;
+        wifi_second_chan_t second;
+        esp_wifi_get_channel(&primary, &second);
+        _current_channel = primary;
+        Serial.printf("[topo] WiFi connected, using AP channel %d\n", _current_channel);
+    } else {
+        WiFi.mode(WIFI_STA);
+        WiFi.disconnect();
+        _current_channel = 1;
+        esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
+    }
 
     // Read MAC / derive ID
     esp_read_mac(_my_mac, ESP_MAC_WIFI_STA);
@@ -524,6 +534,14 @@ void topology_poll() {
 
         if (msg.sender_id == _my_id) continue;  // ignore own broadcasts
 
+        // Channel follow: if message carries a valid channel different from ours, switch
+        if (msg.channel > 0 && msg.channel != _current_channel) {
+            Serial.printf("[topo] channel follow: %d -> %d (from 0x%04X)\n",
+                          _current_channel, msg.channel, msg.sender_id);
+            _current_channel = msg.channel;
+            esp_wifi_set_channel(_current_channel, WIFI_SECOND_CHAN_NONE);
+        }
+
         int target = _find_face_for_msg(msg);
         if (target >= 0) {
             _tick_face(static_cast<Face>(target), &msg, mac);
@@ -566,6 +584,15 @@ void topology_poll() {
 uint16_t topology_my_id() { return _my_id; }
 const FaceState& topology_face(Face f) { return _faces[f]; }
 const Neighbour& topology_neighbour(Face f) { return _neighbours[f]; }
+uint8_t  topology_current_channel() { return _current_channel; }
+
+void topology_set_wifi_channel(uint8_t channel) {
+    if (channel == 0 || channel == _current_channel) return;
+    Serial.printf("[topo] WiFi channel changed: %d -> %d\n", _current_channel, channel);
+    _current_channel = channel;
+    // Don't set channel explicitly — WiFi STA connection handles it
+    // ESP-NOW automatically uses the STA channel when connected
+}
 
 bool topology_send_to_face(Face f, const uint8_t* data, int len) {
     const FaceState& fs = _faces[f];

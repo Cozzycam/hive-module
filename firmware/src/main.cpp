@@ -481,6 +481,13 @@ void setup() {
     }
 
     touch_init();
+
+    // Queen: keep WiFi connected for HTTP server + ESP-NOW channel coexistence
+    // Must be set before time_of_day_init() which does the first NTP sync
+    if (true) {  // TODO: only if is_queen, but role isn't known yet at this point
+        tod_set_persistent_wifi(true);
+    }
+
     time_of_day_init();
     sim.init();
     topology_init(topo_callback);  // after WiFi/NTP, before renderer

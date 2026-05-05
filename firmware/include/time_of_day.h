@@ -46,3 +46,6 @@ void time_of_day_recompute_sun();
 // connect returns true on success. disconnect turns WiFi off.
 bool tod_wifi_connect(uint32_t timeout_ms = 10000);
 void tod_wifi_disconnect();
+
+// Phase 7: queen stays connected to WiFi for HTTP + ESP-NOW channel coexistence
+void tod_set_persistent_wifi(bool keep_connected);

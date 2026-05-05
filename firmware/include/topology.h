@@ -25,7 +25,7 @@ struct __attribute__((packed)) TopologyMessage {
     uint8_t  type;
     uint16_t sender_id;
     uint8_t  face;       // sender's face (0=N 1=S 2=W 3=E, matches Face enum)
-    uint8_t  reserved;
+    uint8_t  channel;    // AP channel (0 = unknown/channel 1 fallback)
 };
 
 // Per-face connection state
@@ -65,6 +65,10 @@ void     topology_poll();                     // call every 50ms from loop
 uint16_t topology_my_id();
 const FaceState& topology_face(Face f);
 const Neighbour& topology_neighbour(Face f);
+
+// Channel management — queen sets the channel, satellites follow
+void     topology_set_wifi_channel(uint8_t channel);  // called when WiFi connects
+uint8_t  topology_current_channel();                  // current ESP-NOW channel
 
 // Population sync message (satellite → queen)
 struct __attribute__((packed)) PopSyncMessage {

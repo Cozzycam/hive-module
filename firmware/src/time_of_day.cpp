@@ -32,6 +32,7 @@ static int      _prev_local_day    = -1;
 static bool     _simulated_clock   = false;
 static uint32_t _sim_clock_base_ms = 0;
 static uint32_t _sim_clock_epoch   = 0;
+static bool     _keep_wifi_connected = false;  // Phase 7: queen stays connected
 
 // ================================================================
 //  BCD helpers
@@ -396,7 +397,12 @@ static bool _ntp_sync() {
     // Piggyback weather fetch while WiFi is up
     weather_fetch();
 
-    _wifi_teardown();
+    // Phase 7: queen stays connected for HTTP server + channel coexistence
+    if (!_keep_wifi_connected)
+        _wifi_teardown();
+    else
+        Serial.printf("[tod] WiFi staying connected (channel %d)\n", WiFi.channel());
+
     return true;
 }
 
@@ -419,6 +425,7 @@ static void _start_simulated_clock() {
 // ================================================================
 
 bool tod_wifi_connect(uint32_t timeout_ms) {
+    if (WiFi.isConnected()) return true;  // Already connected (persistent WiFi mode)
     Serial.printf("[wifi] Connecting to '%s'...\n", WIFI_SSID);
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -439,6 +446,10 @@ bool tod_wifi_connect(uint32_t timeout_ms) {
 
 void tod_wifi_disconnect() {
     _wifi_teardown();
+}
+
+void tod_set_persistent_wifi(bool keep_connected) {
+    _keep_wifi_connected = keep_connected;
 }
 
 // ================================================================
