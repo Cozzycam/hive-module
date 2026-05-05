@@ -16,3 +16,6 @@ void vps_push_set_secret(const char* base64_secret);
 
 // Set the VPS endpoint URL
 void vps_push_set_endpoint(const char* url);
+
+// Print VPS push status to Serial
+void vps_push_status();

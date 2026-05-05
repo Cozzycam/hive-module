@@ -49,3 +49,15 @@ void tod_wifi_disconnect();
 
 // Phase 7: queen stays connected to WiFi for HTTP + ESP-NOW channel coexistence
 void tod_set_persistent_wifi(bool keep_connected);
+
+// WiFi credential management (NVS-backed)
+void tod_wifi_set_ssid(const char* ssid);
+void tod_wifi_set_pass(const char* pass);
+void tod_wifi_forget();
+
+// WiFi status + reconnect
+void tod_wifi_status();
+void tod_wifi_reconnect();
+
+// Background reconnect — call from main loop (handles timing internally)
+void tod_wifi_reconnect_tick();

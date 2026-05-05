@@ -315,6 +315,18 @@ static void process_serial_line(const char* line) {
         sim.coordinator.challenge_start(ctype, severity, sim.tick_count);
     } else if (strcmp(line, "challenge end") == 0) {
         sim.coordinator.challenge_end(sim.tick_count);
+    } else if (strcmp(line, "wifi status") == 0) {
+        tod_wifi_status();
+    } else if (strcmp(line, "wifi reconnect") == 0) {
+        tod_wifi_reconnect();
+    } else if (strncmp(line, "wifi ssid ", 10) == 0) {
+        tod_wifi_set_ssid(line + 10);
+    } else if (strncmp(line, "wifi pass ", 10) == 0) {
+        tod_wifi_set_pass(line + 10);
+    } else if (strcmp(line, "wifi forget") == 0) {
+        tod_wifi_forget();
+    } else if (strcmp(line, "vps status") == 0) {
+        vps_push_status();
     } else if (strncmp(line, "vps secret ", 11) == 0) {
         vps_push_set_secret(line + 11);
     } else if (strncmp(line, "vps endpoint ", 13) == 0) {
@@ -619,6 +631,10 @@ void loop() {
             g_tod.local_hour = 12;
         }
     }
+
+    // WiFi background reconnect (queen only, handles timing internally)
+    if (sim.coordinator.is_queen())
+        tod_wifi_reconnect_tick();
 
     // VPS push (queen only, every 30s internally)
     if (sim.coordinator.is_queen())

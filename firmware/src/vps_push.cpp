@@ -19,6 +19,8 @@ static char _endpoint[MAX_URL_LEN] = {};
 static bool _configured = false;
 static uint32_t _last_push_ms = 0;
 static uint32_t _last_pushed_unix = 0;  // cursor: events after this have been pushed
+static uint32_t _push_ok_count = 0;
+static uint32_t _push_fail_count = 0;
 
 // ---- HMAC-SHA256 ----
 
@@ -81,7 +83,8 @@ static bool _post(const char* path, const char* body, int body_len) {
     int code = http.POST((uint8_t*)body, body_len);
     http.end();
 
-    if (code >= 200 && code < 300) return true;
+    if (code >= 200 && code < 300) { _push_ok_count++; return true; }
+    _push_fail_count++;
     if (code > 0)
         Serial.printf("[vps] POST %s — HTTP %d\n", path, code);
     else
@@ -165,4 +168,18 @@ void vps_push_set_endpoint(const char* url) {
     prefs.end();
     _configured = (_secret[0] != '\0' && _endpoint[0] != '\0');
     Serial.printf("[vps] endpoint set: %s\n", _endpoint);
+}
+
+void vps_push_status() {
+    Serial.println("[vps] --- status ---");
+    Serial.printf("  configured: %s\n", _configured ? "yes" : "no");
+    Serial.printf("  endpoint:   %s\n", _endpoint[0] ? _endpoint : "(not set)");
+    Serial.printf("  secret:     %s\n", _secret[0] ? "(set)" : "(not set)");
+    Serial.printf("  wifi:       %s\n", WiFi.isConnected() ? "connected" : "disconnected");
+    uint32_t ago = (millis() - _last_push_ms) / 1000;
+    Serial.printf("  last push:  %lus ago\n", ago);
+    Serial.printf("  cursor:     %lu\n", _last_pushed_unix);
+    Serial.printf("  success:    %lu\n", _push_ok_count);
+    Serial.printf("  failures:   %lu\n", _push_fail_count);
+    Serial.println("[vps] ----------------");
 }

@@ -1,10 +1,12 @@
 /* Real-world time of day — RTC, NTP, solar calculation, phase. */
 #include "time_of_day.h"
+#include "topology.h"
 #include "weather.h"
 #include <Arduino.h>
 #include <Wire.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
+#include <Preferences.h>
 #include <time.h>
 #include <cmath>
 
@@ -17,9 +19,15 @@ static constexpr int CIVIL_TWILIGHT_MINUTES = 30;
 static constexpr int NTP_RESYNC_HOURS       = 24;
 
 // ---- WiFi credentials ----
-// Set via environment or replace locally (do not commit real credentials)
-static const char* WIFI_SSID = "EE-52GKNR";
-static const char* WIFI_PASS = "F7QMktKEtvP6MqFH";
+// Factory-default fallback (used only when NVS is empty)
+static const char* FACTORY_SSID = "FACTORY_DEFAULT";
+static const char* FACTORY_PASS = "FACTORY_DEFAULT";
+
+static constexpr int WIFI_SSID_BUF = 64;
+static constexpr int WIFI_PASS_BUF = 64;
+static char _wifi_ssid[WIFI_SSID_BUF] = {};
+static char _wifi_pass[WIFI_PASS_BUF] = {};
+static bool _using_factory_creds = false;
 
 // ---- PCF85063 RTC ----
 static constexpr uint8_t RTC_ADDR = 0x51;
@@ -33,6 +41,39 @@ static bool     _simulated_clock   = false;
 static uint32_t _sim_clock_base_ms = 0;
 static uint32_t _sim_clock_epoch   = 0;
 static bool     _keep_wifi_connected = false;  // Phase 7: queen stays connected
+
+// ---- Reconnect state ----
+static bool     _ever_connected = false;       // true after first successful STA association
+static uint32_t _last_disconnect_ms = 0;       // when we noticed STA drop
+static uint32_t _last_reconnect_attempt_ms = 0;
+static uint32_t _reconnect_interval_ms = 60000;  // current backoff interval
+static uint8_t  _reconnect_failures = 0;
+static uint8_t  _last_disconnect_reason = 0;   // WiFi.status() at disconnect
+static uint32_t _last_connect_ms = 0;          // millis when last associated
+static uint8_t  _prev_channel = 0;             // channel before disconnect
+
+// ================================================================
+//  WiFi credential loading (NVS with factory fallback)
+// ================================================================
+
+static void _load_wifi_creds() {
+    Preferences prefs;
+    prefs.begin("wifi", true);
+    String ssid = prefs.getString("ssid", "");
+    String pass = prefs.getString("pass", "");
+    prefs.end();
+
+    if (ssid.length() > 0) {
+        strlcpy(_wifi_ssid, ssid.c_str(), WIFI_SSID_BUF);
+        strlcpy(_wifi_pass, pass.c_str(), WIFI_PASS_BUF);
+        _using_factory_creds = false;
+    } else {
+        strlcpy(_wifi_ssid, FACTORY_SSID, WIFI_SSID_BUF);
+        strlcpy(_wifi_pass, FACTORY_PASS, WIFI_PASS_BUF);
+        _using_factory_creds = true;
+        Serial.println("[wifi] WARNING: using factory-default credentials (set via 'wifi ssid' + 'wifi pass')");
+    }
+}
 
 // ================================================================
 //  BCD helpers
@@ -354,20 +395,26 @@ static void _wifi_teardown() {
 }
 
 static bool _ntp_sync() {
-    Serial.printf("[tod] WiFi connecting to '%s'...\n", WIFI_SSID);
+    Serial.printf("[tod] WiFi connecting to '%s'...\n", _wifi_ssid);
     WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    WiFi.begin(_wifi_ssid, _wifi_pass);
 
     unsigned long start = millis();
     while (WiFi.status() != WL_CONNECTED) {
         if (millis() - start > 10000) {
             Serial.println("[tod] WiFi timeout");
+            _last_disconnect_reason = WiFi.status();
             _wifi_teardown();
             return false;
         }
         delay(100);
     }
-    Serial.printf("[tod] WiFi connected, IP=%s\n", WiFi.localIP().toString().c_str());
+    _ever_connected = true;
+    _last_connect_ms = millis();
+    _reconnect_failures = 0;
+    _reconnect_interval_ms = 60000;
+    Serial.printf("[tod] WiFi connected, IP=%s ch=%d\n",
+        WiFi.localIP().toString().c_str(), WiFi.channel());
 
     // NTP sync via ESP32 SNTP
     configTime(0, 0, "pool.ntp.org", "time.nist.gov");
@@ -426,21 +473,27 @@ static void _start_simulated_clock() {
 
 bool tod_wifi_connect(uint32_t timeout_ms) {
     if (WiFi.isConnected()) return true;  // Already connected (persistent WiFi mode)
-    Serial.printf("[wifi] Connecting to '%s'...\n", WIFI_SSID);
+    Serial.printf("[wifi] Connecting to '%s'...\n", _wifi_ssid);
     WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    WiFi.begin(_wifi_ssid, _wifi_pass);
 
     unsigned long start = millis();
     while (WiFi.status() != WL_CONNECTED) {
         if (millis() - start > timeout_ms) {
             Serial.println("[wifi] Connect timeout");
+            _last_disconnect_reason = WiFi.status();
             WiFi.disconnect();
             esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
             return false;
         }
         delay(100);
     }
-    Serial.printf("[wifi] Connected, IP=%s\n", WiFi.localIP().toString().c_str());
+    _ever_connected = true;
+    _last_connect_ms = millis();
+    _reconnect_failures = 0;
+    _reconnect_interval_ms = 60000;
+    Serial.printf("[wifi] Connected, IP=%s ch=%d\n",
+        WiFi.localIP().toString().c_str(), WiFi.channel());
     return true;
 }
 
@@ -453,10 +506,216 @@ void tod_set_persistent_wifi(bool keep_connected) {
 }
 
 // ================================================================
+//  WiFi credential management (NVS-backed)
+// ================================================================
+
+void tod_wifi_set_ssid(const char* ssid) {
+    strlcpy(_wifi_ssid, ssid, WIFI_SSID_BUF);
+    Preferences prefs;
+    prefs.begin("wifi", false);
+    prefs.putString("ssid", _wifi_ssid);
+    prefs.end();
+    _using_factory_creds = false;
+    Serial.printf("[wifi] SSID set: '%s' (stored in NVS)\n", _wifi_ssid);
+}
+
+void tod_wifi_set_pass(const char* pass) {
+    strlcpy(_wifi_pass, pass, WIFI_PASS_BUF);
+    Preferences prefs;
+    prefs.begin("wifi", false);
+    prefs.putString("pass", _wifi_pass);
+    prefs.end();
+    Serial.println("[wifi] password set (stored in NVS)");
+}
+
+void tod_wifi_forget() {
+    Preferences prefs;
+    prefs.begin("wifi", false);
+    prefs.remove("ssid");
+    prefs.remove("pass");
+    prefs.end();
+    strlcpy(_wifi_ssid, FACTORY_SSID, WIFI_SSID_BUF);
+    strlcpy(_wifi_pass, FACTORY_PASS, WIFI_PASS_BUF);
+    _using_factory_creds = true;
+    Serial.println("[wifi] credentials forgotten — reverted to factory defaults");
+}
+
+// ================================================================
+//  WiFi status
+// ================================================================
+
+void tod_wifi_status() {
+    Serial.println("[wifi] --- status ---");
+    Serial.printf("  ssid:       %s%s\n", _wifi_ssid,
+        _using_factory_creds ? " (FACTORY DEFAULT)" : "");
+    Serial.printf("  pass:       %s\n", _wifi_pass[0] ? "(set)" : "(empty)");
+
+    bool conn = WiFi.isConnected();
+    Serial.printf("  state:      %s\n", conn ? "CONNECTED" : "DISCONNECTED");
+
+    if (conn) {
+        Serial.printf("  ip:         %s\n", WiFi.localIP().toString().c_str());
+        Serial.printf("  channel:    %d\n", WiFi.channel());
+        Serial.printf("  rssi:       %d dBm\n", WiFi.RSSI());
+        uint32_t up = (millis() - _last_connect_ms) / 1000;
+        Serial.printf("  uptime:     %lus\n", up);
+    } else {
+        const char* reason = "unknown";
+        switch (_last_disconnect_reason) {
+            case WL_NO_SSID_AVAIL: reason = "AP not visible"; break;
+            case WL_CONNECT_FAILED: reason = "bad password / rejected"; break;
+            case WL_DISCONNECTED: reason = "disconnected"; break;
+            case WL_IDLE_STATUS: reason = "idle"; break;
+        }
+        Serial.printf("  last fail:  %s (code %d)\n", reason, _last_disconnect_reason);
+        Serial.printf("  retries:    %d (interval %lus)\n",
+            _reconnect_failures, _reconnect_interval_ms / 1000);
+    }
+    Serial.printf("  persistent: %s\n", _keep_wifi_connected ? "yes" : "no");
+    Serial.printf("  ever conn:  %s\n", _ever_connected ? "yes" : "no");
+    Serial.println("[wifi] -----------------");
+}
+
+// ================================================================
+//  Manual reconnect
+// ================================================================
+
+void tod_wifi_reconnect() {
+    Serial.println("[wifi] manual reconnect requested");
+    if (WiFi.isConnected()) {
+        Serial.println("[wifi] already connected");
+        return;
+    }
+
+    _prev_channel = topology_current_channel();
+    Serial.printf("[wifi] connecting to '%s'...\n", _wifi_ssid);
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(_wifi_ssid, _wifi_pass);
+
+    unsigned long start = millis();
+    while (WiFi.status() != WL_CONNECTED) {
+        if (millis() - start > 15000) {
+            _last_disconnect_reason = WiFi.status();
+            Serial.printf("[wifi] reconnect failed (status=%d)\n", _last_disconnect_reason);
+            WiFi.disconnect();
+            // Restore previous channel for ESP-NOW
+            esp_wifi_set_channel(_prev_channel ? _prev_channel : 1, WIFI_SECOND_CHAN_NONE);
+            return;
+        }
+        delay(100);
+    }
+
+    _ever_connected = true;
+    _last_connect_ms = millis();
+    _reconnect_failures = 0;
+    _reconnect_interval_ms = 60000;
+
+    uint8_t new_channel = WiFi.channel();
+    Serial.printf("[wifi] reconnected, IP=%s ch=%d\n",
+        WiFi.localIP().toString().c_str(), new_channel);
+
+    // If channel changed, notify topology so satellites follow
+    if (new_channel != _prev_channel && _prev_channel > 0) {
+        Serial.printf("[wifi] channel changed %d -> %d, broadcasting to satellites\n",
+            _prev_channel, new_channel);
+        topology_set_wifi_channel(new_channel);
+    }
+}
+
+// ================================================================
+//  Background reconnect tick (call from main loop)
+// ================================================================
+
+void tod_wifi_reconnect_tick() {
+    if (!_keep_wifi_connected) return;
+    if (WiFi.isConnected()) {
+        // Track that we're connected for disconnect detection
+        if (!_ever_connected) {
+            _ever_connected = true;
+            _last_connect_ms = millis();
+        }
+        return;
+    }
+
+    // We're disconnected. Record when we first noticed.
+    uint32_t now = millis();
+    if (_last_disconnect_ms == 0) {
+        _last_disconnect_ms = now;
+        _last_disconnect_reason = WiFi.status();
+        _prev_channel = topology_current_channel();
+        Serial.printf("[wifi] STA disconnected (reason=%d), will retry in %lus\n",
+            _last_disconnect_reason, _reconnect_interval_ms / 1000);
+    }
+
+    // Check if it's time to attempt reconnect
+    if (now - _last_reconnect_attempt_ms < _reconnect_interval_ms) return;
+    _last_reconnect_attempt_ms = now;
+
+    // Determine backoff based on failure mode
+    uint8_t status = WiFi.status();
+    bool hard_fail = (status == WL_CONNECT_FAILED || status == WL_NO_SSID_AVAIL);
+
+    // If never connected and it's a hard fail, jump to long backoff immediately
+    if (!_ever_connected && hard_fail) {
+        _reconnect_interval_ms = 300000;  // 5 min — likely bad creds or no AP
+    }
+
+    Serial.printf("[wifi] reconnect attempt #%d...\n", _reconnect_failures + 1);
+
+    // Non-blocking-ish attempt with short timeout to avoid stalling loop
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(_wifi_ssid, _wifi_pass);
+
+    unsigned long start = millis();
+    while (WiFi.status() != WL_CONNECTED) {
+        if (millis() - start > 10000) {
+            _last_disconnect_reason = WiFi.status();
+            _reconnect_failures++;
+
+            // Backoff: 60s, 60s, 120s, 300s, hold at 300s
+            if (_reconnect_failures >= 4 || hard_fail)
+                _reconnect_interval_ms = 300000;
+            else if (_reconnect_failures >= 3)
+                _reconnect_interval_ms = 120000;
+            else
+                _reconnect_interval_ms = 60000;
+
+            Serial.printf("[wifi] reconnect failed (status=%d), next in %lus\n",
+                _last_disconnect_reason, _reconnect_interval_ms / 1000);
+            WiFi.disconnect();
+            // Restore ESP-NOW channel — don't disrupt topology
+            esp_wifi_set_channel(_prev_channel ? _prev_channel : 1, WIFI_SECOND_CHAN_NONE);
+            return;
+        }
+        delay(100);
+    }
+
+    // Success!
+    _ever_connected = true;
+    _last_connect_ms = millis();
+    _last_disconnect_ms = 0;
+    _reconnect_failures = 0;
+    _reconnect_interval_ms = 60000;
+
+    uint8_t new_channel = WiFi.channel();
+    Serial.printf("[wifi] reconnected! IP=%s ch=%d (was ch=%d)\n",
+        WiFi.localIP().toString().c_str(), new_channel, _prev_channel);
+
+    // If channel changed, broadcast to satellites
+    if (new_channel != _prev_channel && _prev_channel > 0) {
+        Serial.printf("[wifi] channel changed %d -> %d, updating topology\n",
+            _prev_channel, new_channel);
+        topology_set_wifi_channel(new_channel);
+    }
+}
+
+// ================================================================
 //  Public API
 // ================================================================
 
 void time_of_day_init() {
+    _load_wifi_creds();
+
     // 1. Try RTC
     uint32_t rtc_time;
     if (_rtc_read(rtc_time)) {
