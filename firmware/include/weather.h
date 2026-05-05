@@ -39,6 +39,7 @@ struct Weather {
     WindSeverity     wind      = WIND_CALM;
     float temperature_c  = 15.0f;   // raw for debug/logging
     float wind_speed_kmh = 0.0f;
+    float humidity_pct   = 50.0f;   // relative humidity %
     uint8_t wmo_code     = 0;
     bool  valid          = false;
 };

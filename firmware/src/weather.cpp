@@ -80,7 +80,7 @@ bool weather_fetch() {
     snprintf(url, sizeof(url),
         "https://api.open-meteo.com/v1/forecast"
         "?latitude=%.4f&longitude=%.4f"
-        "&current=temperature_2m,weather_code,wind_speed_10m",
+        "&current=temperature_2m,weather_code,wind_speed_10m,relative_humidity_2m",
         LOC_LAT, LOC_LON);
 
     WiFiClientSecure client;
@@ -100,7 +100,7 @@ bool weather_fetch() {
     String body = http.getString();
     http.end();
 
-    float temp, wind;
+    float temp, wind, humidity;
     int wmo;
     if (!_json_float(body, "temperature_2m", temp) ||
         !_json_int(body, "weather_code", wmo) ||
@@ -108,9 +108,13 @@ bool weather_fetch() {
         Serial.println("[weather] parse failed");
         return false;
     }
+    // Humidity is optional — don't fail if missing
+    if (!_json_float(body, "relative_humidity_2m", humidity))
+        humidity = 50.0f;
 
     g_weather.temperature_c  = temp;
     g_weather.wind_speed_kmh = wind;
+    g_weather.humidity_pct   = humidity;
     g_weather.wmo_code       = (uint8_t)wmo;
     g_weather.condition      = _classify_wmo(wmo);
     g_weather.temp           = _classify_temp(temp);

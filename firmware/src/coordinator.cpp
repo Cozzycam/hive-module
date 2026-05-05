@@ -3,6 +3,7 @@
 #include "topology.h"
 #include "transport.h"
 #include "time_of_day.h"
+#include "weather.h"
 #include "rng.h"
 #include "sd_card.h"
 #include "journal.h"
@@ -1346,6 +1347,20 @@ void Coordinator::_bond_load() {
 void Coordinator::_world_tick() {
     world.tod = g_tod;
     world.day_of_year = g_tod.day_of_year;
+
+    // Wire real weather data into world condition
+    if (g_weather.valid) {
+        world.temperature_c = g_weather.temperature_c;
+        world.humidity_pct = g_weather.humidity_pct;
+        world.weather = g_weather.condition;
+    }
+
+    // Season from day of year (Northern hemisphere, Scotland)
+    int doy = g_tod.day_of_year;
+    if (doy >= 60 && doy < 152)       world.season = SEASON_SPRING;   // ~Mar 1 – May 31
+    else if (doy >= 152 && doy < 244) world.season = SEASON_SUMMER;   // ~Jun 1 – Aug 31
+    else if (doy >= 244 && doy < 335) world.season = SEASON_AUTUMN;   // ~Sep 1 – Nov 30
+    else                                world.season = SEASON_WINTER;   // ~Dec 1 – Feb 28
 }
 
 void Coordinator::_trait_tick(uint32_t tick_num) {
