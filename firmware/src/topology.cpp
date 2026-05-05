@@ -44,6 +44,8 @@ static uint32_t _first_send_fail_ms = 0;      // timestamp of first failure in c
 static uint8_t  _current_channel = 1;         // ESP-NOW operating channel
 static uint8_t  _scan_channel = 0;            // channel scanning: 0=disabled, 1-13=trying
 static uint8_t  _reinit_count_total = 0;      // total reinits since last connect (for channel scan trigger)
+static uint32_t _hello_timeouts_total = 0;    // lifetime HELLO timeout counter
+static uint32_t _hb_timeouts_total = 0;       // lifetime heartbeat timeout counter
 
 // Receive ring buffer (ISR -> main loop) — topology messages
 static const int RX_BUF_SIZE = 8;
@@ -335,6 +337,7 @@ static void _tick_face(Face f, const TopologyMessage* msg, const uint8_t* msg_ma
             Serial.printf("[topo] face %s re-handshake (IDLE+DETECT)\n", FACE_NAMES[f]);
         }
         if (msg && msg->type == TOPO_HELLO && msg->sender_id != _my_id) {
+            _ensure_peer(fs, msg_mac);  // Register peer BEFORE sending REPLY
             _send(msg_mac, TOPO_REPLY, f);
             _connect_face(f, msg->sender_id, msg_mac);
         }
@@ -343,6 +346,7 @@ static void _tick_face(Face f, const TopologyMessage* msg, const uint8_t* msg_ma
     case LINK_DETECTED_LOCAL:
         if (msg && msg->sender_id != _my_id) {
             if (msg->type == TOPO_REPLY || msg->type == TOPO_HELLO) {
+                _ensure_peer(fs, msg_mac);  // Register peer BEFORE sending REPLY
                 if (msg->type == TOPO_HELLO) _send(msg_mac, TOPO_REPLY, f);
                 _connect_face(f, msg->sender_id, msg_mac);
                 break;
@@ -356,6 +360,7 @@ static void _tick_face(Face f, const TopologyMessage* msg, const uint8_t* msg_ma
             fs.hello_retries++;
             if (fs.hello_retries >= HELLO_MAX_RETRIES) {
                 fs.link = LINK_ERROR;
+                _hello_timeouts_total++;
                 Serial.printf("[topo] face %s HELLO timeout\n", FACE_NAMES[f]);
             } else {
                 fs.hello_sent_ms = now;
@@ -390,6 +395,7 @@ static void _tick_face(Face f, const TopologyMessage* msg, const uint8_t* msg_ma
         }
         // Heartbeat timeout
         if (fs.link == LINK_CONNECTED && now - fs.last_hb_rx_ms > HEARTBEAT_RX_TIMEOUT_MS) {
+            _hb_timeouts_total++;
             _disconnect_face(f, "heartbeat timeout");
         }
         break;
@@ -402,6 +408,7 @@ static void _tick_face(Face f, const TopologyMessage* msg, const uint8_t* msg_ma
         // Rescue: if the other side sends a HELLO while we're stuck, connect immediately
         if (msg && msg->type == TOPO_HELLO && msg->sender_id != _my_id) {
             Serial.printf("[topo] face %s rescued from ERROR by HELLO\n", FACE_NAMES[f]);
+            _ensure_peer(fs, msg_mac);  // Register peer BEFORE sending REPLY
             _send(msg_mac, TOPO_REPLY, f);
             _connect_face(f, msg->sender_id, msg_mac);
             break;
@@ -571,7 +578,7 @@ void topology_init(TopologyCallback cb) {
     }
 
     _last_any_connect_ms = millis();
-    Serial.println("[topo] ready");
+    Serial.printf("[topo] ready (boot +%lums)\n", (unsigned long)millis());
 }
 
 void topology_poll() {
@@ -804,6 +811,8 @@ void topology_status() {
     Serial.printf("  reinit_tot:  %d  scan_ch: %d\n", _reinit_count_total, _scan_channel);
     Serial.printf("  send_fails:  %lu  reinit_fails: %lu/%lu\n",
         (unsigned long)_send_fail_count, (unsigned long)_reinit_fail_count, (unsigned long)REINIT_THRESHOLD);
+    Serial.printf("  hello_to:    %lu  hb_to: %lu (lifetime)\n",
+        (unsigned long)_hello_timeouts_total, (unsigned long)_hb_timeouts_total);
 
     const char* link_names[] = {"IDLE", "DETECTED", "CONNECTED", "ERROR"};
     for (int f = 0; f < FACE_COUNT; f++) {
