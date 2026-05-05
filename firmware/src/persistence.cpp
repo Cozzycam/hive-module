@@ -38,7 +38,7 @@ bool LilGuyRegistry::_ensure_dirs() {
     for (auto d : dirs) {
         if (!SD_MMC.exists(d)) {
             if (!SD_MMC.mkdir(d)) {
-                Serial.printf("[persist] failed to create dir: %s\n", d);
+                Serial.printf("[persist] failed to create dir: %s\r\n", d);
                 return false;
             }
         }
@@ -103,7 +103,7 @@ bool LilGuyRegistry::_load_manifest() {
     DeserializationError err = deserializeJson(doc, f);
     f.close();
     if (err) {
-        Serial.printf("[persist] manifest parse error: %s\n", err.c_str());
+        Serial.printf("[persist] manifest parse error: %s\r\n", err.c_str());
         return false;
     }
 
@@ -285,7 +285,7 @@ bool LilGuyRegistry::_load_living_records() {
                     if (err) {
                         char corrupt_path[128];
                         strlcpy(corrupt_path, entry.path(), sizeof(corrupt_path));
-                        Serial.printf("[persist] corrupt record: %s (%s)\n",
+                        Serial.printf("[persist] corrupt record: %s (%s)\r\n",
                                       corrupt_path, err.c_str());
                         entry.close();
                         _move_to_corrupt(corrupt_path, "lilguys");
@@ -329,7 +329,7 @@ bool LilGuyRegistry::_load_living_records() {
     }
     root.close();
 
-    Serial.printf("[persist] loaded %d living records\n", _alive_count);
+    Serial.printf("[persist] loaded %d living records\r\n", _alive_count);
     return true;
 }
 
@@ -381,7 +381,7 @@ bool LilGuyRegistry::_load_brood_records() {
     }
     root.close();
 
-    Serial.printf("[persist] loaded %d brood records\n", _brood_count);
+    Serial.printf("[persist] loaded %d brood records\r\n", _brood_count);
     return true;
 }
 
@@ -393,7 +393,7 @@ void LilGuyRegistry::_move_to_corrupt(const char* path, const char* subdir) {
     if (!filename) return;
     snprintf(dest, sizeof(dest), "/colony/%s/.corrupt%s", subdir, filename);
     SD_MMC.rename(path, dest);
-    Serial.printf("[persist] moved corrupt file to %s\n", dest);
+    Serial.printf("[persist] moved corrupt file to %s\r\n", dest);
 }
 
 // ---- Clean stale .tmp files from previous interrupted writes ----
@@ -412,7 +412,7 @@ void LilGuyRegistry::_clean_tmp_files() {
                         strlcpy(p, entry.path(), sizeof(p));
                         entry.close();
                         SD_MMC.remove(p);
-                        Serial.printf("[persist] cleaned stale tmp: %s\n", p);
+                        Serial.printf("[persist] cleaned stale tmp: %s\r\n", p);
                     } else {
                         entry.close();
                     }
@@ -444,7 +444,7 @@ PersistenceState LilGuyRegistry::init() {
 
     // Try loading existing manifest
     if (_load_manifest()) {
-        Serial.printf("[persist] manifest loaded — colony %s, next_id=%lu, tick=%lu\n",
+        Serial.printf("[persist] manifest loaded — colony %s, next_id=%lu, tick=%lu\r\n",
                       _manifest.colony_id,
                       (unsigned long)_manifest.next_lilguy_id,
                       (unsigned long)_manifest.last_tick);
@@ -556,7 +556,7 @@ void LilGuyRegistry::flush() {
 
     _last_flush_ms = millis();
     if (flushed > 0)
-        Serial.printf("[persist] flushed %d records\n", flushed);
+        Serial.printf("[persist] flushed %d records\r\n", flushed);
 }
 
 void LilGuyRegistry::flush_manifest() {

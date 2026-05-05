@@ -81,7 +81,7 @@ bool sd_card_init() {
 
     uint64_t total = SD_MMC.totalBytes();
     uint64_t used  = SD_MMC.usedBytes();
-    Serial.printf("[sd] mounted OK — %s, %.1f MB total, %.1f MB used\n",
+    Serial.printf("[sd] mounted OK — %s, %.1f MB total, %.1f MB used\r\n",
                   type_str,
                   total / (1024.0 * 1024.0),
                   used  / (1024.0 * 1024.0));
@@ -104,7 +104,7 @@ uint64_t sd_card_used_bytes() {
 void sd_card_write_failed() {
     _consecutive_fails++;
     if (_consecutive_fails >= FAIL_THRESHOLD && _state == SD_OK) {
-        Serial.printf("[sd] %d consecutive write failures — entering ERROR state\n",
+        Serial.printf("[sd] %d consecutive write failures — entering ERROR state\r\n",
                       _consecutive_fails);
         _state = SD_ERROR;
         _error_enter_ms = millis();

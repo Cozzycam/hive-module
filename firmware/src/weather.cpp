@@ -106,7 +106,7 @@ bool weather_fetch() {
 
     int code = http.GET();
     if (code != 200) {
-        Serial.printf("[weather] HTTP %d\n", code);
+        Serial.printf("[weather] HTTP %d\r\n", code);
         http.end();
         return false;
     }
@@ -146,7 +146,7 @@ bool weather_fetch() {
         "calm", "breezy", "windy", "high wind", "storm"
     };
 
-    Serial.printf("[weather] %s, %.1fC (%s), wind %.0f km/h (%s), wmo=%d\n",
+    Serial.printf("[weather] %s, %.1fC (%s), wind %.0f km/h (%s), wmo=%d\r\n",
         wx_names[g_weather.condition],
         temp, temp_names[g_weather.temp],
         wind, wind_names[g_weather.wind], wmo);

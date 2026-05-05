@@ -107,7 +107,7 @@ void http_server_start(Coordinator* coord) {
 
     _server->begin();
     _running = true;
-    Serial.printf("[http] server started on port 80 — http://%s/api/v1/colony\n",
+    Serial.printf("[http] server started on port 80 — http://%s/api/v1/colony\r\n",
                   WiFi.localIP().toString().c_str());
 }
 

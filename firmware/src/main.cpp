@@ -148,17 +148,17 @@ static void enter_ota_mode() {
         Serial.printf("[ota] %u%%\r", progress / (total / 100));
     });
     ArduinoOTA.onError([](ota_error_t error) {
-        Serial.printf("[ota] Error[%u] — rebooting to restore topology\n", error);
+        Serial.printf("[ota] Error[%u] — rebooting to restore topology\r\n", error);
         delay(100);
         ESP.restart();
     });
     ArduinoOTA.begin();
 
-    Serial.printf("[ota] Ready. Upload with:\n");
-    Serial.printf("  pio run -t upload --upload-port %s\n",
+    Serial.printf("[ota] Ready. Upload with:\r\n");
+    Serial.printf("  pio run -t upload --upload-port %s\r\n",
                   WiFi.localIP().toString().c_str());
-    Serial.printf("[ota] Waiting 2 min... press 'q' to cancel (will reboot)\n");
-    Serial.printf("[ota] FW_VERSION=%lu\n", (unsigned long)FW_VERSION);
+    Serial.printf("[ota] Waiting 2 min... press 'q' to cancel (will reboot)\r\n");
+    Serial.printf("[ota] FW_VERSION=%lu\r\n", (unsigned long)FW_VERSION);
 
     uint32_t start = millis();
     while (millis() - start < 120000) {
@@ -182,7 +182,7 @@ static void enter_ota_mode() {
 static void print_status() {
     Serial.printf(
         "Pop %d | Food %.0f | E%d L%d P%d | "
-        "Pressure %.2f | Speed %d tps\n",
+        "Pressure %.2f | Speed %d tps\r\n",
         sim.coordinator.colony.population, sim.coordinator.colony.food_total,
         sim.coordinator.colony.brood_egg, sim.coordinator.colony.brood_larva, sim.coordinator.colony.brood_pupa,
         sim.coordinator.colony.food_pressure(),
@@ -210,7 +210,7 @@ static void process_serial_line(const char* line) {
     } else if (strcmp(line, "push") == 0) {
         ota_push();
     } else if (strcmp(line, "deaths") == 0) {
-        Serial.printf("Deaths: %d starved, %d old age | Handoffs: %lu out, %lu in, %lu dropped\n",
+        Serial.printf("Deaths: %d starved, %d old age | Handoffs: %lu out, %lu in, %lu dropped\r\n",
             g_deaths_starved, g_deaths_old_age,
             (unsigned long)g_handoffs_out, (unsigned long)g_handoffs_in,
             (unsigned long)g_handoffs_dropped);
@@ -219,7 +219,7 @@ static void process_serial_line(const char* line) {
             static const char* wx[] = {"clear","partly cloudy","overcast","fog","drizzle","rain","heavy rain","snow","thunderstorm"};
             static const char* tp[] = {"freezing","cold","mild","warm","hot","extreme heat"};
             static const char* wn[] = {"calm","breezy","windy","high wind","storm"};
-            Serial.printf("[weather] %s, %.1fC (%s), wind %.0f km/h (%s)\n",
+            Serial.printf("[weather] %s, %.1fC (%s), wind %.0f km/h (%s)\r\n",
                 wx[g_weather.condition], g_weather.temperature_c, tp[g_weather.temp],
                 g_weather.wind_speed_kmh, wn[g_weather.wind]);
         } else {
@@ -238,7 +238,7 @@ static void process_serial_line(const char* line) {
             if (strcmp(arg, w.name) == 0) {
                 g_weather.condition = w.c;
                 g_weather.valid = true;
-                Serial.printf("[weather] forced: %s\n", w.name);
+                Serial.printf("[weather] forced: %s\r\n", w.name);
                 break;
             }
         }
@@ -266,7 +266,7 @@ static void process_serial_line(const char* line) {
         if (buf) {
             size_t len = api_lilguy_detail_json(sim.coordinator, id, buf, 2048);
             if (len > 0) Serial.println(buf);
-            else Serial.printf("[api] lilguy %lu not found\n", (unsigned long)id);
+            else Serial.printf("[api] lilguy %lu not found\r\n", (unsigned long)id);
             free(buf);
         }
     } else if (strcmp(line, "dump health") == 0) {
@@ -278,13 +278,13 @@ static void process_serial_line(const char* line) {
         IdentityRecord* recs = reg.living_records();
         Serial.println("[names] living workers:");
         for (int i = 0; i < reg.living_count(); i++) {
-            Serial.printf("  id=%lu %s (role=%d pioneer=%d)\n",
+            Serial.printf("  id=%lu %s (role=%d pioneer=%d)\r\n",
                 (unsigned long)recs[i].id, recs[i].name,
                 recs[i].role, recs[i].is_pioneer);
         }
     } else if (strcmp(line, "journal") == 0) {
         auto& j = sim.coordinator.journal;
-        Serial.printf("[journal] pending: %d, total flushed: %d\n",
+        Serial.printf("[journal] pending: %d, total flushed: %d\r\n",
             j.pending_count(), j.total_flushed());
     } else if (strcmp(line, "journal dump") == 0) {
         // Flush pending events first, then dump today's file
@@ -380,32 +380,32 @@ static void process_serial_line(const char* line) {
         ESP.restart();
     } else if (strcmp(line, "daytime") == 0) {
         force_daytime = !force_daytime;
-        Serial.printf("[debug] force daytime: %s\n", force_daytime ? "ON" : "OFF");
+        Serial.printf("[debug] force daytime: %s\r\n", force_daytime ? "ON" : "OFF");
     } else if (strcmp(line, "topology") == 0) {
         sim.coordinator.print_topology();
     } else if (strcmp(line, "topo status") == 0) {
         topology_status();
     } else if (strcmp(line, "sd") == 0) {
-        Serial.printf("[sd] state: %s\n",
+        Serial.printf("[sd] state: %s\r\n",
             sd_card_state() == SD_OK ? "OK" :
             sd_card_state() == SD_ERROR ? "ERROR" : "NOT_MOUNTED");
         if (sd_card_state() == SD_OK) {
-            Serial.printf("[sd] %.1f MB total, %.1f MB used\n",
+            Serial.printf("[sd] %.1f MB total, %.1f MB used\r\n",
                 sd_card_total_bytes() / (1024.0 * 1024.0),
                 sd_card_used_bytes()  / (1024.0 * 1024.0));
         }
     } else if (strcmp(line, "persist") == 0) {
         auto& reg = sim.coordinator.registry;
         const char* ps[] = {"UNINIT","OK","DEGRADED","ERROR"};
-        Serial.printf("[persist] state: %s\n", ps[reg.state()]);
+        Serial.printf("[persist] state: %s\r\n", ps[reg.state()]);
         if (reg.state() == PERSIST_OK) {
             auto& m = reg.manifest();
-            Serial.printf("[persist] colony_id: %s\n", m.colony_id);
-            Serial.printf("[persist] next_id: %lu, last_tick: %lu\n",
+            Serial.printf("[persist] colony_id: %s\r\n", m.colony_id);
+            Serial.printf("[persist] next_id: %lu, last_tick: %lu\r\n",
                 (unsigned long)m.next_lilguy_id, (unsigned long)m.last_tick);
-            Serial.printf("[persist] alive: %d, brood: %d\n",
+            Serial.printf("[persist] alive: %d, brood: %d\r\n",
                 reg.living_count(), reg.brood_count());
-            Serial.printf("[persist] food: %.1f, workers_born: %d, census: %d\n",
+            Serial.printf("[persist] food: %.1f, workers_born: %d, census: %d\r\n",
                 m.food_store, m.total_workers_born, m.worker_census);
         }
     } else if (strlen(line) == 1) {
@@ -414,22 +414,22 @@ static void process_serial_line(const char* line) {
         switch (c) {
         case '+': case 'f':
             if (speed_index < NUM_SPEEDS - 1) speed_index++;
-            Serial.printf("Speed: %d tps\n", SPEED_LEVELS[speed_index]);
+            Serial.printf("Speed: %d tps\r\n", SPEED_LEVELS[speed_index]);
             break;
         case '-': case 's':
             if (speed_index > 0) speed_index--;
-            Serial.printf("Speed: %d tps\n", SPEED_LEVELS[speed_index]);
+            Serial.printf("Speed: %d tps\r\n", SPEED_LEVELS[speed_index]);
             break;
         case '1': case '2': case '3': case '4':
         case '5': case '6': case '7': case '8':
         case '9':
             speed_index = c - '1';
             if (speed_index >= NUM_SPEEDS) speed_index = NUM_SPEEDS - 1;
-            Serial.printf("Speed: %d tps\n", SPEED_LEVELS[speed_index]);
+            Serial.printf("Speed: %d tps\r\n", SPEED_LEVELS[speed_index]);
             break;
         case '0':
             speed_index = NUM_SPEEDS - 1;
-            Serial.printf("Speed: %d tps\n", SPEED_LEVELS[speed_index]);
+            Serial.printf("Speed: %d tps\r\n", SPEED_LEVELS[speed_index]);
             break;
         case 'r':
             renderer.force_full_redraw();
@@ -445,12 +445,12 @@ static void process_serial_line(const char* line) {
             break;
         case 'd':
             topo_overlay = !topo_overlay;
-            Serial.printf("Topology overlay: %s\n", topo_overlay ? "ON" : "OFF");
+            Serial.printf("Topology overlay: %s\r\n", topo_overlay ? "ON" : "OFF");
             if (!topo_overlay) renderer.force_full_redraw();
             break;
         case 'p':
             renderer.debug_phero = !renderer.debug_phero;
-            Serial.printf("Pheromone overlay: %s\n", renderer.debug_phero ? "ON" : "OFF");
+            Serial.printf("Pheromone overlay: %s\r\n", renderer.debug_phero ? "ON" : "OFF");
             if (!renderer.debug_phero) renderer.force_full_redraw();
             break;
         default:
@@ -551,7 +551,7 @@ void loop() {
     if (!sim.coordinator.is_queen()) {
         uint32_t queen_fw;
         if (topology_ota_check(&queen_fw) && queen_fw > FW_VERSION) {
-            Serial.printf("[ota] Queen has FW v%lu (I have v%lu)\n",
+            Serial.printf("[ota] Queen has FW v%lu (I have v%lu)\r\n",
                           (unsigned long)queen_fw, (unsigned long)FW_VERSION);
             ota_satellite_update();  // blocking — downloads and reboots
         }
@@ -611,7 +611,7 @@ void loop() {
             if (t == EVT_INTERACTION_STARTED || t == EVT_INTERACTION_ENDED) continue;
             if (t == EVT_HANDOFF_OUTGOING || t == EVT_HANDOFF_INCOMING) continue;
             if (t >= 0 && t <= 10)
-                Serial.printf("[evt t=%6lu] %s\n", evt_buf[i].tick, EVT_NAMES[t]);
+                Serial.printf("[evt t=%6lu] %s\r\n", evt_buf[i].tick, EVT_NAMES[t]);
         }
     }
 

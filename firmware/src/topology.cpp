@@ -128,7 +128,7 @@ static void _send(const uint8_t* mac, uint8_t type, uint8_t face) {
             uint8_t actual_ch = 0;
             wifi_second_chan_t second;
             esp_wifi_get_channel(&actual_ch, &second);
-            Serial.printf("[topo] send failed (err=0x%x) _ch=%d actual_ch=%d\n",
+            Serial.printf("[topo] send failed (err=0x%x) _ch=%d actual_ch=%d\r\n",
                           err, _current_channel, actual_ch);
         }
         // On channel error, try to fix immediately
@@ -172,7 +172,7 @@ static void _connect_face(Face f, uint16_t id, const uint8_t* mac) {
     _reinit_count_total = 0;
     _scan_channel = 0;
     _last_any_connect_ms = millis();
-    Serial.printf("[topo] face %s connected to module 0x%04X\n", FACE_NAMES[f], id);
+    Serial.printf("[topo] face %s connected to module 0x%04X\r\n", FACE_NAMES[f], id);
     if (_callback) _callback(f, true, id);
 }
 
@@ -192,7 +192,7 @@ static void _disconnect_face(Face f, const char* reason) {
     _remote_pop[f] = 0;
     memset(&_boundary_phero[f], 0, sizeof(BoundaryPheroData));
 
-    Serial.printf("[topo] face %s disconnected (%s)\n", FACE_NAMES[f], reason);
+    Serial.printf("[topo] face %s disconnected (%s)\r\n", FACE_NAMES[f], reason);
     if (_callback && old_id != 0) _callback(f, false, old_id);
 }
 
@@ -324,7 +324,7 @@ static void _tick_face(Face f, const TopologyMessage* msg, const uint8_t* msg_ma
             fs.hello_sent_ms = now;
             _send(BROADCAST, TOPO_HELLO, f);
             fs.link = LINK_DETECTED_LOCAL;
-            Serial.printf("[topo] face %s DETECT LOW, sending HELLO\n", FACE_NAMES[f]);
+            Serial.printf("[topo] face %s DETECT LOW, sending HELLO\r\n", FACE_NAMES[f]);
         }
         // Self-heal: DETECT is LOW but no falling edge (e.g. after NTP/OTA
         // channel disruption, or boot while already physically connected).
@@ -334,7 +334,7 @@ static void _tick_face(Face f, const TopologyMessage* msg, const uint8_t* msg_ma
             fs.hello_sent_ms = now;
             _send(BROADCAST, TOPO_HELLO, f);
             fs.link = LINK_DETECTED_LOCAL;
-            Serial.printf("[topo] face %s re-handshake (IDLE+DETECT)\n", FACE_NAMES[f]);
+            Serial.printf("[topo] face %s re-handshake (IDLE+DETECT)\r\n", FACE_NAMES[f]);
         }
         if (msg && msg->type == TOPO_HELLO && msg->sender_id != _my_id) {
             _ensure_peer(fs, msg_mac);  // Register peer BEFORE sending REPLY
@@ -361,7 +361,7 @@ static void _tick_face(Face f, const TopologyMessage* msg, const uint8_t* msg_ma
             if (fs.hello_retries >= HELLO_MAX_RETRIES) {
                 fs.link = LINK_ERROR;
                 _hello_timeouts_total++;
-                Serial.printf("[topo] face %s HELLO timeout\n", FACE_NAMES[f]);
+                Serial.printf("[topo] face %s HELLO timeout\r\n", FACE_NAMES[f]);
             } else {
                 fs.hello_sent_ms = now;
                 _send(BROADCAST, TOPO_HELLO, f);
@@ -407,7 +407,7 @@ static void _tick_face(Face f, const TopologyMessage* msg, const uint8_t* msg_ma
         }
         // Rescue: if the other side sends a HELLO while we're stuck, connect immediately
         if (msg && msg->type == TOPO_HELLO && msg->sender_id != _my_id) {
-            Serial.printf("[topo] face %s rescued from ERROR by HELLO\n", FACE_NAMES[f]);
+            Serial.printf("[topo] face %s rescued from ERROR by HELLO\r\n", FACE_NAMES[f]);
             _ensure_peer(fs, msg_mac);  // Register peer BEFORE sending REPLY
             _send(msg_mac, TOPO_REPLY, f);
             _connect_face(f, msg->sender_id, msg_mac);
@@ -416,7 +416,7 @@ static void _tick_face(Face f, const TopologyMessage* msg, const uint8_t* msg_ma
         // Self-heal: if DETECT still LOW, retry after 5s instead of staying stuck
         if (fs.detect_low && now - fs.hello_sent_ms > 5000) {
             _reinit_fail_count++;
-            Serial.printf("[topo] face %s recovering from ERROR (DETECT still LOW) [fail %lu/%lu]\n",
+            Serial.printf("[topo] face %s recovering from ERROR (DETECT still LOW) [fail %lu/%lu]\r\n",
                 FACE_NAMES[f], (unsigned long)_reinit_fail_count, (unsigned long)REINIT_THRESHOLD);
             fs.link = LINK_IDLE;
             fs.hello_retries = 0;
@@ -432,7 +432,7 @@ static void _tick_face(Face f, const TopologyMessage* msg, const uint8_t* msg_ma
 static bool _set_channel_verified(uint8_t ch) {
     esp_err_t err = esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
     if (err != ESP_OK) {
-        Serial.printf("[topo] esp_wifi_set_channel(%d) FAILED err=0x%x\n", ch, err);
+        Serial.printf("[topo] esp_wifi_set_channel(%d) FAILED err=0x%x\r\n", ch, err);
         return false;
     }
     // Verify it actually took
@@ -440,7 +440,7 @@ static bool _set_channel_verified(uint8_t ch) {
     wifi_second_chan_t second;
     esp_wifi_get_channel(&actual, &second);
     if (actual != ch) {
-        Serial.printf("[topo] channel set to %d but read back %d!\n", ch, actual);
+        Serial.printf("[topo] channel set to %d but read back %d!\r\n", ch, actual);
         return false;
     }
     return true;
@@ -455,7 +455,7 @@ static void _espnow_reinit() {
         _scan_channel++;
         if (_scan_channel > 13) _scan_channel = 1;
         _current_channel = _scan_channel;
-        Serial.printf("[topo] ESP-NOW reinit — scanning channel %d\n", _current_channel);
+        Serial.printf("[topo] ESP-NOW reinit — scanning channel %d\r\n", _current_channel);
     } else {
         Serial.println("[topo] ESP-NOW reinit — radio may be dead");
     }
@@ -539,7 +539,7 @@ void topology_init(TopologyCallback cb) {
         wifi_second_chan_t second;
         esp_wifi_get_channel(&primary, &second);
         _current_channel = primary;
-        Serial.printf("[topo] WiFi connected, using AP channel %d\n", _current_channel);
+        Serial.printf("[topo] WiFi connected, using AP channel %d\r\n", _current_channel);
     } else {
         WiFi.mode(WIFI_STA);
         esp_wifi_disconnect();  // Clear any stored AP from failed NTP at boot
@@ -552,9 +552,9 @@ void topology_init(TopologyCallback cb) {
     esp_read_mac(_my_mac, ESP_MAC_WIFI_STA);
     _my_id = ((uint16_t)_my_mac[4] << 8) | _my_mac[5];
 
-    Serial.printf("[topo] MAC: %02X:%02X:%02X:%02X:%02X:%02X  ID: 0x%04X\n",
+    Serial.printf("[topo] MAC: %02X:%02X:%02X:%02X:%02X:%02X  ID: 0x%04X\r\n",
         _my_mac[0], _my_mac[1], _my_mac[2], _my_mac[3], _my_mac[4], _my_mac[5], _my_id);
-    Serial.printf("[topo] DETECT pins: N=%d S=%d W=%d E=%d\n",
+    Serial.printf("[topo] DETECT pins: N=%d S=%d W=%d E=%d\r\n",
         DETECT_PINS[FACE_N], DETECT_PINS[FACE_S], DETECT_PINS[FACE_W], DETECT_PINS[FACE_E]);
 
     // ESP-NOW init
@@ -578,7 +578,7 @@ void topology_init(TopologyCallback cb) {
     }
 
     _last_any_connect_ms = millis();
-    Serial.printf("[topo] ready (boot +%lums)\n", (unsigned long)millis());
+    Serial.printf("[topo] ready (boot +%lums)\r\n", (unsigned long)millis());
 }
 
 void topology_poll() {
@@ -605,7 +605,7 @@ void topology_poll() {
 
         // Channel follow: if message carries a valid channel different from ours, switch
         if (msg.channel > 0 && msg.channel != _current_channel && !WiFi.isConnected()) {
-            Serial.printf("[topo] channel follow: %d -> %d (from 0x%04X)\n",
+            Serial.printf("[topo] channel follow: %d -> %d (from 0x%04X)\r\n",
                           _current_channel, msg.channel, msg.sender_id);
             _current_channel = msg.channel;
             esp_wifi_disconnect();  // Ensure clean state before channel change
@@ -658,7 +658,7 @@ uint8_t  topology_current_channel() { return _current_channel; }
 
 void topology_set_wifi_channel(uint8_t channel) {
     if (channel == 0 || channel == _current_channel) return;
-    Serial.printf("[topo] WiFi channel changed: %d -> %d\n", _current_channel, channel);
+    Serial.printf("[topo] WiFi channel changed: %d -> %d\r\n", _current_channel, channel);
     _current_channel = channel;
     // Don't set channel explicitly — WiFi STA connection handles it
     // ESP-NOW automatically uses the STA channel when connected
@@ -805,13 +805,13 @@ void topology_status() {
     esp_wifi_get_channel(&actual_ch, &second);
 
     Serial.println("[topo] --- status ---");
-    Serial.printf("  my_id:       0x%04X\n", _my_id);
-    Serial.printf("  channel:     %d (actual radio: %d)\n", _current_channel, actual_ch);
-    Serial.printf("  wifi:        %s\n", WiFi.isConnected() ? "connected" : "disconnected");
-    Serial.printf("  reinit_tot:  %d  scan_ch: %d\n", _reinit_count_total, _scan_channel);
-    Serial.printf("  send_fails:  %lu  reinit_fails: %lu/%lu\n",
+    Serial.printf("  my_id:       0x%04X\r\n", _my_id);
+    Serial.printf("  channel:     %d (actual radio: %d)\r\n", _current_channel, actual_ch);
+    Serial.printf("  wifi:        %s\r\n", WiFi.isConnected() ? "connected" : "disconnected");
+    Serial.printf("  reinit_tot:  %d  scan_ch: %d\r\n", _reinit_count_total, _scan_channel);
+    Serial.printf("  send_fails:  %lu  reinit_fails: %lu/%lu\r\n",
         (unsigned long)_send_fail_count, (unsigned long)_reinit_fail_count, (unsigned long)REINIT_THRESHOLD);
-    Serial.printf("  hello_to:    %lu  hb_to: %lu (lifetime)\n",
+    Serial.printf("  hello_to:    %lu  hb_to: %lu (lifetime)\r\n",
         (unsigned long)_hello_timeouts_total, (unsigned long)_hb_timeouts_total);
 
     const char* link_names[] = {"IDLE", "DETECTED", "CONNECTED", "ERROR"};
@@ -826,7 +826,7 @@ void topology_status() {
                 fs.neighbour_mac[0], fs.neighbour_mac[1], fs.neighbour_mac[2],
                 fs.neighbour_mac[3], fs.neighbour_mac[4], fs.neighbour_mac[5]);
         }
-        Serial.printf("  detect=%s\n", fs.detect_low ? "LOW" : "HIGH");
+        Serial.printf("  detect=%s\r\n", fs.detect_low ? "LOW" : "HIGH");
     }
     Serial.println("[topo] -----------------");
 }

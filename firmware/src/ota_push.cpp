@@ -15,7 +15,7 @@
 
 void ota_push() {
     size_t fw_size = ESP.getSketchSize();
-    Serial.printf("[push] FW_VERSION=%lu, image=%u bytes\n",
+    Serial.printf("[push] FW_VERSION=%lu, image=%u bytes\r\n",
                   (unsigned long)FW_VERSION, fw_size);
 
     // Phase 1: Broadcast OTA announce on ESP-NOW (channel 1).
@@ -65,7 +65,7 @@ void ota_push() {
     for (int f = 0; f < FACE_COUNT; f++)
         if (topology_neighbour((Face)f).present) expected++;
 
-    Serial.printf("[push] Server at %s:8266 — expecting %d satellite(s) (2 min, 'q' cancel)\n",
+    Serial.printf("[push] Server at %s:8266 — expecting %d satellite(s) (2 min, 'q' cancel)\r\n",
                   ip.toString().c_str(), expected);
 
     uint32_t start = millis();
@@ -108,7 +108,7 @@ void ota_push() {
             }
             client.stop();
             served++;
-            Serial.printf("[push] Sent %u bytes (%d/%d satellite(s) done)\n", sent, served, expected);
+            Serial.printf("[push] Sent %u bytes (%d/%d satellite(s) done)\r\n", sent, served, expected);
             if (served >= expected && expected > 0) break;
         }
 
@@ -119,7 +119,7 @@ void ota_push() {
         delay(10);
     }
 
-    Serial.printf("[push] Served %d satellite(s) — rebooting\n", served);
+    Serial.printf("[push] Served %d satellite(s) — rebooting\r\n", served);
     delay(100);
     ESP.restart();
 }
@@ -129,7 +129,7 @@ void ota_push() {
 // ================================================================
 
 void ota_satellite_update() {
-    Serial.printf("[ota-recv] Updating from FW v%lu...\n", (unsigned long)FW_VERSION);
+    Serial.printf("[ota-recv] Updating from FW v%lu...\r\n", (unsigned long)FW_VERSION);
 
     // Connect to home WiFi (same AP as queen = same channel)
     if (!tod_wifi_connect(15000)) {
@@ -158,14 +158,14 @@ void ota_satellite_update() {
     char url[64];
     snprintf(url, sizeof(url), "http://%d.%d.%d.%d:%d/firmware.bin",
              ready.ip[0], ready.ip[1], ready.ip[2], ready.ip[3], ready.port);
-    Serial.printf("[ota-recv] Downloading %s\n", url);
+    Serial.printf("[ota-recv] Downloading %s\r\n", url);
 
     WiFiClient client;
     httpUpdate.rebootOnUpdate(true);
     t_httpUpdate_return ret = httpUpdate.update(client, url);
 
     // Only reached on failure (success reboots automatically)
-    Serial.printf("[ota-recv] Failed: %s — rebooting\n",
+    Serial.printf("[ota-recv] Failed: %s — rebooting\r\n",
                   httpUpdate.getLastErrorString().c_str());
     delay(100);
     ESP.restart();

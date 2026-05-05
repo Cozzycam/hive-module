@@ -51,14 +51,14 @@ void Coordinator::init() {
     if (role == MODULE_UNCONFIGURED) {
         Serial.println("[coord] module unconfigured -- falling back to queen mode for development");
     } else {
-        Serial.printf("[coord] module role: %s\n", role_str(role));
+        Serial.printf("[coord] module role: %s\r\n", role_str(role));
     }
 #else
     role = MODULE_UNCONFIGURED;  // desktop builds default to queen
 #endif
 
     boot_id = static_cast<uint16_t>(esp_random() & 0xFFFF);
-    Serial.printf("[coord] boot_id: 0x%04X\n", boot_id);
+    Serial.printf("[coord] boot_id: 0x%04X\r\n", boot_id);
 
     bool queen = is_queen();
     colony = ColonyState();
@@ -71,7 +71,7 @@ void Coordinator::set_role_nvs(ModuleRole r) {
     prefs.begin("hive", false);
     prefs.putUChar("module_role", static_cast<uint8_t>(r));
     prefs.end();
-    Serial.printf("[coord] role written to NVS: %s\n", role_str(r));
+    Serial.printf("[coord] role written to NVS: %s\r\n", role_str(r));
 #else
     (void)r;
 #endif
@@ -240,7 +240,7 @@ void Coordinator::on_topology_change(Face face, bool connected, uint16_t module_
 
         topology_send_to_face(face, (const uint8_t*)&ann, sizeof(ann));
 
-        Serial.printf("[coord] announcing chamber on face %s -> module 0x%04X, home_face=%s\n",
+        Serial.printf("[coord] announcing chamber on face %s -> module 0x%04X, home_face=%s\r\n",
             face_letter(face), module_id, face_letter(satellite_home));
 
         // Journal: module connected
@@ -291,7 +291,7 @@ void Coordinator::on_topology_change(Face face, bool connected, uint16_t module_
                 }
             }
         }
-        Serial.printf("[coord] module 0x%04X disconnected from face %s\n",
+        Serial.printf("[coord] module 0x%04X disconnected from face %s\r\n",
             module_id, face_letter(face));
 
         // Journal: module disconnected
@@ -410,7 +410,7 @@ void Coordinator::_sync_topology_to_chamber() {
             // A simple reconnect after radio glitch keeps workers alive.
             if (ann.boot_id != _last_queen_boot_id && _last_queen_boot_id != 0) {
                 if (chamber.lil_guy_count > 0 || chamber.brood_count > 0) {
-                    Serial.printf("[coord] queen rebooted (boot_id 0x%04X -> 0x%04X) -- clearing %d workers + %d brood\n",
+                    Serial.printf("[coord] queen rebooted (boot_id 0x%04X -> 0x%04X) -- clearing %d workers + %d brood\r\n",
                         _last_queen_boot_id, ann.boot_id,
                         chamber.lil_guy_count, chamber.brood_count);
                     chamber.lil_guy_count = 0;
@@ -420,7 +420,7 @@ void Coordinator::_sync_topology_to_chamber() {
                 }
             }
             _last_queen_boot_id = ann.boot_id;
-            Serial.printf("[coord] received announce: home_face=%s from queen 0x%04X boot_id=0x%04X\n",
+            Serial.printf("[coord] received announce: home_face=%s from queen 0x%04X boot_id=0x%04X\r\n",
                 face_letter(ann.your_home_face), ann.parent_id, ann.boot_id);
         }
     }
@@ -569,10 +569,10 @@ void Coordinator::_service_departures(EventBus& bus, uint32_t tick_num) {
         if (sent_count == 0) continue;
 
         if (stack_count > 1)
-            Serial.printf("[handoff] OUT stack of %d via face %s to 0x%04X\n",
+            Serial.printf("[handoff] OUT stack of %d via face %s to 0x%04X\r\n",
                 sent_count, face_letter(face), nb.module_id);
         else
-            Serial.printf("[handoff] OUT id=%lu via face %s to 0x%04X (state=%d food=%.1f)\n",
+            Serial.printf("[handoff] OUT id=%lu via face %s to 0x%04X (state=%d food=%.1f)\r\n",
                 (unsigned long)w.id, face_letter(face), nb.module_id, w.state, w.food_carried);
 
         // Fire events + journal
@@ -650,7 +650,7 @@ void Coordinator::_place_arrival(const LilGuyTransfer& t, EventBus& bus,
 
     g_handoffs_in++;
 
-    Serial.printf("[handoff] IN id=%lu from 0x%04X face %s (state=%d food=%.1f%s)\n",
+    Serial.printf("[handoff] IN id=%lu from 0x%04X face %s (state=%d food=%.1f%s)\r\n",
         (unsigned long)w.id, t.sender_id, face_letter(af), t.state, t.food_carried,
         w.stack_on >= 0 ? " stacked" : "");
 
@@ -765,7 +765,7 @@ void Coordinator::_service_pending_handoffs() {
                 transfer_to_lil_guy(_pending_out[i].payload, w, ex, ey, fdx, fdy);
                 w.arrival_face = static_cast<int8_t>(f);  // prevent immediate re-exit
                 w.arrival_ms = millis();
-                Serial.printf("[handoff] TIMEOUT -- restoring id=%lu\n",
+                Serial.printf("[handoff] TIMEOUT -- restoring id=%lu\r\n",
                               (unsigned long)w.id);
             } else {
                 Serial.println("[handoff] TIMEOUT -- chamber full, worker lost");
@@ -1099,7 +1099,7 @@ void Coordinator::_persist_migrate_live_colony() {
     journal.emit(je);
     journal.flush();
 
-    Serial.printf("[persist] migration complete — %d workers, %d brood, colony_id=%s\n",
+    Serial.printf("[persist] migration complete — %d workers, %d brood, colony_id=%s\r\n",
                   chamber.lil_guy_count, chamber.brood_count, m.colony_id);
 }
 
@@ -1192,7 +1192,7 @@ void Coordinator::_persist_restore_from_disk() {
 
     colony.population = chamber.lil_guy_count;
 
-    Serial.printf("[persist] restored %d workers, %d brood, food=%.0f\n",
+    Serial.printf("[persist] restored %d workers, %d brood, food=%.0f\r\n",
                   chamber.lil_guy_count, chamber.brood_count, colony.food_store);
 }
 
@@ -1337,7 +1337,7 @@ void Coordinator::_bond_load() {
         };
     }
     bonds.load(entries, n);
-    Serial.printf("[bonds] loaded %d bonds\n", n);
+    Serial.printf("[bonds] loaded %d bonds\r\n", n);
 }
 
 // ================================================================
@@ -1447,7 +1447,7 @@ void Coordinator::challenge_start(uint8_t type, float severity, uint32_t tick_nu
     // Mark all living workers as participants (set challenge bit on traits temporarily)
     // We use the survival trait bit as a "participating" marker;
     // on end, if still alive, they keep it (survived). On death during, it's cleared.
-    Serial.printf("[challenge] started type=%d severity=%.1f, %d participants\n",
+    Serial.printf("[challenge] started type=%d severity=%.1f, %d participants\r\n",
                   type, severity, chamber.lil_guy_count);
 }
 
@@ -1495,6 +1495,6 @@ void Coordinator::challenge_end(uint32_t tick_num) {
         }
     }
 
-    Serial.printf("[challenge] ended type=%d, %d survivors earned trait\n",
+    Serial.printf("[challenge] ended type=%d, %d survivors earned trait\r\n",
                   ended.type, survivors);
 }

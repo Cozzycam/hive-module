@@ -251,7 +251,7 @@ void time_of_day_recompute_sun() {
         g_tod.sunset_unix  = midnight + 18 * 3600;
     }
 
-    Serial.printf("[tod] sun: rise=%02d:%02d  set=%02d:%02d UTC  (doy=%d)\n",
+    Serial.printf("[tod] sun: rise=%02d:%02d  set=%02d:%02d UTC  (doy=%d)\r\n",
         (int)((g_tod.sunrise_unix % 86400) / 3600),
         (int)((g_tod.sunrise_unix % 3600) / 60),
         (int)((g_tod.sunset_unix % 86400) / 3600),
@@ -307,7 +307,7 @@ static void _update_phase() {
     // Log phase changes
     if (g_tod.phase != prev_phase) {
         static const char* names[] = {"NIGHT", "DAWN", "DAY", "DUSK"};
-        Serial.printf("[tod] phase -> %s  (night_factor=%.2f, local %02d:%02d)\n",
+        Serial.printf("[tod] phase -> %s  (night_factor=%.2f, local %02d:%02d)\r\n",
             names[g_tod.phase], g_tod.night_factor,
             g_tod.local_hour, g_tod.local_minute);
     }
@@ -379,7 +379,7 @@ static void _rtc_write(uint32_t unix_time) {
     Wire.write(0x00);  // clear STOP
     Wire.endTransmission();
 
-    Serial.printf("[tod] RTC set: %04d-%02d-%02d %02d:%02d:%02d UTC\n",
+    Serial.printf("[tod] RTC set: %04d-%02d-%02d %02d:%02d:%02d UTC\r\n",
         y, m, d, h, mi, sec);
 }
 
@@ -396,7 +396,7 @@ static void _wifi_teardown() {
 }
 
 static bool _ntp_sync() {
-    Serial.printf("[tod] WiFi connecting to '%s'...\n", _wifi_ssid);
+    Serial.printf("[tod] WiFi connecting to '%s'...\r\n", _wifi_ssid);
     WiFi.mode(WIFI_STA);
     WiFi.begin(_wifi_ssid, _wifi_pass);
 
@@ -414,7 +414,7 @@ static bool _ntp_sync() {
     _last_connect_ms = millis();
     _reconnect_failures = 0;
     _reconnect_interval_ms = 60000;
-    Serial.printf("[tod] WiFi connected, IP=%s ch=%d\n",
+    Serial.printf("[tod] WiFi connected, IP=%s ch=%d\r\n",
         WiFi.localIP().toString().c_str(), WiFi.channel());
 
     // NTP sync via ESP32 SNTP
@@ -437,7 +437,7 @@ static bool _ntp_sync() {
     g_tod.ntp_synced = true;
     _last_ntp_sync_ms = millis();
 
-    Serial.printf("[tod] NTP sync OK: unix=%lu\n", g_tod.unix_time);
+    Serial.printf("[tod] NTP sync OK: unix=%lu\r\n", g_tod.unix_time);
 
     // Write to RTC for offline persistence
     _rtc_write(g_tod.unix_time);
@@ -449,7 +449,7 @@ static bool _ntp_sync() {
     if (!_keep_wifi_connected)
         _wifi_teardown();
     else
-        Serial.printf("[tod] WiFi staying connected (channel %d)\n", WiFi.channel());
+        Serial.printf("[tod] WiFi staying connected (channel %d)\r\n", WiFi.channel());
 
     return true;
 }
@@ -474,7 +474,7 @@ static void _start_simulated_clock() {
 
 bool tod_wifi_connect(uint32_t timeout_ms) {
     if (WiFi.isConnected()) return true;  // Already connected (persistent WiFi mode)
-    Serial.printf("[wifi] Connecting to '%s'...\n", _wifi_ssid);
+    Serial.printf("[wifi] Connecting to '%s'...\r\n", _wifi_ssid);
     WiFi.mode(WIFI_STA);
     WiFi.begin(_wifi_ssid, _wifi_pass);
 
@@ -493,7 +493,7 @@ bool tod_wifi_connect(uint32_t timeout_ms) {
     _last_connect_ms = millis();
     _reconnect_failures = 0;
     _reconnect_interval_ms = 60000;
-    Serial.printf("[wifi] Connected, IP=%s ch=%d\n",
+    Serial.printf("[wifi] Connected, IP=%s ch=%d\r\n",
         WiFi.localIP().toString().c_str(), WiFi.channel());
     return true;
 }
@@ -517,7 +517,7 @@ void tod_wifi_set_ssid(const char* ssid) {
     prefs.putString("ssid", _wifi_ssid);
     prefs.end();
     _using_factory_creds = false;
-    Serial.printf("[wifi] SSID set: '%s' (stored in NVS)\n", _wifi_ssid);
+    Serial.printf("[wifi] SSID set: '%s' (stored in NVS)\r\n", _wifi_ssid);
 }
 
 void tod_wifi_set_pass(const char* pass) {
@@ -547,19 +547,19 @@ void tod_wifi_forget() {
 
 void tod_wifi_status() {
     Serial.println("[wifi] --- status ---");
-    Serial.printf("  ssid:       %s%s\n", _wifi_ssid,
+    Serial.printf("  ssid:       %s%s\r\n", _wifi_ssid,
         _using_factory_creds ? " (FACTORY DEFAULT)" : "");
-    Serial.printf("  pass:       %s\n", _wifi_pass[0] ? "(set)" : "(empty)");
+    Serial.printf("  pass:       %s\r\n", _wifi_pass[0] ? "(set)" : "(empty)");
 
     bool conn = WiFi.isConnected();
-    Serial.printf("  state:      %s\n", conn ? "CONNECTED" : "DISCONNECTED");
+    Serial.printf("  state:      %s\r\n", conn ? "CONNECTED" : "DISCONNECTED");
 
     if (conn) {
-        Serial.printf("  ip:         %s\n", WiFi.localIP().toString().c_str());
-        Serial.printf("  channel:    %d\n", WiFi.channel());
-        Serial.printf("  rssi:       %d dBm\n", WiFi.RSSI());
+        Serial.printf("  ip:         %s\r\n", WiFi.localIP().toString().c_str());
+        Serial.printf("  channel:    %d\r\n", WiFi.channel());
+        Serial.printf("  rssi:       %d dBm\r\n", WiFi.RSSI());
         uint32_t up = (millis() - _last_connect_ms) / 1000;
-        Serial.printf("  uptime:     %lus\n", up);
+        Serial.printf("  uptime:     %lus\r\n", up);
     } else {
         const char* reason = "unknown";
         switch (_last_disconnect_reason) {
@@ -568,12 +568,12 @@ void tod_wifi_status() {
             case WL_DISCONNECTED: reason = "disconnected"; break;
             case WL_IDLE_STATUS: reason = "idle"; break;
         }
-        Serial.printf("  last fail:  %s (code %d)\n", reason, _last_disconnect_reason);
-        Serial.printf("  retries:    %d (interval %lus)\n",
+        Serial.printf("  last fail:  %s (code %d)\r\n", reason, _last_disconnect_reason);
+        Serial.printf("  retries:    %d (interval %lus)\r\n",
             _reconnect_failures, _reconnect_interval_ms / 1000);
     }
-    Serial.printf("  persistent: %s\n", _keep_wifi_connected ? "yes" : "no");
-    Serial.printf("  ever conn:  %s\n", _ever_connected ? "yes" : "no");
+    Serial.printf("  persistent: %s\r\n", _keep_wifi_connected ? "yes" : "no");
+    Serial.printf("  ever conn:  %s\r\n", _ever_connected ? "yes" : "no");
     Serial.println("[wifi] -----------------");
 }
 
@@ -589,7 +589,7 @@ void tod_wifi_reconnect() {
     }
 
     _prev_channel = topology_current_channel();
-    Serial.printf("[wifi] connecting to '%s'...\n", _wifi_ssid);
+    Serial.printf("[wifi] connecting to '%s'...\r\n", _wifi_ssid);
     WiFi.mode(WIFI_STA);
     WiFi.begin(_wifi_ssid, _wifi_pass);
 
@@ -597,7 +597,7 @@ void tod_wifi_reconnect() {
     while (WiFi.status() != WL_CONNECTED) {
         if (millis() - start > 15000) {
             _last_disconnect_reason = WiFi.status();
-            Serial.printf("[wifi] reconnect failed (status=%d)\n", _last_disconnect_reason);
+            Serial.printf("[wifi] reconnect failed (status=%d)\r\n", _last_disconnect_reason);
             WiFi.disconnect();
             // Restore previous channel for ESP-NOW
             esp_wifi_set_channel(_prev_channel ? _prev_channel : 1, WIFI_SECOND_CHAN_NONE);
@@ -612,12 +612,12 @@ void tod_wifi_reconnect() {
     _reconnect_interval_ms = 60000;
 
     uint8_t new_channel = WiFi.channel();
-    Serial.printf("[wifi] reconnected, IP=%s ch=%d\n",
+    Serial.printf("[wifi] reconnected, IP=%s ch=%d\r\n",
         WiFi.localIP().toString().c_str(), new_channel);
 
     // If channel changed, notify topology so satellites follow
     if (new_channel != _prev_channel && _prev_channel > 0) {
-        Serial.printf("[wifi] channel changed %d -> %d, broadcasting to satellites\n",
+        Serial.printf("[wifi] channel changed %d -> %d, broadcasting to satellites\r\n",
             _prev_channel, new_channel);
         topology_set_wifi_channel(new_channel);
     }
@@ -644,7 +644,7 @@ void tod_wifi_reconnect_tick() {
         _last_disconnect_ms = now;
         _last_disconnect_reason = WiFi.status();
         _prev_channel = topology_current_channel();
-        Serial.printf("[wifi] STA disconnected (reason=%d), will retry in %lus\n",
+        Serial.printf("[wifi] STA disconnected (reason=%d), will retry in %lus\r\n",
             _last_disconnect_reason, _reconnect_interval_ms / 1000);
     }
 
@@ -661,7 +661,7 @@ void tod_wifi_reconnect_tick() {
         _reconnect_interval_ms = 300000;  // 5 min — likely bad creds or no AP
     }
 
-    Serial.printf("[wifi] reconnect attempt #%d...\n", _reconnect_failures + 1);
+    Serial.printf("[wifi] reconnect attempt #%d...\r\n", _reconnect_failures + 1);
 
     // Non-blocking-ish attempt with short timeout to avoid stalling loop
     WiFi.mode(WIFI_STA);
@@ -681,7 +681,7 @@ void tod_wifi_reconnect_tick() {
             else
                 _reconnect_interval_ms = 60000;
 
-            Serial.printf("[wifi] reconnect failed (status=%d), next in %lus\n",
+            Serial.printf("[wifi] reconnect failed (status=%d), next in %lus\r\n",
                 _last_disconnect_reason, _reconnect_interval_ms / 1000);
             WiFi.disconnect();
             // Restore ESP-NOW channel — don't disrupt topology
@@ -699,12 +699,12 @@ void tod_wifi_reconnect_tick() {
     _reconnect_interval_ms = 60000;
 
     uint8_t new_channel = WiFi.channel();
-    Serial.printf("[wifi] reconnected! IP=%s ch=%d (was ch=%d)\n",
+    Serial.printf("[wifi] reconnected! IP=%s ch=%d (was ch=%d)\r\n",
         WiFi.localIP().toString().c_str(), new_channel, _prev_channel);
 
     // If channel changed, broadcast to satellites
     if (new_channel != _prev_channel && _prev_channel > 0) {
-        Serial.printf("[wifi] channel changed %d -> %d, updating topology\n",
+        Serial.printf("[wifi] channel changed %d -> %d, updating topology\r\n",
             _prev_channel, new_channel);
         topology_set_wifi_channel(new_channel);
     }
@@ -722,7 +722,7 @@ void time_of_day_init() {
     if (_rtc_read(rtc_time)) {
         g_tod.unix_time = rtc_time;
         g_tod.rtc_valid = true;
-        Serial.printf("[tod] RTC valid: unix=%lu\n", rtc_time);
+        Serial.printf("[tod] RTC valid: unix=%lu\r\n", rtc_time);
     } else {
         Serial.println("[tod] RTC invalid or absent");
     }
@@ -750,7 +750,7 @@ void time_of_day_init() {
     time_of_day_recompute_sun();
     _update_phase();
 
-    Serial.printf("[tod] init: local %02d:%02d  phase=%d  nf=%.2f\n",
+    Serial.printf("[tod] init: local %02d:%02d  phase=%d  nf=%.2f\r\n",
         g_tod.local_hour, g_tod.local_minute,
         g_tod.phase, g_tod.night_factor);
 }
@@ -787,7 +787,7 @@ void time_of_day_tick() {
     if (ld != _prev_local_day) {
         _prev_local_day = ld;
         time_of_day_recompute_sun();
-        Serial.printf("[tod] day rollover -> %04d-%02d-%02d\n", ly, lm, ld);
+        Serial.printf("[tod] day rollover -> %04d-%02d-%02d\r\n", ly, lm, ld);
     }
 
     // NTP resync

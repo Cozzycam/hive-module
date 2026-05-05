@@ -52,7 +52,7 @@ static void _load_config() {
 
     _configured = (_secret[0] != '\0' && _endpoint[0] != '\0');
     if (_configured)
-        Serial.printf("[vps] configured — endpoint: %s\n", _endpoint);
+        Serial.printf("[vps] configured — endpoint: %s\r\n", _endpoint);
     else
         Serial.println("[vps] not configured (use 'vps secret <key>' and 'vps endpoint <url>')");
 }
@@ -86,9 +86,9 @@ static bool _post(const char* path, const char* body, int body_len) {
     if (code >= 200 && code < 300) { _push_ok_count++; return true; }
     _push_fail_count++;
     if (code > 0)
-        Serial.printf("[vps] POST %s — HTTP %d\n", path, code);
+        Serial.printf("[vps] POST %s — HTTP %d\r\n", path, code);
     else
-        Serial.printf("[vps] POST %s — failed (err=%d)\n", path, code);
+        Serial.printf("[vps] POST %s — failed (err=%d)\r\n", path, code);
     return false;
 }
 
@@ -167,19 +167,19 @@ void vps_push_set_endpoint(const char* url) {
     prefs.putString("endpoint", _endpoint);
     prefs.end();
     _configured = (_secret[0] != '\0' && _endpoint[0] != '\0');
-    Serial.printf("[vps] endpoint set: %s\n", _endpoint);
+    Serial.printf("[vps] endpoint set: %s\r\n", _endpoint);
 }
 
 void vps_push_status() {
     Serial.println("[vps] --- status ---");
-    Serial.printf("  configured: %s\n", _configured ? "yes" : "no");
-    Serial.printf("  endpoint:   %s\n", _endpoint[0] ? _endpoint : "(not set)");
-    Serial.printf("  secret:     %s\n", _secret[0] ? "(set)" : "(not set)");
-    Serial.printf("  wifi:       %s\n", WiFi.isConnected() ? "connected" : "disconnected");
+    Serial.printf("  configured: %s\r\n", _configured ? "yes" : "no");
+    Serial.printf("  endpoint:   %s\r\n", _endpoint[0] ? _endpoint : "(not set)");
+    Serial.printf("  secret:     %s\r\n", _secret[0] ? "(set)" : "(not set)");
+    Serial.printf("  wifi:       %s\r\n", WiFi.isConnected() ? "connected" : "disconnected");
     uint32_t ago = (millis() - _last_push_ms) / 1000;
-    Serial.printf("  last push:  %lus ago\n", ago);
-    Serial.printf("  cursor:     %lu\n", _last_pushed_unix);
-    Serial.printf("  success:    %lu\n", _push_ok_count);
-    Serial.printf("  failures:   %lu\n", _push_fail_count);
+    Serial.printf("  last push:  %lus ago\r\n", ago);
+    Serial.printf("  cursor:     %lu\r\n", _last_pushed_unix);
+    Serial.printf("  success:    %lu\r\n", _push_ok_count);
+    Serial.printf("  failures:   %lu\r\n", _push_fail_count);
     Serial.println("[vps] ----------------");
 }

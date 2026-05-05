@@ -90,7 +90,7 @@ void LilGuy::tick(Chamber& ch, float dt) {
         if (ch.colony->worker_census > 0) ch.colony->worker_census--;
         extern uint16_t g_deaths_old_age;
         g_deaths_old_age++;
-        Serial.printf("[death] OLD AGE hunger=%.0f state=%d\n", hunger, state);
+        Serial.printf("[death] OLD AGE hunger=%.0f state=%d\r\n", hunger, state);
         Event ev; ev.type = EVT_LIL_GUY_DIED; ev.tick = ch.tick_num;
         ev.position = {static_cast<int8_t>(cell_x()), static_cast<int8_t>(cell_y())};
         ch.emit(ev);
@@ -106,7 +106,7 @@ void LilGuy::tick(Chamber& ch, float dt) {
         if (ch.colony->worker_census > 0) ch.colony->worker_census--;
         extern uint16_t g_deaths_starved;
         g_deaths_starved++;
-        Serial.printf("[death] STARVED hunger=%.0f state=%d food=%.1f\n",
+        Serial.printf("[death] STARVED hunger=%.0f state=%d food=%.1f\r\n",
                       hunger, state, ch.colony->food_store);
         Event ev; ev.type = EVT_LIL_GUY_DIED; ev.tick = ch.tick_num;
         ev.position = {static_cast<int8_t>(cell_x()), static_cast<int8_t>(cell_y())};

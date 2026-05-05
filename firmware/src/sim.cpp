@@ -84,5 +84,5 @@ void Sim::handle_touch() {
     je.food_tap = {static_cast<int8_t>(cx), static_cast<int8_t>(cy), Cfg::TAP_FEED_AMOUNT};
     coordinator.journal.emit(je);
 
-    Serial.printf("[touch] fed (%d,%d) +%.0f\n", cx, cy, Cfg::TAP_FEED_AMOUNT);
+    Serial.printf("[touch] fed (%d,%d) +%.0f\r\n", cx, cy, Cfg::TAP_FEED_AMOUNT);
 }

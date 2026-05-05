@@ -278,7 +278,7 @@ void Renderer::init(Arduino_Canvas* canvas) {
     // Allocate floor cache in PSRAM
     _floor_cache = (uint16_t*)ps_malloc(SCREEN_W * SCREEN_H * sizeof(uint16_t));
     if (_floor_cache) {
-        Serial.printf("[renderer] Floor cache allocated: %d bytes in PSRAM\n",
+        Serial.printf("[renderer] Floor cache allocated: %d bytes in PSRAM\r\n",
                       SCREEN_W * SCREEN_H * 2);
         _floor_cache_valid = false;
         _floor_cache_nf = -1.0f;
@@ -289,7 +289,7 @@ void Renderer::init(Arduino_Canvas* canvas) {
 
     // Sprout starts fresh each boot (grows via milestones during session)
     _sprout_leaf_count = Cfg::MILESTONE_LEAF_BASE;
-    Serial.printf("[renderer] Sprout leaves: %d\n", _sprout_leaf_count);
+    Serial.printf("[renderer] Sprout leaves: %d\r\n", _sprout_leaf_count);
 }
 
 void Renderer::flush() {
@@ -447,8 +447,8 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
     _prof_frame_count++;
 
     unsigned long now = millis();
-    if (now - _prof_last_report >= 5000 && _prof_frame_count > 0) {
-        Serial.printf("[perf] frames=%d avg_total=%lums avg_floor=%lums avg_sprites=%lums avg_flush=%lums fps=%.1f\n",
+    if (now - _prof_last_report >= 30000 && _prof_frame_count > 0) {
+        Serial.printf("[perf] frames=%d avg_total=%lums avg_floor=%lums avg_sprites=%lums avg_flush=%lums fps=%.1f\r\n",
             _prof_frame_count,
             _prof_frame_total / _prof_frame_count,
             _prof_floor_total / _prof_frame_count,
@@ -808,7 +808,7 @@ void Renderer::_check_milestone(const Chamber& ch) {
         _leaf_grow_t = 0.0f;
         _leaf_shimmer_t = 0.0f;
 
-        Serial.printf("[milestone] New leaf! leaves=%d (workers born=%d)\n",
+        Serial.printf("[milestone] New leaf! leaves=%d (workers born=%d)\r\n",
                       _sprout_leaf_count, born);
     }
 }
