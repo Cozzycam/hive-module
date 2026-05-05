@@ -248,6 +248,8 @@ static unsigned long _prof_frame_total = 0;
 static unsigned long _prof_floor_total = 0;
 static unsigned long _prof_sprites_total = 0;
 static unsigned long _prof_flush_total = 0;
+static unsigned long _prof_flush_pixels_total = 0;
+static int           _prof_full_redraw_count = 0;
 static int           _prof_frame_count = 0;
 static unsigned long _prof_last_report = 0;
 #endif
@@ -256,8 +258,9 @@ static unsigned long _prof_last_report = 0;
 //  Init
 // ================================================================
 
-void Renderer::init(Arduino_Canvas* canvas) {
+void Renderer::init(Arduino_Canvas* canvas, Arduino_TFT* output) {
     _gfx = canvas;
+    _output = output;
     _needs_full_redraw = true;
     _dirty_count = 0;
     _anim_count = 0;
@@ -292,11 +295,69 @@ void Renderer::init(Arduino_Canvas* canvas) {
     Serial.printf("[renderer] Sprout leaves: %d\r\n", _sprout_leaf_count);
 }
 
+void Renderer::_compute_flush_bounds() {
+    _flush_bounds = {};
+    if (_dirty_count == 0) return;
+
+    int16_t x0 = SCREEN_W, y0 = SCREEN_H, x1 = 0, y1 = 0;
+    for (int i = 0; i < _dirty_count; i++) {
+        auto& d = _dirty[i];
+        if (d.x < x0) x0 = d.x;
+        if (d.y < y0) y0 = d.y;
+        if (d.x + d.w > x1) x1 = d.x + d.w;
+        if (d.y + d.h > y1) y1 = d.y + d.h;
+    }
+    // Clamp to screen
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > SCREEN_W) x1 = SCREEN_W;
+    if (y1 > SCREEN_H) y1 = SCREEN_H;
+
+    _flush_bounds.x0 = x0;
+    _flush_bounds.y0 = y0;
+    _flush_bounds.x1 = x1;
+    _flush_bounds.y1 = y1;
+    _flush_bounds.any = (x1 > x0 && y1 > y0);
+}
+
 void Renderer::flush() {
 #if RENDERER_PROFILE
     unsigned long t0 = millis();
 #endif
-    _gfx->flush();
+
+    _compute_flush_bounds();
+
+    uint16_t* fb = (uint16_t*)_gfx->getFramebuffer();
+    bool do_full = force_full_flush || _flush_bounds.full ||
+                   !_flush_bounds.any || !_output || !fb;
+
+    if (do_full) {
+        // Full-frame flush (original path)
+        _gfx->flush();
+#if RENDERER_PROFILE
+        _prof_flush_pixels_total += SCREEN_W * SCREEN_H;
+        _prof_full_redraw_count++;
+#endif
+    } else {
+        // Windowed flush — only the dirty bounding box
+        int16_t x = _flush_bounds.x0;
+        int16_t y = _flush_bounds.y0;
+        int16_t w = _flush_bounds.x1 - x;
+        int16_t h = _flush_bounds.y1 - y;
+
+        // Push sub-region row by row (framebuffer stride = SCREEN_W)
+        _output->startWrite();
+        _output->writeAddrWindow(x, y, w, h);
+        for (int16_t row = 0; row < h; row++) {
+            _output->writePixels(&fb[(y + row) * SCREEN_W + x], w);
+        }
+        _output->endWrite();
+
+#if RENDERER_PROFILE
+        _prof_flush_pixels_total += (unsigned long)w * h;
+#endif
+    }
+
 #if RENDERER_PROFILE
     _prof_flush_total += millis() - t0;
 #endif
@@ -368,8 +429,12 @@ void Renderer::_clear_dirty() {
 // ================================================================
 
 void Renderer::draw(const Chamber& ch, float lerp_t) {
+    // Reset flush bounds for this frame
+    _flush_bounds = {};
+
 #if BOOT_SPLASH_ENABLED
     if (_boot_splash_active) {
+        _flush_bounds.full = true;  // Boot splash = full redraw
         if (_tick_boot_splash(ch)) return;
     }
 #endif
@@ -395,6 +460,7 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
             _render_floor_to_cache();
             _floor_cache_nf = g_tod.night_factor;
             _floor_cache_valid = true;
+            _flush_bounds.full = true;  // Palette change = full flush
         }
 
         _blit_floor_cache_full();
@@ -448,17 +514,23 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
 
     unsigned long now = millis();
     if (now - _prof_last_report >= 30000 && _prof_frame_count > 0) {
-        Serial.printf("[perf] frames=%d avg_total=%lums avg_floor=%lums avg_sprites=%lums avg_flush=%lums fps=%.1f\r\n",
+        unsigned long avg_flush_px = _prof_flush_pixels_total / _prof_frame_count;
+        int flush_pct = (int)(avg_flush_px * 100 / (SCREEN_W * SCREEN_H));
+        int full_pct = _prof_full_redraw_count * 100 / _prof_frame_count;
+        Serial.printf("[perf] frames=%d avg_total=%lums avg_floor=%lums avg_sprites=%lums avg_flush=%lums flush=%d%% full=%d%% fps=%.1f\r\n",
             _prof_frame_count,
             _prof_frame_total / _prof_frame_count,
             _prof_floor_total / _prof_frame_count,
             _prof_sprites_total / _prof_frame_count,
             _prof_flush_total / _prof_frame_count,
+            flush_pct, full_pct,
             1000.0f * _prof_frame_count / (_prof_frame_total > 0 ? _prof_frame_total : 1));
         _prof_frame_total = 0;
         _prof_floor_total = 0;
         _prof_sprites_total = 0;
         _prof_flush_total = 0;
+        _prof_flush_pixels_total = 0;
+        _prof_full_redraw_count = 0;
         _prof_frame_count = 0;
         _prof_last_report = now;
     }

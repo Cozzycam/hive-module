@@ -82,7 +82,7 @@ static void lcd_reset() {
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
     LCD_QSPI_CS, LCD_QSPI_CLK,
     LCD_QSPI_D0, LCD_QSPI_D1, LCD_QSPI_D2, LCD_QSPI_D3);
-Arduino_GFX *panel = new Arduino_AXS15231B(
+Arduino_TFT *panel = new Arduino_AXS15231B(
     bus, -1, 0, false, LCD_WIDTH, LCD_HEIGHT);
 Arduino_Canvas *gfx = new Arduino_Canvas(LCD_WIDTH, LCD_HEIGHT, panel);
 
@@ -378,6 +378,14 @@ static void process_serial_line(const char* line) {
         Serial.println("[reset] rebooting...");
         delay(100);
         ESP.restart();
+    } else if (strcmp(line, "render fullredraw on") == 0) {
+        renderer.force_full_flush = true;
+        Serial.println("[render] full redraw ON (dirty-rect disabled)");
+    } else if (strcmp(line, "render fullredraw off") == 0) {
+        renderer.force_full_flush = false;
+        Serial.println("[render] full redraw OFF (dirty-rect enabled)");
+    } else if (strcmp(line, "render fullredraw") == 0) {
+        Serial.printf("[render] full redraw: %s\r\n", renderer.force_full_flush ? "ON" : "OFF");
     } else if (strcmp(line, "daytime") == 0) {
         force_daytime = !force_daytime;
         Serial.printf("[debug] force daytime: %s\r\n", force_daytime ? "ON" : "OFF");
@@ -517,7 +525,7 @@ void setup() {
     time_of_day_init();
     sim.init();
     topology_init(topo_callback);  // after WiFi/NTP, before renderer
-    renderer.init(gfx);
+    renderer.init(gfx, panel);
 
     hud_battery_init();  // AXP2101 probe — works on both queen and satellite
 

@@ -13,12 +13,17 @@
 #pragma once
 
 #include <Arduino_GFX_Library.h>
+#include "Arduino_TFT.h"
 #include "chamber.h"
 #include "events.h"
 
 // Compile-time flags
 #ifndef BOOT_SPLASH_ENABLED
 #define BOOT_SPLASH_ENABLED 1
+#endif
+
+#ifndef RENDERER_FORCE_FULL_REDRAW
+#define RENDERER_FORCE_FULL_REDRAW 0
 #endif
 
 // ---- Animation types ----
@@ -77,11 +82,12 @@ struct SpriteDraw {
 
 class Renderer {
 public:
-    void init(Arduino_Canvas* canvas);
+    void init(Arduino_Canvas* canvas, Arduino_TFT* output);
     void draw(const Chamber& ch, float lerp_t);
     void flush();
     void force_full_redraw() { _needs_full_redraw = true; }
     bool debug_phero = false;  // pheromone overlay (toggle via serial 'p')
+    bool force_full_flush = RENDERER_FORCE_FULL_REDRAW;  // debug: disable dirty-rect flush
 
     // Feed drained events to create animations
     void receive_events(const Event* events, int count, const Chamber& ch);
@@ -95,6 +101,7 @@ public:
 
 private:
     Arduino_Canvas* _gfx = nullptr;
+    Arduino_TFT* _output = nullptr;  // Direct access to display for windowed flush
     bool _needs_full_redraw = true;
     uint32_t _frame = 0;   // monotonic frame counter for idle animations
 
@@ -102,6 +109,15 @@ private:
     static constexpr int MAX_DIRTY = 256;
     DirtyRect _dirty[MAX_DIRTY];
     int _dirty_count = 0;
+
+    // Flush bounding box — union of all dirty rects this frame
+    struct FlushBounds {
+        int16_t x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+        bool any = false;
+        bool full = false;  // force full-frame flush
+    };
+    FlushBounds _flush_bounds;
+    void _compute_flush_bounds();
 
     // Animation pool
     static constexpr int MAX_ANIMS = 32;
