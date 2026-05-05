@@ -2,6 +2,7 @@
 #include "topology.h"
 #include "pin_config.h"
 #include "time_of_day.h"
+#include "weather.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_now.h>
@@ -245,14 +246,20 @@ static void _on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int l
     } else if (msg_type == TOPO_ANNOUNCE && len >= (int)sizeof(AnnounceMessage)) {
         memcpy(&_announce_msg, data, sizeof(AnnounceMessage));
         _announce_pending = true;
-    } else if (msg_type == TOPO_STATE_SYNC && len >= (int)sizeof(StateSyncMessage)) {
-        // Queen state broadcast — update g_tod on satellite
+    } else if (msg_type == TOPO_STATE_SYNC && len >= 15) {
+        // Queen state broadcast — update g_tod + weather on satellite
         const StateSyncMessage* ss = reinterpret_cast<const StateSyncMessage*>(data);
         g_tod.night_factor  = ss->night_factor;
         g_tod.day_progress  = ss->day_progress;
         g_tod.phase         = static_cast<DayPhase>(ss->phase);
         g_tod.local_hour    = ss->local_hour;
         g_tod.local_minute  = ss->local_minute;
+        // Weather fields (added later — check length for backwards compat)
+        if (len >= (int)sizeof(StateSyncMessage)) {
+            g_weather.condition     = static_cast<WeatherCondition>(ss->weather);
+            g_weather.temperature_c = ss->temperature_c;
+            g_weather.valid         = true;
+        }
         _state_sync_last_ms = millis();
     } else if (msg_type == TOPO_POP_SYNC && len >= (int)sizeof(PopSyncMessage)) {
         // Population sync — store latest per sender

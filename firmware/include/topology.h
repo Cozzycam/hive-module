@@ -96,6 +96,8 @@ struct __attribute__((packed)) StateSyncMessage {
     uint8_t  phase;          // DayPhase
     int      local_hour;
     int      local_minute;
+    uint8_t  weather;        // WeatherCondition enum
+    float    temperature_c;
 };
 
 // Boundary pheromone sync message — uint8_t-encoded values (0-255 maps to 0-20.0)
