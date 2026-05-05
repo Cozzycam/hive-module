@@ -70,7 +70,8 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
     w["day_of_year"] = coord.world.day_of_year;
     w["temperature_c"] = coord.world.temperature_c;
     w["humidity_pct"] = coord.world.humidity_pct;
-    w["weather"] = "clear";
+    static const char* wx_str[] = {"clear","partly_cloudy","overcast","fog","drizzle","rain","heavy_rain","snow","thunderstorm"};
+    w["weather"] = wx_str[coord.world.weather < 9 ? coord.world.weather : 0];
     w["season"] = season_str(coord.world.season);
     JsonArray challenges = w["active_challenges"].to<JsonArray>();
     for (int i = 0; i < coord.world.active_count; i++) {

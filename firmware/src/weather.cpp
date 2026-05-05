@@ -53,22 +53,36 @@ static WindSeverity _classify_wind(float kmh) {
 
 // ---- Minimal JSON value extraction ----
 
+// Search within the "current":{...} block to avoid matching "current_units" keys
+static int _find_current_block(const String& json) {
+    int idx = json.indexOf("\"current\":{");
+    if (idx < 0) idx = json.indexOf("\"current\": {");
+    return idx;
+}
+
 static bool _json_float(const String& json, const char* key, float& out) {
     String needle = String("\"") + key + "\":";
-    int idx = json.indexOf(needle);
+    int start = _find_current_block(json);
+    if (start < 0) start = 0;
+    int idx = json.indexOf(needle, start);
     if (idx < 0) return false;
     idx += needle.length();
     while (idx < (int)json.length() && json[idx] == ' ') idx++;
+    // Skip if value starts with a quote (it's a string, not a number)
+    if (idx < (int)json.length() && json[idx] == '"') return false;
     out = json.substring(idx).toFloat();
     return true;
 }
 
 static bool _json_int(const String& json, const char* key, int& out) {
     String needle = String("\"") + key + "\":";
-    int idx = json.indexOf(needle);
+    int start = _find_current_block(json);
+    if (start < 0) start = 0;
+    int idx = json.indexOf(needle, start);
     if (idx < 0) return false;
     idx += needle.length();
     while (idx < (int)json.length() && json[idx] == ' ') idx++;
+    if (idx < (int)json.length() && json[idx] == '"') return false;
     out = json.substring(idx).toInt();
     return true;
 }
