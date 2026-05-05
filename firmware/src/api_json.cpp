@@ -80,16 +80,17 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
         c["severity"] = coord.world.active[i].severity;
     }
 
-    // Population
+    // Population (count from registry for consistency across modules)
     JsonObject pop = doc["population"].to<JsonObject>();
     pop["alive"] = coord.colony.population;
     pop["dead_total"] = coord.registry.manifest().total_workers_died;
     JsonObject by_role = pop["by_role"].to<JsonObject>();
     by_role["queen"] = coord.chamber.has_queen ? 1 : 0;
     int minors = 0, majors = 0, pioneers = 0;
-    for (int i = 0; i < coord.chamber.lil_guy_count; i++) {
-        if (coord.chamber.lil_guys[i].is_pioneer) pioneers++;
-        else if (coord.chamber.lil_guys[i].role == ROLE_MAJOR) majors++;
+    IdentityRecord* recs = coord.registry.living_records();
+    for (int i = 0; i < coord.registry.living_count(); i++) {
+        if (recs[i].is_pioneer) pioneers++;
+        else if (recs[i].role == ROLE_MAJOR) majors++;
         else minors++;
     }
     by_role["minor"] = minors;
