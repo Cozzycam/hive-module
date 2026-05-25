@@ -612,7 +612,8 @@ void loop() {
         }
         if (!splashing) {
             hud_draw_battery(gfx);
-            renderer.mark_dirty_external(480 - 30, 320 - 16, 30, 16);  // Battery indicator
+            hud_draw_version(gfx);
+            renderer.mark_dirty_external(0, 304, 480, 16);  // Battery + version strip
         }
         if (topo_overlay) {
             topology_draw_overlay(gfx);

@@ -629,3 +629,17 @@ void hud_draw_battery(Arduino_Canvas* gfx) {
         snprintf(buf, sizeof(buf), "%d%%", _batt_pct);
     _draw_text(gfx, tx, ty, buf, text_col);
 }
+
+void hud_draw_version(Arduino_Canvas* gfx) {
+    HudPalette pal;
+    _get_palette(pal);
+    uint16_t col = _rgb565(pal.ink2_r, pal.ink2_g, pal.ink2_b);
+
+    char buf[12];
+    snprintf(buf, sizeof(buf), "v%lu", (unsigned long)FW_VERSION);
+
+    gfx->setTextSize(1);
+    gfx->setTextWrap(false);
+    int w = _text_width(buf);
+    _draw_text(gfx, 480 - 6 - w, 309, buf, col);
+}

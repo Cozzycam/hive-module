@@ -16,3 +16,4 @@ void hud_draw(Arduino_Canvas* gfx, const Chamber& ch);
 // Call hud_draw_battery() every frame.
 void hud_battery_init();
 void hud_draw_battery(Arduino_Canvas* gfx);
+void hud_draw_version(Arduino_Canvas* gfx);
