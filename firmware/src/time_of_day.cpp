@@ -397,6 +397,7 @@ static void _wifi_teardown() {
 
 static bool _ntp_sync() {
     Serial.printf("[tod] WiFi connecting to '%s'...\r\n", _wifi_ssid);
+    topology_set_wifi_active(true);
     WiFi.mode(WIFI_STA);
     WiFi.begin(_wifi_ssid, _wifi_pass);
 
@@ -406,6 +407,7 @@ static bool _ntp_sync() {
             Serial.println("[tod] WiFi timeout");
             _last_disconnect_reason = WiFi.status();
             _wifi_teardown();
+            topology_set_wifi_active(false);
             return false;
         }
         delay(100);
@@ -451,6 +453,7 @@ static bool _ntp_sync() {
     else
         Serial.printf("[tod] WiFi staying connected (channel %d)\r\n", WiFi.channel());
 
+    topology_set_wifi_active(false);
     return true;
 }
 
@@ -475,6 +478,9 @@ static void _start_simulated_clock() {
 bool tod_wifi_connect(uint32_t timeout_ms) {
     if (WiFi.isConnected()) return true;  // Already connected (persistent WiFi mode)
     Serial.printf("[wifi] Connecting to '%s'...\r\n", _wifi_ssid);
+    topology_set_wifi_active(true);
+    WiFi.disconnect(false, true);  // clean up any stale connection state
+    delay(50);
     WiFi.mode(WIFI_STA);
     WiFi.begin(_wifi_ssid, _wifi_pass);
 
@@ -485,6 +491,7 @@ bool tod_wifi_connect(uint32_t timeout_ms) {
             _last_disconnect_reason = WiFi.status();
             WiFi.disconnect();
             esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
+            topology_set_wifi_active(false);
             return false;
         }
         delay(100);
@@ -495,6 +502,7 @@ bool tod_wifi_connect(uint32_t timeout_ms) {
     _reconnect_interval_ms = 60000;
     Serial.printf("[wifi] Connected, IP=%s ch=%d\r\n",
         WiFi.localIP().toString().c_str(), WiFi.channel());
+    topology_set_wifi_active(false);
     return true;
 }
 
@@ -590,6 +598,7 @@ void tod_wifi_reconnect() {
 
     _prev_channel = topology_current_channel();
     Serial.printf("[wifi] connecting to '%s'...\r\n", _wifi_ssid);
+    topology_set_wifi_active(true);
     WiFi.mode(WIFI_STA);
     WiFi.begin(_wifi_ssid, _wifi_pass);
 
@@ -601,6 +610,7 @@ void tod_wifi_reconnect() {
             WiFi.disconnect();
             // Restore previous channel for ESP-NOW
             esp_wifi_set_channel(_prev_channel ? _prev_channel : 1, WIFI_SECOND_CHAN_NONE);
+            topology_set_wifi_active(false);
             return;
         }
         delay(100);
@@ -621,6 +631,7 @@ void tod_wifi_reconnect() {
             _prev_channel, new_channel);
         topology_set_wifi_channel(new_channel);
     }
+    topology_set_wifi_active(false);
 }
 
 // ================================================================
@@ -664,6 +675,7 @@ void tod_wifi_reconnect_tick() {
     Serial.printf("[wifi] reconnect attempt #%d...\r\n", _reconnect_failures + 1);
 
     // Non-blocking-ish attempt with short timeout to avoid stalling loop
+    topology_set_wifi_active(true);
     WiFi.mode(WIFI_STA);
     WiFi.begin(_wifi_ssid, _wifi_pass);
 
@@ -686,6 +698,7 @@ void tod_wifi_reconnect_tick() {
             WiFi.disconnect();
             // Restore ESP-NOW channel — don't disrupt topology
             esp_wifi_set_channel(_prev_channel ? _prev_channel : 1, WIFI_SECOND_CHAN_NONE);
+            topology_set_wifi_active(false);
             return;
         }
         delay(100);
@@ -708,6 +721,7 @@ void tod_wifi_reconnect_tick() {
             _prev_channel, new_channel);
         topology_set_wifi_channel(new_channel);
     }
+    topology_set_wifi_active(false);
 }
 
 // ================================================================

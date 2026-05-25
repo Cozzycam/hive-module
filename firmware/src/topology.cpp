@@ -47,6 +47,7 @@ static uint8_t  _scan_channel = 0;            // channel scanning: 0=disabled, 1
 static uint8_t  _reinit_count_total = 0;      // total reinits since last connect (for channel scan trigger)
 static uint32_t _hello_timeouts_total = 0;    // lifetime HELLO timeout counter
 static uint32_t _hb_timeouts_total = 0;       // lifetime heartbeat timeout counter
+static bool     _wifi_active = false;         // true during WiFi windows — suppress HB timeout
 
 // Receive ring buffer (ISR -> main loop) — topology messages
 static const int RX_BUF_SIZE = 8;
@@ -400,8 +401,9 @@ static void _tick_face(Face f, const TopologyMessage* msg, const uint8_t* msg_ma
             if (fs.peer_added) _send(fs.neighbour_mac, TOPO_HEARTBEAT, f);
             fs.last_hb_tx_ms = now;
         }
-        // Heartbeat timeout
-        if (fs.link == LINK_CONNECTED && now - fs.last_hb_rx_ms > HEARTBEAT_RX_TIMEOUT_MS) {
+        // Heartbeat timeout (suppressed during WiFi windows)
+        if (fs.link == LINK_CONNECTED && !_wifi_active &&
+            now - fs.last_hb_rx_ms > HEARTBEAT_RX_TIMEOUT_MS) {
             _hb_timeouts_total++;
             _disconnect_face(f, "heartbeat timeout");
         }
@@ -741,6 +743,18 @@ bool topology_ota_server(OtaReadyMessage* out) {
     memcpy(out, &_ota_ready_msg, sizeof(OtaReadyMessage));
     _ota_ready_pending = false;
     return true;
+}
+
+void topology_set_wifi_active(bool active) {
+    _wifi_active = active;
+    if (!active) {
+        // WiFi done — reset heartbeat timestamps so faces don't immediately timeout
+        uint32_t now = millis();
+        for (int f = 0; f < FACE_COUNT; f++) {
+            if (_faces[f].link == LINK_CONNECTED)
+                _faces[f].last_hb_rx_ms = now;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

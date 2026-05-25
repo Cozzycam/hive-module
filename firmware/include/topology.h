@@ -183,3 +183,6 @@ void topology_draw_overlay(void* gfx_canvas);  // Arduino_Canvas*
 
 // Serial diagnostic: print full topology state
 void topology_status();
+
+// WiFi coexistence: pause heartbeat timeouts during WiFi windows
+void topology_set_wifi_active(bool active);
