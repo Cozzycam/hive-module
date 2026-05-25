@@ -28,7 +28,7 @@ class Coordinator {
 public:
     ColonyState     colony;
     Chamber         chamber;    // single chamber for now
-    LilGuyRegistry  registry;
+    ConkerRegistry  registry;
     EventJournal    journal;
     BondStore       bonds;
     WorldCondition  world;
@@ -84,7 +84,7 @@ private:
     // Pending outgoing handoffs (ACK-gated, retried on timeout)
     static constexpr int MAX_PENDING_OUT = 8;
     struct PendingOut {
-        LilGuyTransfer payload;
+        ConkerTransfer payload;
         uint32_t sent_ms;
         uint8_t  retries;
         uint8_t  face;
@@ -102,7 +102,7 @@ private:
     void _service_departures(EventBus& bus, uint32_t tick_num);
 
     // Incoming worker placement (immediate — visual delay is on sender side)
-    void _place_arrival(const LilGuyTransfer& t, EventBus& bus, uint32_t tick_num,
+    void _place_arrival(const ConkerTransfer& t, EventBus& bus, uint32_t tick_num,
                         int* first_idx_per_face);
 
     // Bonds

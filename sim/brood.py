@@ -6,7 +6,7 @@ characteristic oversized heads. The queen sets the destined role at
 laying; Phase 1 founding produces only minors.
 
 When a pupa completes, chamber.tick() consumes the brood and spawns a
-LilGuy of the matching role in its place.
+Conker of the matching role in its place.
 """
 
 import config as C

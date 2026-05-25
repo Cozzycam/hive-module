@@ -1,12 +1,12 @@
-/* Worker lil_guy -- full behavior port with smooth sub-cell movement. */
-#include "lil_guy.h"
+/* Worker conker -- full behavior port with smooth sub-cell movement. */
+#include "conker.h"
 #include "chamber.h"
 #include "rng.h"
 #include "time_of_day.h"
 #include <Arduino.h>
 #include <cmath>
 
-void LilGuy::init(int8_t px, int8_t py, Role c, bool pioneer) {
+void Conker::init(int8_t px, int8_t py, Role c, bool pioneer) {
     x = float(px) + 0.5f;
     y = float(py) + 0.5f;
     prev_x = x;
@@ -82,7 +82,7 @@ void LilGuy::init(int8_t px, int8_t py, Role c, bool pioneer) {
 //  Per-tick entry point -- two-phase architecture
 // ================================================================
 
-void LilGuy::tick(Chamber& ch, float dt) {
+void Conker::tick(Chamber& ch, float dt) {
     if (!alive) return;
 
     if (millis() - born_at_ms >= lifespan_ms) {
@@ -91,7 +91,7 @@ void LilGuy::tick(Chamber& ch, float dt) {
         extern uint16_t g_deaths_old_age;
         g_deaths_old_age++;
         Serial.printf("[death] OLD AGE hunger=%.0f state=%d\r\n", hunger, state);
-        Event ev; ev.type = EVT_LIL_GUY_DIED; ev.tick = ch.tick_num;
+        Event ev; ev.type = EVT_CONKER_DIED; ev.tick = ch.tick_num;
         ev.position = {static_cast<int8_t>(cell_x()), static_cast<int8_t>(cell_y())};
         ch.emit(ev);
         return;
@@ -108,7 +108,7 @@ void LilGuy::tick(Chamber& ch, float dt) {
         g_deaths_starved++;
         Serial.printf("[death] STARVED hunger=%.0f state=%d food=%.1f\r\n",
                       hunger, state, ch.colony->food_store);
-        Event ev; ev.type = EVT_LIL_GUY_DIED; ev.tick = ch.tick_num;
+        Event ev; ev.type = EVT_CONKER_DIED; ev.tick = ch.tick_num;
         ev.position = {static_cast<int8_t>(cell_x()), static_cast<int8_t>(cell_y())};
         ch.emit(ev);
         return;
@@ -148,7 +148,7 @@ void LilGuy::tick(Chamber& ch, float dt) {
 
     // Stacking: track the ant below, skip normal behavior unless idle expired
     if (stack_on >= 0) {
-        auto& below = ch.lil_guys[stack_on];
+        auto& below = ch.conkers[stack_on];
         if (!below.alive) { stack_on = -1; sleeping = false; anim_type = LG_ANIM_NONE; }
         else {
             if (stack_hop_remaining > 0) {
@@ -272,7 +272,7 @@ void LilGuy::tick(Chamber& ch, float dt) {
 //  Movement engine
 // ================================================================
 
-bool LilGuy::_set_target_cell(int cx, int cy, Chamber& ch) {
+bool Conker::_set_target_cell(int cx, int cy, Chamber& ch) {
     if (!ch.in_bounds(cx, cy)) return false;
     // Idle ants can't enter the queen's body cells (but can move out if already inside)
     if (state == STATE_IDLE && ch.has_queen && ch.queen_obj.alive) {
@@ -294,7 +294,7 @@ bool LilGuy::_set_target_cell(int cx, int cy, Chamber& ch) {
     return true;
 }
 
-void LilGuy::_advance_toward_target(Chamber& ch) {
+void Conker::_advance_toward_target(Chamber& ch) {
     if (!has_target_cell) return;
     float tx = target_cell_x + 0.5f;
     float ty = target_cell_y + 0.5f;
@@ -332,7 +332,7 @@ void LilGuy::_advance_toward_target(Chamber& ch) {
     }
 }
 
-void LilGuy::_on_enter_cell(int cx, int cy, Chamber& ch) {
+void Conker::_on_enter_cell(int cx, int cy, Chamber& ch) {
     chamber_steps++;
     if (state == STATE_TO_FOOD) {
         steps_walked++;
@@ -349,7 +349,7 @@ void LilGuy::_on_enter_cell(int cx, int cy, Chamber& ch) {
 //  Task selection
 // ================================================================
 
-void LilGuy::_pick_task(Chamber& ch) {
+void Conker::_pick_task(Chamber& ch) {
     speed = Cfg::ROLE_PARAMS[role].speed;
     idle_ticks_remaining = 0;
     zoomie_target = -1;
@@ -559,7 +559,7 @@ void LilGuy::_pick_task(Chamber& ch) {
 //  TO_FOOD
 // ================================================================
 
-void LilGuy::_do_to_food(Chamber& ch) {
+void Conker::_do_to_food(Chamber& ch) {
     // Periodic forager re-evaluation — recall excess scouts
     if (steps_walked > 0 && steps_walked % 32 == 0 && food_carried == 0) {
         float pressure = ch.colony->food_pressure();
@@ -643,7 +643,7 @@ void LilGuy::_do_to_food(Chamber& ch) {
 //  TO_HOME
 // ================================================================
 
-void LilGuy::_do_to_home(Chamber& ch) {
+void Conker::_do_to_home(Chamber& ch) {
     if (ch.has_queen) {
         int qx = ch.queen_obj.x, qy = ch.queen_obj.y;
         int cx = cell_x(), cy = cell_y();
@@ -684,7 +684,7 @@ void LilGuy::_do_to_home(Chamber& ch) {
 //  Domestic tasks
 // ================================================================
 
-void LilGuy::_do_tend_brood(Chamber& ch) {
+void Conker::_do_tend_brood(Chamber& ch) {
     if (!has_target) { state = STATE_IDLE; has_target_cell = false; return; }
     int cx = cell_x(), cy = cell_y();
     if (abs(target_x - cx) + abs(target_y - cy) <= 1) {
@@ -732,7 +732,7 @@ void LilGuy::_do_tend_brood(Chamber& ch) {
     _step_toward_cell(target_x, target_y, ch);
 }
 
-void LilGuy::_do_tend_queen(Chamber& ch) {
+void Conker::_do_tend_queen(Chamber& ch) {
     if (!has_target) { state = STATE_IDLE; has_target_cell = false; return; }
     int cx = cell_x(), cy = cell_y();
     if (abs(target_x - cx) + abs(target_y - cy) <= 1) {
@@ -769,7 +769,7 @@ void LilGuy::_do_tend_queen(Chamber& ch) {
     _step_toward_cell(target_x, target_y, ch);
 }
 
-void LilGuy::_do_eating(Chamber& ch) {
+void Conker::_do_eating(Chamber& ch) {
     if (!ch.has_queen) {
         state = STATE_IDLE; has_target = false; has_target_cell = false;
         return;
@@ -798,7 +798,7 @@ void LilGuy::_do_eating(Chamber& ch) {
     _step_toward_cell(fx, fy, ch);
 }
 
-void LilGuy::_do_idle(Chamber& ch) {
+void Conker::_do_idle(Chamber& ch) {
     // Escape queen exclusion zone: override everything, walk straight out
     if (ch.has_queen && ch.queen_obj.alive) {
         int cx = cell_x(), cy = cell_y();
@@ -848,8 +848,8 @@ void LilGuy::_do_idle(Chamber& ch) {
             bool target_is_queen = false;
 
             // Find nearest idle worker
-            for (int i = 0; i < ch.lil_guy_count; i++) {
-                auto& other = ch.lil_guys[i];
+            for (int i = 0; i < ch.conker_count; i++) {
+                auto& other = ch.conkers[i];
                 if (&other == this || !other.alive) continue;
                 if (other.state != STATE_IDLE) continue;
                 int ox = other.cell_x(), oy = other.cell_y();
@@ -912,7 +912,7 @@ void LilGuy::_do_idle(Chamber& ch) {
     _set_target_cell(cx + dx, cy + dy, ch);
 }
 
-void LilGuy::_do_cannibalize(Chamber& ch) {
+void Conker::_do_cannibalize(Chamber& ch) {
     if (!has_target) { state = STATE_IDLE; has_target_cell = false; return; }
     int cx = cell_x(), cy = cell_y();
     if (abs(target_x - cx) + abs(target_y - cy) <= 1) {
@@ -942,14 +942,14 @@ void LilGuy::_do_cannibalize(Chamber& ch) {
 //  Zoomies (daytime chase)
 // ================================================================
 
-void LilGuy::_do_zoomies(Chamber& ch) {
+void Conker::_do_zoomies(Chamber& ch) {
     zoomie_ticks--;
 
     // End conditions: timer expired, chaser's target invalid
     bool done = (zoomie_ticks <= 0);
     if (!done && zoomie_target >= 0
-        && (zoomie_target >= ch.lil_guy_count
-            || !ch.lil_guys[zoomie_target].alive)) {
+        && (zoomie_target >= ch.conker_count
+            || !ch.conkers[zoomie_target].alive)) {
         done = true;
     }
 
@@ -980,7 +980,7 @@ void LilGuy::_do_zoomies(Chamber& ch) {
         _step_toward_cell(target_x, target_y, ch);
     } else {
         // Chaser: trail a couple cells behind target's facing direction
-        auto& t = ch.lil_guys[zoomie_target];
+        auto& t = ch.conkers[zoomie_target];
         int tx = t.cell_x() - static_cast<int>(t.facing_dx * 2.0f);
         int ty = t.cell_y() - static_cast<int>(t.facing_dy * 2.0f);
         tx = (tx < 0) ? 0 : (tx >= Cfg::GRID_WIDTH  ? Cfg::GRID_WIDTH  - 1 : tx);
@@ -993,7 +993,7 @@ void LilGuy::_do_zoomies(Chamber& ch) {
 //  Idle/rest
 // ================================================================
 
-void LilGuy::_tick_idle(Chamber& ch) {
+void Conker::_tick_idle(Chamber& ch) {
     idle_ticks_remaining--;
     idle_micro_ticks--;
 
@@ -1033,7 +1033,7 @@ void LilGuy::_tick_idle(Chamber& ch) {
     }
 }
 
-void LilGuy::_pick_idle_microstate(Chamber& ch) {
+void Conker::_pick_idle_microstate(Chamber& ch) {
     has_target_cell = false;
 
     float r = g_rng.rand_float();
@@ -1062,7 +1062,7 @@ void LilGuy::_pick_idle_microstate(Chamber& ch) {
     idle_micro_ticks = static_cast<int16_t>(micro_dur * tempo_scale);
 }
 
-float LilGuy::_colony_idle_budget(Chamber& ch) {
+float Conker::_colony_idle_budget(Chamber& ch) {
     if (ch.colony->population < Cfg::COLONY_MIN_ACTIVE_FOR_IDLE) return 0.0f;
     if (ch.colony->food_pressure() > Cfg::FAMINE_SLOWDOWN_PRESSURE) return 0.0f;
     // Blend idle budget by night_factor: day=0.70, night=0.95
@@ -1074,7 +1074,7 @@ float LilGuy::_colony_idle_budget(Chamber& ch) {
 //  Task validity
 // ================================================================
 
-bool LilGuy::_target_still_valid(Chamber& ch) {
+bool Conker::_target_still_valid(Chamber& ch) {
     if (state == STATE_IDLE || state == STATE_TO_FOOD
             || state == STATE_TO_HOME || state == STATE_CANNIBALIZE
             || state == STATE_ZOOMIES || state == STATE_EATING)
@@ -1099,7 +1099,7 @@ bool LilGuy::_target_still_valid(Chamber& ch) {
 //  Marker sampling
 // ================================================================
 
-bool LilGuy::_sample_markers(Chamber& ch, bool use_food, int8_t& out_dx, int8_t& out_dy) {
+bool Conker::_sample_markers(Chamber& ch, bool use_food, int8_t& out_dx, int8_t& out_dy) {
     int cx = cell_x(), cy = cell_y();
     struct { int8_t dx, dy; float val; } nbrs[4];
     if (use_food) {
@@ -1161,7 +1161,7 @@ bool LilGuy::_sample_markers(Chamber& ch, bool use_food, int8_t& out_dx, int8_t&
 //  Movement helpers
 // ================================================================
 
-void LilGuy::_step_toward_cell(int tx, int ty, Chamber& ch) {
+void Conker::_step_toward_cell(int tx, int ty, Chamber& ch) {
     int cx = cell_x(), cy = cell_y();
     if (cx == tx && cy == ty) return;
     int dx = (tx > cx) ? 1 : ((tx < cx) ? -1 : 0);
@@ -1176,7 +1176,7 @@ void LilGuy::_step_toward_cell(int tx, int ty, Chamber& ch) {
     }
 }
 
-void LilGuy::_persistent_forward_step(Chamber& ch) {
+void Conker::_persistent_forward_step(Chamber& ch) {
     // Quantize facing to cardinal
     int fx, fy;
     if (fabsf(facing_dx) >= fabsf(facing_dy)) {
@@ -1204,7 +1204,7 @@ void LilGuy::_persistent_forward_step(Chamber& ch) {
     _set_target_cell(cx + dx, cy + dy, ch);
 }
 
-void LilGuy::_explore_or_wander(Chamber& ch) {
+void Conker::_explore_or_wander(Chamber& ch) {
     if (chamber_steps >= Cfg::CHAMBER_EXPLORE_STEPS) {
         int8_t ex, ey;
         if (_nearest_active_entry(ch, 200, -1, ex, ey)) {
@@ -1238,11 +1238,11 @@ void LilGuy::_explore_or_wander(Chamber& ch) {
 //  Query helpers
 // ================================================================
 
-bool LilGuy::_detects_food_trail(Chamber& ch) {
+bool Conker::_detects_food_trail(Chamber& ch) {
     return ch.food_delivery_signal > 0;
 }
 
-int LilGuy::_nearest_hungry_larva(Chamber& ch) {
+int Conker::_nearest_hungry_larva(Chamber& ch) {
     int cx = cell_x(), cy = cell_y();
     int best = -1;
     int best_d = 1000000;
@@ -1258,7 +1258,7 @@ int LilGuy::_nearest_hungry_larva(Chamber& ch) {
     return best;
 }
 
-int LilGuy::_least_invested_larva(Chamber& ch) {
+int Conker::_least_invested_larva(Chamber& ch) {
     int best = -1;
     float best_fed = 1000000.0f;
     for (int i = 0; i < ch.brood_count; i++) {
@@ -1269,7 +1269,7 @@ int LilGuy::_least_invested_larva(Chamber& ch) {
     return best;
 }
 
-bool LilGuy::_food_pile_adjacent(Chamber& ch, int8_t& out_x, int8_t& out_y) {
+bool Conker::_food_pile_adjacent(Chamber& ch, int8_t& out_x, int8_t& out_y) {
     int cx = cell_x(), cy = cell_y();
     int idx = ch._food_pile_index(cx, cy);
     if (idx >= 0) { out_x = cx; out_y = cy; return true; }
@@ -1285,7 +1285,7 @@ bool LilGuy::_food_pile_adjacent(Chamber& ch, int8_t& out_x, int8_t& out_y) {
     return false;
 }
 
-bool LilGuy::_nearest_active_entry(Chamber& ch, int max_dist, int exclude_face,
+bool Conker::_nearest_active_entry(Chamber& ch, int max_dist, int exclude_face,
                                 int8_t& out_x, int8_t& out_y) {
     int cx = cell_x(), cy = cell_y();
     int best_d = max_dist + 1;

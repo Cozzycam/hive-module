@@ -38,13 +38,13 @@ void Sim::init() {
             ch.add_brood(qx + 1, qy - 3, ROLE_MINOR);
             ch.brood[ch.brood_count - 1].stage = STAGE_PUPA;
             for (int i = 0; i < 3; i++)
-                ch.add_lil_guy(qx - 1 + i, qy - 4, ROLE_MINOR, true);
+                ch.add_conker(qx - 1 + i, qy - 4, ROLE_MINOR, true);
             for (int i = 0; i < 10; i++)
-                ch.add_lil_guy(qx - 5 + i, qy + 3, ROLE_MINOR, false);
+                ch.add_conker(qx - 5 + i, qy + 3, ROLE_MINOR, false);
             for (int i = 0; i < 3; i++)
-                ch.add_lil_guy(qx - 1 + i, qy + 5, ROLE_MAJOR, false);
-            coordinator.colony.population = ch.lil_guy_count;
-            coordinator.colony.worker_census = ch.lil_guy_count;
+                ch.add_conker(qx - 1 + i, qy + 5, ROLE_MAJOR, false);
+            coordinator.colony.population = ch.conker_count;
+            coordinator.colony.worker_census = ch.conker_count;
 
             // Case B: SD available, no manifest — migrate live colony to disk
             if (ps == PERSIST_OK) {

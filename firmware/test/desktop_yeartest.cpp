@@ -3,7 +3,7 @@
  *
  * Build:  g++ -std=c++17 -O2 -I../include -o yeartest desktop_yeartest.cpp \
  *         ../src/colony_state.cpp ../src/pheromone_grid.cpp ../src/brood.cpp \
- *         ../src/lil_guy.cpp ../src/queen.cpp ../src/chamber.cpp \
+ *         ../src/conker.cpp ../src/queen.cpp ../src/chamber.cpp \
  *         ../src/coordinator.cpp ../src/sim.cpp ../src/rng.cpp
  */
 #include <cstdio>

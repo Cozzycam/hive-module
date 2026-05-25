@@ -203,7 +203,7 @@ struct SpriteRef {
 };
 
 static const SpriteRef* _get_worker_sprite(Role /*role*/, bool /*is_pioneer*/,
-                                            LilGuySpriteFrame frame) {
+                                            ConkerSpriteFrame frame) {
     static const SpriteRef base = {WORKER_PIONEER, WORKER_PIONEER_W, WORKER_PIONEER_H};
     static const SpriteRef lean = {WORKER_LEAN, WORKER_LEAN_W, WORKER_LEAN_H};
     static const SpriteRef snooze = {WORKER_SLEEP, WORKER_SLEEP_W, WORKER_SLEEP_H};
@@ -1043,8 +1043,8 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
     float t = (lerp_t < 0.0f) ? 0.0f : ((lerp_t > 1.0f) ? 1.0f : lerp_t);
 
     // Workers
-    for (int i = 0; i < ch.lil_guy_count; i++) {
-        auto& w = ch.lil_guys[i];
+    for (int i = 0; i < ch.conker_count; i++) {
+        auto& w = ch.conkers[i];
         if (!w.alive || w.departing) continue;
 
         float fx = w.prev_x + (w.x - w.prev_x) * t;
@@ -1061,7 +1061,7 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
             int base_idx = w.stack_on;
             int cur = w.stack_on;
             while (cur >= 0 && offset < 200.0f) {
-                auto& b = ch.lil_guys[cur];
+                auto& b = ch.conkers[cur];
                 float s = SCALE_WORKER_MINOR;
                 if (b.role == ROLE_MAJOR)  s = SCALE_WORKER_MAJOR;
                 else if (b.is_pioneer)     s = SCALE_WORKER_PIONEER;
@@ -1071,7 +1071,7 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
                 cur = b.stack_on;
             }
             // Sort by base ant's position so whole tower moves as one z-unit
-            auto& base = ch.lil_guys[base_idx];
+            auto& base = ch.conkers[base_idx];
             float base_fy = base.prev_y + (base.y - base.prev_y) * t;
             sort_y_stable = base_fy * Cfg::CELL_SIZE + stack_depth * 0.1f;
 
@@ -1218,13 +1218,13 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
             _draw_sprite_scaled(sd.render_x, sd.render_y, QUEEN, QUEEN_W, QUEEN_H, SCALE_QUEEN);
             break;
         case SK_WORKER: {
-            auto& w = ch.lil_guys[sd.entity_idx];
+            auto& w = ch.conkers[sd.entity_idx];
             float scale = SCALE_WORKER_MINOR;
             if (w.role == ROLE_MAJOR)  scale = SCALE_WORKER_MAJOR;
             else if (w.is_pioneer)     scale = SCALE_WORKER_PIONEER;
 
             // Sprite frame lookup: use dedicated frame if available, else base
-            LilGuySpriteFrame frame = LG_FRAME_BASE;
+            ConkerSpriteFrame frame = LG_FRAME_BASE;
             if (w.anim_type == LG_ANIM_GROOMING) frame = LG_FRAME_LEAN;
             else if (w.anim_type == LG_ANIM_SNOOZE) frame = LG_FRAME_SNOOZE;
             const SpriteRef* spr = _get_worker_sprite(w.role, w.is_pioneer, frame);
@@ -1430,7 +1430,7 @@ void Renderer::receive_events(const Event* events, int count, const Chamber& ch)
             _spawn_anim(ANIM_DEATH_YOUNG, px, py, 8);
             break;
 
-        case EVT_LIL_GUY_DIED:
+        case EVT_CONKER_DIED:
             px = ev.position.x * cell + half;
             py = ev.position.y * cell + half;
             _spawn_anim(ANIM_DEATH_WORKER, px, py, 10);

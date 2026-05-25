@@ -96,7 +96,7 @@ public:
     // Read all events for a UTC day (days since epoch = unix / 86400).
     void read_day(uint32_t unix_time, EventCallback cb, void* ctx);
 
-    // Read events involving a specific LilGuy since a given time.
+    // Read events involving a specific Conker since a given time.
     void read_lilguy(uint32_t id, uint32_t since_unix,
                      EventCallback cb, void* ctx);
 

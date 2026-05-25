@@ -21,7 +21,7 @@ enum EventType : uint8_t {
     EVT_QUEEN_LAID_EGG      = 5,
     EVT_YOUNG_HATCHED       = 6,
     EVT_YOUNG_DIED          = 7,
-    EVT_LIL_GUY_DIED        = 8,
+    EVT_CONKER_DIED        = 8,
     EVT_HANDOFF_INCOMING    = 9,
     EVT_HANDOFF_OUTGOING    = 10,
 };
@@ -66,7 +66,7 @@ struct PositionData {
 };
 
 struct HandoffData {
-    uint8_t  worker_idx;   // slot index in lil_guys[]
+    uint8_t  worker_idx;   // slot index in conkers[]
     uint8_t  face;         // Face enum value
     uint16_t neighbour_id; // module_id of the neighbour
 };
@@ -82,7 +82,7 @@ struct Event {
         FoodDeliveredData      food_delivered;
         FoodTappedData         food_tapped;
         YoungHatchedData       young_hatched;
-        PositionData           position;  // queen_laid_egg, young_died, lil_guy_died
+        PositionData           position;  // queen_laid_egg, young_died, conker_died
         HandoffData            handoff;   // handoff_incoming, handoff_outgoing
     };
 };

@@ -1,17 +1,17 @@
 /* Worker transfer payload for ESP-NOW handoff between modules. */
 #pragma once
 #include <cstdint>
-#include "lil_guy.h"
+#include "conker.h"
 
 // Packed transfer struct — sim-meaningful fields only.
 // Animation state resets on arrival. ~60 bytes, well within ESP-NOW 250-byte limit.
-struct __attribute__((packed)) LilGuyTransfer {
+struct __attribute__((packed)) ConkerTransfer {
     uint8_t  msg_type;        // TOPO_HANDOFF
     uint16_t sender_id;       // sender module ID
     uint8_t  arrival_face;    // face on RECEIVER the worker enters from
     int8_t   entry_offset;   // offset from center within entry zone (-1, 0, +1)
     uint16_t seq;            // sender's sequence number for ACK matching
-    uint32_t lilguy_id;      // persistent identity (survives handoff)
+    uint32_t conker_id;      // persistent identity (survives handoff)
     uint8_t  personality[8]; // 0-255 mapped to 0.0-1.0 (compact transport)
     // -- sim state --
     uint8_t  state;           // AntState
@@ -35,10 +35,10 @@ struct __attribute__((packed)) LilGuyTransfer {
     uint8_t  tint_seed;
 };
 
-static_assert(sizeof(LilGuyTransfer) <= 250, "LilGuyTransfer exceeds ESP-NOW max payload");
+static_assert(sizeof(ConkerTransfer) <= 250, "ConkerTransfer exceeds ESP-NOW max payload");
 
-// Serialize a LilGuy into transfer payload
-inline void lil_guy_to_transfer(const LilGuy& w, LilGuyTransfer& t,
+// Serialize a Conker into transfer payload
+inline void conker_to_transfer(const Conker& w, ConkerTransfer& t,
                                  uint8_t msg_type, uint16_t sender_id,
                                  uint8_t arrival_face, int8_t entry_offset = 0) {
     t.msg_type        = msg_type;
@@ -46,7 +46,7 @@ inline void lil_guy_to_transfer(const LilGuy& w, LilGuyTransfer& t,
     t.arrival_face    = arrival_face;
     t.entry_offset    = entry_offset;
     t.seq             = 0;  // caller overrides for ACK matching
-    t.lilguy_id       = w.id;
+    t.conker_id       = w.id;
     for (int i = 0; i < 8; i++)
         t.personality[i] = static_cast<uint8_t>(w.personality[i] * 255.0f);
     t.state           = w.state;
@@ -71,9 +71,9 @@ inline void lil_guy_to_transfer(const LilGuy& w, LilGuyTransfer& t,
     t.tint_seed       = w.tint_seed;
 }
 
-// Deserialize transfer payload into a LilGuy at a given entry position.
+// Deserialize transfer payload into a Conker at a given entry position.
 // Resets animation-only fields. Sets facing inward from arrival face.
-inline void transfer_to_lil_guy(const LilGuyTransfer& t, LilGuy& w,
+inline void transfer_to_conker(const ConkerTransfer& t, Conker& w,
                                  float entry_x, float entry_y,
                                  float face_dx, float face_dy) {
     // Position: one cell inside the chamber from the entry, to avoid
@@ -89,7 +89,7 @@ inline void transfer_to_lil_guy(const LilGuyTransfer& t, LilGuy& w,
     w.last_dy = face_dy;
 
     // Identity + personality
-    w.id              = t.lilguy_id;
+    w.id              = t.conker_id;
     for (int i = 0; i < 8; i++)
         w.personality[i] = t.personality[i] / 255.0f;
 

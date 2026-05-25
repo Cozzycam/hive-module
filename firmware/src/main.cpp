@@ -46,7 +46,7 @@ static const char* EVT_NAMES[] = {
     "interaction_started", "interaction_ended",
     "food_delivered", "food_tapped", "pile_discovered",
     "queen_laid_egg", "young_hatched", "young_died",
-    "lil_guy_died", "handoff_incoming", "handoff_outgoing",
+    "conker_died", "handoff_incoming", "handoff_outgoing",
 };
 
 // -- TCA9554 I/O expander --------------------------------------------

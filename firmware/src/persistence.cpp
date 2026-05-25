@@ -12,13 +12,13 @@ static constexpr uint32_t FLUSH_INTERVAL_MS = 5000;  // 5s staggered flush (max 
 
 // ---- Path helpers ----
 
-void LilGuyRegistry::_shard_path(char* buf, size_t buflen,
+void ConkerRegistry::_shard_path(char* buf, size_t buflen,
                                   const char* subdir, uint32_t id) {
     uint32_t shard = id / 256;
     snprintf(buf, buflen, "/colony/%s/%03lu", subdir, (unsigned long)shard);
 }
 
-void LilGuyRegistry::_record_path(char* buf, size_t buflen,
+void ConkerRegistry::_record_path(char* buf, size_t buflen,
                                    const char* subdir, uint32_t id) {
     uint32_t shard = id / 256;
     snprintf(buf, buflen, "/colony/%s/%03lu/%08lX.json",
@@ -27,7 +27,7 @@ void LilGuyRegistry::_record_path(char* buf, size_t buflen,
 
 // ---- Directory setup ----
 
-bool LilGuyRegistry::_ensure_dirs() {
+bool ConkerRegistry::_ensure_dirs() {
     const char* dirs[] = {
         "/colony",
         "/colony/lilguys",
@@ -48,7 +48,7 @@ bool LilGuyRegistry::_ensure_dirs() {
 
 // ---- Atomic write ----
 
-bool LilGuyRegistry::_atomic_write(const char* path, const char* json_buf, size_t len) {
+bool ConkerRegistry::_atomic_write(const char* path, const char* json_buf, size_t len) {
     char tmp_path[128];
     snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
 
@@ -80,7 +80,7 @@ bool LilGuyRegistry::_atomic_write(const char* path, const char* json_buf, size_
 
 // ---- Colony ID generation ----
 
-bool LilGuyRegistry::_generate_colony_id() {
+bool ConkerRegistry::_generate_colony_id() {
     uint8_t bytes[12];
     for (int i = 0; i < 12; i++) bytes[i] = esp_random() & 0xFF;
     for (int i = 0; i < 12; i++)
@@ -89,13 +89,13 @@ bool LilGuyRegistry::_generate_colony_id() {
     return true;
 }
 
-void LilGuyRegistry::generate_colony_id() {
+void ConkerRegistry::generate_colony_id() {
     _generate_colony_id();
 }
 
 // ---- Manifest I/O ----
 
-bool LilGuyRegistry::_load_manifest() {
+bool ConkerRegistry::_load_manifest() {
     File f = SD_MMC.open("/colony/manifest.json", FILE_READ);
     if (!f) return false;
 
@@ -147,7 +147,7 @@ bool LilGuyRegistry::_load_manifest() {
     return true;
 }
 
-bool LilGuyRegistry::_save_manifest() {
+bool ConkerRegistry::_save_manifest() {
     JsonDocument doc;
     doc["schema"]         = _manifest.schema;
     doc["colony_id"]      = _manifest.colony_id;
@@ -193,7 +193,7 @@ bool LilGuyRegistry::_save_manifest() {
 
 // ---- Record I/O ----
 
-bool LilGuyRegistry::_write_record(const IdentityRecord& rec) {
+bool ConkerRegistry::_write_record(const IdentityRecord& rec) {
     char path[80];
     _record_path(path, sizeof(path), "lilguys", rec.id);
 
@@ -229,7 +229,7 @@ bool LilGuyRegistry::_write_record(const IdentityRecord& rec) {
     return _atomic_write(path, buf, len);
 }
 
-bool LilGuyRegistry::_write_brood(const BroodRecord& rec) {
+bool ConkerRegistry::_write_brood(const BroodRecord& rec) {
     char path[80];
     _record_path(path, sizeof(path), "brood", rec.id);
 
@@ -257,7 +257,7 @@ bool LilGuyRegistry::_write_brood(const BroodRecord& rec) {
     return _atomic_write(path, buf, len);
 }
 
-bool LilGuyRegistry::_delete_brood_file(uint32_t id) {
+bool ConkerRegistry::_delete_brood_file(uint32_t id) {
     char path[80];
     _record_path(path, sizeof(path), "brood", id);
     if (SD_MMC.exists(path)) return SD_MMC.remove(path);
@@ -266,7 +266,7 @@ bool LilGuyRegistry::_delete_brood_file(uint32_t id) {
 
 // ---- Load living records at boot ----
 
-bool LilGuyRegistry::_load_living_records() {
+bool ConkerRegistry::_load_living_records() {
     _alive_count = 0;
     // Walk shard directories
     File root = SD_MMC.open("/colony/lilguys");
@@ -333,7 +333,7 @@ bool LilGuyRegistry::_load_living_records() {
     return true;
 }
 
-bool LilGuyRegistry::_load_brood_records() {
+bool ConkerRegistry::_load_brood_records() {
     _brood_count = 0;
     File root = SD_MMC.open("/colony/brood");
     if (!root || !root.isDirectory()) return true;  // no brood dir = fresh colony
@@ -387,7 +387,7 @@ bool LilGuyRegistry::_load_brood_records() {
 
 // ---- Corrupt file handling ----
 
-void LilGuyRegistry::_move_to_corrupt(const char* path, const char* subdir) {
+void ConkerRegistry::_move_to_corrupt(const char* path, const char* subdir) {
     char dest[128];
     const char* filename = strrchr(path, '/');
     if (!filename) return;
@@ -398,7 +398,7 @@ void LilGuyRegistry::_move_to_corrupt(const char* path, const char* subdir) {
 
 // ---- Clean stale .tmp files from previous interrupted writes ----
 
-void LilGuyRegistry::_clean_tmp_files() {
+void ConkerRegistry::_clean_tmp_files() {
     // Walk lilguys shards
     File root = SD_MMC.open("/colony/lilguys");
     if (root && root.isDirectory()) {
@@ -428,7 +428,7 @@ void LilGuyRegistry::_clean_tmp_files() {
 
 // ---- Public API ----
 
-PersistenceState LilGuyRegistry::init() {
+PersistenceState ConkerRegistry::init() {
     if (sd_card_state() != SD_OK) {
         Serial.println("[persist] no SD card — degraded mode");
         _state = PERSIST_DEGRADED;
@@ -461,14 +461,14 @@ PersistenceState LilGuyRegistry::init() {
     return _state;
 }
 
-uint32_t LilGuyRegistry::allocate_id() {
+uint32_t ConkerRegistry::allocate_id() {
     uint32_t id = _manifest.next_lilguy_id++;
     // Persist manifest immediately to avoid ID reuse on crash
     if (_state == PERSIST_OK) _save_manifest();
     return id;
 }
 
-bool LilGuyRegistry::create(const IdentityRecord& rec) {
+bool ConkerRegistry::create(const IdentityRecord& rec) {
     if (_alive_count >= MAX_ALIVE) return false;
     _alive[_alive_count] = rec;
     _alive[_alive_count].dirty = false;
@@ -478,7 +478,7 @@ bool LilGuyRegistry::create(const IdentityRecord& rec) {
     return true;
 }
 
-bool LilGuyRegistry::update(uint32_t id, const IdentityRecord& rec) {
+bool ConkerRegistry::update(uint32_t id, const IdentityRecord& rec) {
     for (int i = 0; i < _alive_count; i++) {
         if (_alive[i].id == id) {
             _alive[i] = rec;
@@ -489,14 +489,14 @@ bool LilGuyRegistry::update(uint32_t id, const IdentityRecord& rec) {
     return false;
 }
 
-IdentityRecord* LilGuyRegistry::get(uint32_t id) {
+IdentityRecord* ConkerRegistry::get(uint32_t id) {
     for (int i = 0; i < _alive_count; i++) {
         if (_alive[i].id == id) return &_alive[i];
     }
     return nullptr;
 }
 
-void LilGuyRegistry::mark_dead(uint32_t id, uint32_t died_unix) {
+void ConkerRegistry::mark_dead(uint32_t id, uint32_t died_unix) {
     for (int i = 0; i < _alive_count; i++) {
         if (_alive[i].id == id) {
             _alive[i].died_unix = died_unix;
@@ -511,7 +511,7 @@ void LilGuyRegistry::mark_dead(uint32_t id, uint32_t died_unix) {
     }
 }
 
-bool LilGuyRegistry::create_brood(const BroodRecord& rec) {
+bool ConkerRegistry::create_brood(const BroodRecord& rec) {
     if (_brood_count >= MAX_BROOD_CACHE) return false;
     _brood[_brood_count] = rec;
     _brood_count++;
@@ -520,14 +520,14 @@ bool LilGuyRegistry::create_brood(const BroodRecord& rec) {
     return true;
 }
 
-BroodRecord* LilGuyRegistry::get_brood(uint32_t id) {
+BroodRecord* ConkerRegistry::get_brood(uint32_t id) {
     for (int i = 0; i < _brood_count; i++) {
         if (_brood[i].id == id) return &_brood[i];
     }
     return nullptr;
 }
 
-void LilGuyRegistry::remove_brood(uint32_t id) {
+void ConkerRegistry::remove_brood(uint32_t id) {
     for (int i = 0; i < _brood_count; i++) {
         if (_brood[i].id == id) {
             if (_state == PERSIST_OK) _delete_brood_file(id);
@@ -538,7 +538,7 @@ void LilGuyRegistry::remove_brood(uint32_t id) {
     }
 }
 
-void LilGuyRegistry::flush() {
+void ConkerRegistry::flush() {
     if (_state != PERSIST_OK) return;
     if (sd_card_state() != SD_OK) return;
 
@@ -559,7 +559,7 @@ void LilGuyRegistry::flush() {
         Serial.printf("[persist] flushed %d records\r\n", flushed);
 }
 
-void LilGuyRegistry::flush_manifest() {
+void ConkerRegistry::flush_manifest() {
     if (_state != PERSIST_OK) return;
     if (sd_card_state() != SD_OK) return;
     _save_manifest();

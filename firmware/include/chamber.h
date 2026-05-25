@@ -4,7 +4,7 @@
 #include "colony_state.h"
 #include "pheromone_grid.h"
 #include "brood.h"
-#include "lil_guy.h"
+#include "conker.h"
 #include "queen.h"
 #include "events.h"
 
@@ -23,8 +23,8 @@ public:
     Queen  queen_obj;
     bool   has_queen = false;
 
-    LilGuy lil_guys[Cfg::MAX_LIL_GUYS];
-    int    lil_guy_count = 0;
+    Conker conkers[Cfg::MAX_CONKERS];
+    int    conker_count = 0;
 
     Brood  brood[Cfg::MAX_BROOD];
     int    brood_count = 0;
@@ -73,16 +73,16 @@ public:
     void deposit_home(int x, int y, float amount);
     void deposit_food(int x, int y, float amount);
 
-    // ---- brood/lil_guy pool management ----
-    void add_lil_guy(int8_t px, int8_t py, Role c, bool pioneer);
-    void remove_lil_guy(int idx);
+    // ---- brood/conker pool management ----
+    void add_conker(int8_t px, int8_t py, Role c, bool pioneer);
+    void remove_conker(int idx);
     void add_brood(int8_t px, int8_t py, Role c);
     void remove_brood(int idx);
 
     // ---- brood counts ----
     void count_brood(uint16_t& eggs, uint16_t& larvae, uint16_t& pupae) const;
 
-    // Used by LilGuy for food pile checks
+    // Used by Conker for food pile checks
     int  _food_pile_index(int x, int y) const;
 
     // Used by Coordinator for edge crossing detection

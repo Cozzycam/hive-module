@@ -25,11 +25,11 @@ enum PersistenceState : uint8_t {
     PERSIST_ERROR    = 3,   // SD failures — writes suspended, will retry
 };
 
-// ---- Identity record (per LilGuy, on disk + RAM cache) ----
+// ---- Identity record (per Conker, on disk + RAM cache) ----
 
 struct IdentityRecord {
     uint32_t id           = 0;
-    char     name[20]     = {};       // "LilGuy_<id>" placeholder (Phase 4: wordlist)
+    char     name[20]     = {};       // "Conker_<id>" placeholder (Phase 4: wordlist)
     uint8_t  role         = 0;        // Role enum
     bool     is_pioneer   = false;
     uint32_t born_unix    = 0;        // wall-clock birth time
@@ -102,7 +102,7 @@ struct ColonyManifest {
 
 // ---- Registry (owns RAM cache + disk I/O) ----
 
-class LilGuyRegistry {
+class ConkerRegistry {
 public:
     // Initialize — mount SD, load manifest, populate RAM cache.
     // Returns the PersistenceState after init.
@@ -147,7 +147,7 @@ private:
     ColonyManifest   _manifest;
 
     // RAM caches — allocated on PSRAM
-    static constexpr int MAX_ALIVE = 300;   // headroom above MAX_LIL_GUYS
+    static constexpr int MAX_ALIVE = 300;   // headroom above MAX_CONKERS
     static constexpr int MAX_BROOD_CACHE = 150;
     IdentityRecord  _alive[MAX_ALIVE];
     int             _alive_count = 0;

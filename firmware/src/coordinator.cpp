@@ -131,7 +131,7 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
 
 void Coordinator::_aggregate_colony_stats() {
     // Local population (departing workers are still in chamber, counted naturally)
-    uint16_t local_pop = chamber.lil_guy_count;
+    uint16_t local_pop = chamber.conker_count;
 
     // Queen: add remote satellite populations
     uint16_t remote_pop = 0;
@@ -153,13 +153,13 @@ void Coordinator::_aggregate_colony_stats() {
     }
 
     int gatherers = 0;
-    for (int i = 0; i < chamber.lil_guy_count; i++) {
-        auto& w = chamber.lil_guys[i];
+    for (int i = 0; i < chamber.conker_count; i++) {
+        auto& w = chamber.conkers[i];
         if (w.state == STATE_TO_FOOD
                 || (w.state == STATE_TO_HOME && w.food_carried > 0))
             gatherers++;
     }
-    // Departing workers are still in chamber.lil_guys, counted naturally above
+    // Departing workers are still in chamber.conkers, counted naturally above
     colony.gatherer_count = gatherers;
 
     uint16_t eggs, larvae, pupae;
@@ -187,7 +187,7 @@ void Coordinator::_broadcast_population() {
     PopSyncMessage msg;
     msg.msg_type   = TOPO_POP_SYNC;
     msg.sender_id  = topology_my_id();
-    msg.population = chamber.lil_guy_count;
+    msg.population = chamber.conker_count;
 
     for (int f = 0; f < FACE_COUNT; f++) {
         if (chamber.entries[f] >= 0) {
@@ -411,11 +411,11 @@ void Coordinator::_sync_topology_to_chamber() {
             // Only clear workers if the queen rebooted (new boot_id).
             // A simple reconnect after radio glitch keeps workers alive.
             if (ann.boot_id != _last_queen_boot_id && _last_queen_boot_id != 0) {
-                if (chamber.lil_guy_count > 0 || chamber.brood_count > 0) {
+                if (chamber.conker_count > 0 || chamber.brood_count > 0) {
                     Serial.printf("[coord] queen rebooted (boot_id 0x%04X -> 0x%04X) -- clearing %d workers + %d brood\r\n",
                         _last_queen_boot_id, ann.boot_id,
-                        chamber.lil_guy_count, chamber.brood_count);
-                    chamber.lil_guy_count = 0;
+                        chamber.conker_count, chamber.brood_count);
+                    chamber.conker_count = 0;
                     chamber.brood_count = 0;
                     chamber.food_pile_count = 0;
                     colony.population = 0;
@@ -432,8 +432,8 @@ void Coordinator::_sync_topology_to_chamber() {
 void Coordinator::_check_edge_crossings(EventBus& bus, uint32_t tick_num) {
 #ifdef ARDUINO
     // Scan workers for edge crossings — mark as departing (sprite vanishes, still counted here)
-    for (int i = 0; i < chamber.lil_guy_count; i++) {
-        LilGuy& w = chamber.lil_guys[i];
+    for (int i = 0; i < chamber.conker_count; i++) {
+        Conker& w = chamber.conkers[i];
 
         if (!w.alive || w.departing) continue;
 
@@ -462,11 +462,11 @@ void Coordinator::_check_edge_crossings(EventBus& bus, uint32_t tick_num) {
         bool more = true;
         while (more) {
             more = false;
-            for (int j = 0; j < chamber.lil_guy_count; j++) {
-                if (chamber.lil_guys[j].alive && chamber.lil_guys[j].stack_on == cur) {
-                    chamber.lil_guys[j].departing = true;
-                    chamber.lil_guys[j].depart_at_ms = w.depart_at_ms;
-                    chamber.lil_guys[j].depart_face = w.depart_face;
+            for (int j = 0; j < chamber.conker_count; j++) {
+                if (chamber.conkers[j].alive && chamber.conkers[j].stack_on == cur) {
+                    chamber.conkers[j].departing = true;
+                    chamber.conkers[j].depart_at_ms = w.depart_at_ms;
+                    chamber.conkers[j].depart_face = w.depart_face;
                     cur = j;
                     more = true;
                     break;
@@ -488,8 +488,8 @@ void Coordinator::_service_departures(EventBus& bus, uint32_t tick_num) {
     uint32_t now = millis();
 
     // Find departing workers whose delay has elapsed — send them out
-    for (int i = chamber.lil_guy_count - 1; i >= 0; i--) {
-        LilGuy& w = chamber.lil_guys[i];
+    for (int i = chamber.conker_count - 1; i >= 0; i--) {
+        Conker& w = chamber.conkers[i];
         if (!w.departing || w.stack_on >= 0) continue;  // only process bottom of stack
         if (now < w.depart_at_ms) continue;
 
@@ -501,9 +501,9 @@ void Coordinator::_service_departures(EventBus& bus, uint32_t tick_num) {
             w.departing = false;
             w.depart_face = -1;
             // Unmark stacked workers too
-            for (int j = 0; j < chamber.lil_guy_count; j++) {
-                if (chamber.lil_guys[j].departing && chamber.lil_guys[j].depart_face == face)
-                    chamber.lil_guys[j].departing = false;
+            for (int j = 0; j < chamber.conker_count; j++) {
+                if (chamber.conkers[j].departing && chamber.conkers[j].depart_face == face)
+                    chamber.conkers[j].departing = false;
             }
             continue;
         }
@@ -519,8 +519,8 @@ void Coordinator::_service_departures(EventBus& bus, uint32_t tick_num) {
             bool more = true;
             while (more && stack_count < 16) {
                 more = false;
-                for (int j = 0; j < chamber.lil_guy_count; j++) {
-                    if (chamber.lil_guys[j].alive && chamber.lil_guys[j].stack_on == cur) {
+                for (int j = 0; j < chamber.conker_count; j++) {
+                    if (chamber.conkers[j].alive && chamber.conkers[j].stack_on == cur) {
                         stack[stack_count++] = j;
                         cur = j;
                         more = true;
@@ -545,8 +545,8 @@ void Coordinator::_service_departures(EventBus& bus, uint32_t tick_num) {
         // Serialize, store in pending out, and send
         int sent_count = 0;
         for (int s = 0; s < stack_count; s++) {
-            LilGuyTransfer payload;
-            lil_guy_to_transfer(chamber.lil_guys[stack[s]], payload,
+            ConkerTransfer payload;
+            conker_to_transfer(chamber.conkers[stack[s]], payload,
                                 TOPO_HANDOFF, topology_my_id(), arrival_face, entry_offset);
             payload.seq = _handoff_seq++;
 
@@ -590,7 +590,7 @@ void Coordinator::_service_departures(EventBus& bus, uint32_t tick_num) {
             je.tick = tick_num;
             je.unix_time = g_tod.unix_time;
             je.type = JEVT_CHAMBER_CROSSING;
-            je.lilguy_id = chamber.lil_guys[stack[s]].id;
+            je.lilguy_id = chamber.conkers[stack[s]].id;
             je.crossing.from_module = topology_my_id();
             je.crossing.to_module = nb.module_id;
             je.crossing.face = static_cast<uint8_t>(face);
@@ -602,14 +602,14 @@ void Coordinator::_service_departures(EventBus& bus, uint32_t tick_num) {
             for (int b = a + 1; b < sent_count; b++)
                 if (stack[a] < stack[b]) { int t = stack[a]; stack[a] = stack[b]; stack[b] = t; }
         for (int s = 0; s < sent_count; s++)
-            chamber.remove_lil_guy(stack[s]);
+            chamber.remove_conker(stack[s]);
     }
 #endif
 }
 
-void Coordinator::_place_arrival(const LilGuyTransfer& t, EventBus& bus,
+void Coordinator::_place_arrival(const ConkerTransfer& t, EventBus& bus,
                                   uint32_t tick_num, int* first_idx) {
-    if (chamber.lil_guy_count >= Cfg::MAX_LIL_GUYS) return;
+    if (chamber.conker_count >= Cfg::MAX_CONKERS) return;
 
     uint8_t af = t.arrival_face;
     if (af >= FACE_COUNT) return;
@@ -622,17 +622,17 @@ void Coordinator::_place_arrival(const LilGuyTransfer& t, EventBus& bus,
     float fdx = static_cast<float>(-Cfg::FACE_DX[af]);
     float fdy = static_cast<float>(-Cfg::FACE_DY[af]);
 
-    int idx = chamber.lil_guy_count;
-    chamber.lil_guy_count++;
-    LilGuy& w = chamber.lil_guys[idx];
-    transfer_to_lil_guy(t, w, ex, ey, fdx, fdy);
+    int idx = chamber.conker_count;
+    chamber.conker_count++;
+    Conker& w = chamber.conkers[idx];
+    transfer_to_conker(t, w, ex, ey, fdx, fdy);
     w.arrival_ms = millis();
 
     // Auto-stack: multiple arrivals on the same face in the same tick
     if (first_idx[af] >= 0) {
         int top = first_idx[af];
         for (int k = first_idx[af] + 1; k < idx; k++) {
-            if (chamber.lil_guys[k].stack_on == top) top = k;
+            if (chamber.conkers[k].stack_on == top) top = k;
         }
         w.stack_on = top;
         w.stack_hop_remaining = 6;
@@ -671,8 +671,8 @@ void Coordinator::_receive_handoffs(EventBus& bus, uint32_t tick_num) {
     int first_idx[FACE_COUNT] = {-1, -1, -1, -1};
 
     for (int h = 0; h < n; h++) {
-        if (pending[h].len < (int)sizeof(LilGuyTransfer)) continue;
-        const LilGuyTransfer& t = *reinterpret_cast<const LilGuyTransfer*>(pending[h].data);
+        if (pending[h].len < (int)sizeof(ConkerTransfer)) continue;
+        const ConkerTransfer& t = *reinterpret_cast<const ConkerTransfer*>(pending[h].data);
         if (t.msg_type != TOPO_HANDOFF) continue;
         if (t.arrival_face >= FACE_COUNT) continue;
 
@@ -698,7 +698,7 @@ void Coordinator::_receive_handoffs(EventBus& bus, uint32_t tick_num) {
         }
 
         // Place worker immediately (visual delay is on sender side)
-        if (chamber.lil_guy_count >= Cfg::MAX_LIL_GUYS) {
+        if (chamber.conker_count >= Cfg::MAX_CONKERS) {
             g_handoffs_dropped++;
             Serial.println("[handoff] chamber full -- dropped");
             continue;  // don't ACK — sender will retry then restore
@@ -750,7 +750,7 @@ void Coordinator::_service_pending_handoffs() {
             // Resend
             topology_send_to_face(static_cast<Face>(_pending_out[i].face),
                                   (const uint8_t*)&_pending_out[i].payload,
-                                  sizeof(LilGuyTransfer));
+                                  sizeof(ConkerTransfer));
             _pending_out[i].retries++;
             _pending_out[i].sent_ms = now;
         } else {
@@ -761,10 +761,10 @@ void Coordinator::_service_pending_handoffs() {
             float fdx = static_cast<float>(-Cfg::FACE_DX[f]);
             float fdy = static_cast<float>(-Cfg::FACE_DY[f]);
 
-            if (chamber.lil_guy_count < Cfg::MAX_LIL_GUYS) {
-                int idx = chamber.lil_guy_count++;
-                LilGuy& w = chamber.lil_guys[idx];
-                transfer_to_lil_guy(_pending_out[i].payload, w, ex, ey, fdx, fdy);
+            if (chamber.conker_count < Cfg::MAX_CONKERS) {
+                int idx = chamber.conker_count++;
+                Conker& w = chamber.conkers[idx];
+                transfer_to_conker(_pending_out[i].payload, w, ex, ey, fdx, fdy);
                 w.arrival_face = static_cast<int8_t>(f);  // prevent immediate re-exit
                 w.arrival_ms = millis();
                 Serial.printf("[handoff] TIMEOUT -- restoring id=%lu\r\n",
@@ -833,22 +833,22 @@ void Coordinator::_persist_tick(uint32_t tick_num) {
     _persist_process_deaths();
 
     // Assign IDs to workers that somehow have id==0 (handoff from old firmware, etc.)
-    for (int i = 0; i < chamber.lil_guy_count; i++) {
-        if (chamber.lil_guys[i].id == 0) {
-            chamber.lil_guys[i].id = registry.allocate_id();
+    for (int i = 0; i < chamber.conker_count; i++) {
+        if (chamber.conkers[i].id == 0) {
+            chamber.conkers[i].id = registry.allocate_id();
             // Create a record for this worker
             IdentityRecord rec;
-            rec.id = chamber.lil_guys[i].id;
+            rec.id = chamber.conkers[i].id;
             name_from_id(rec.id, rec.name, sizeof(rec.name));
             name_from_id(rec.id, rec.name, sizeof(rec.name));
-            rec.role = chamber.lil_guys[i].role;
-            rec.is_pioneer = chamber.lil_guys[i].is_pioneer;
+            rec.role = chamber.conkers[i].role;
+            rec.is_pioneer = chamber.conkers[i].is_pioneer;
             rec.born_unix = g_tod.unix_time;
-            rec.lifespan_ms = chamber.lil_guys[i].lifespan_ms;
-            memcpy(rec.personality, chamber.lil_guys[i].personality, sizeof(rec.personality));
-            rec.last_x = chamber.lil_guys[i].x;
-            rec.last_y = chamber.lil_guys[i].y;
-            rec.last_state = chamber.lil_guys[i].state;
+            rec.lifespan_ms = chamber.conkers[i].lifespan_ms;
+            memcpy(rec.personality, chamber.conkers[i].personality, sizeof(rec.personality));
+            rec.last_x = chamber.conkers[i].x;
+            rec.last_y = chamber.conkers[i].y;
+            rec.last_state = chamber.conkers[i].state;
             registry.create(rec);
         }
     }
@@ -922,15 +922,15 @@ void Coordinator::_persist_process_hatches() {
         registry.remove_brood(id);
 
         // Find the worker with this ID and create its IdentityRecord
-        for (int i = 0; i < chamber.lil_guy_count; i++) {
-            if (chamber.lil_guys[i].id == id) {
+        for (int i = 0; i < chamber.conker_count; i++) {
+            if (chamber.conkers[i].id == id) {
                 // Personality inheritance from carer (0.7 random + 0.3 carer)
                 if (carer_id != 0) {
                     IdentityRecord* carer_rec = registry.get(carer_id);
                     if (carer_rec) {
                         for (int d = 0; d < PERS_COUNT; d++) {
-                            float random_part = chamber.lil_guys[i].personality[d];
-                            chamber.lil_guys[i].personality[d] =
+                            float random_part = chamber.conkers[i].personality[d];
+                            chamber.conkers[i].personality[d] =
                                 0.7f * random_part + 0.3f * carer_rec->personality[d];
                         }
                     }
@@ -941,15 +941,15 @@ void Coordinator::_persist_process_hatches() {
                 IdentityRecord rec;
                 rec.id = id;
                 name_from_id(id, rec.name, sizeof(rec.name));
-                rec.role = chamber.lil_guys[i].role;
-                rec.is_pioneer = chamber.lil_guys[i].is_pioneer;
+                rec.role = chamber.conkers[i].role;
+                rec.is_pioneer = chamber.conkers[i].is_pioneer;
                 rec.born_unix = g_tod.unix_time;
-                rec.lifespan_ms = chamber.lil_guys[i].lifespan_ms;
+                rec.lifespan_ms = chamber.conkers[i].lifespan_ms;
                 rec.tended_by = carer_id;
-                memcpy(rec.personality, chamber.lil_guys[i].personality, sizeof(rec.personality));
-                rec.last_x = chamber.lil_guys[i].x;
-                rec.last_y = chamber.lil_guys[i].y;
-                rec.last_state = chamber.lil_guys[i].state;
+                memcpy(rec.personality, chamber.conkers[i].personality, sizeof(rec.personality));
+                rec.last_x = chamber.conkers[i].x;
+                rec.last_y = chamber.conkers[i].y;
+                rec.last_state = chamber.conkers[i].state;
                 registry.create(rec);
 
                 // Journal: hatch event
@@ -958,8 +958,8 @@ void Coordinator::_persist_process_hatches() {
                 je.unix_time = g_tod.unix_time;
                 je.type = JEVT_HATCH;
                 je.lilguy_id = id;
-                je.hatch.role = chamber.lil_guys[i].role;
-                je.hatch.is_pioneer = chamber.lil_guys[i].is_pioneer;
+                je.hatch.role = chamber.conkers[i].role;
+                je.hatch.is_pioneer = chamber.conkers[i].is_pioneer;
                 je.hatch.from_brood_id = id;
                 journal.emit(je);
                 break;
@@ -991,8 +991,8 @@ void Coordinator::_persist_update_positions() {
     // Write positions into manifest's positions array (RAM only, flushed with manifest)
     ColonyManifest& m = registry.manifest();
     m.pos_count = 0;
-    for (int i = 0; i < chamber.lil_guy_count && m.pos_count < ColonyManifest::MAX_POS; i++) {
-        LilGuy& w = chamber.lil_guys[i];
+    for (int i = 0; i < chamber.conker_count && m.pos_count < ColonyManifest::MAX_POS; i++) {
+        Conker& w = chamber.conkers[i];
         if (w.id == 0) continue;
         m.positions[m.pos_count++] = {w.id, w.x, w.y};
     }
@@ -1054,8 +1054,8 @@ void Coordinator::_persist_migrate_live_colony() {
     }
 
     // Migrate all living workers
-    for (int i = 0; i < chamber.lil_guy_count; i++) {
-        LilGuy& w = chamber.lil_guys[i];
+    for (int i = 0; i < chamber.conker_count; i++) {
+        Conker& w = chamber.conkers[i];
         w.id = registry.allocate_id();
         IdentityRecord rec;
         rec.id = w.id;
@@ -1102,7 +1102,7 @@ void Coordinator::_persist_migrate_live_colony() {
     journal.flush();
 
     Serial.printf("[persist] migration complete — %d workers, %d brood, colony_id=%s\r\n",
-                  chamber.lil_guy_count, chamber.brood_count, m.colony_id);
+                  chamber.conker_count, chamber.brood_count, m.colony_id);
 }
 
 void Coordinator::_persist_restore_from_disk() {
@@ -1132,11 +1132,11 @@ void Coordinator::_persist_restore_from_disk() {
     // Restore workers from living records
     IdentityRecord* recs = registry.living_records();
     int rec_count = registry.living_count();
-    chamber.lil_guy_count = 0;
+    chamber.conker_count = 0;
 
-    for (int i = 0; i < rec_count && chamber.lil_guy_count < Cfg::MAX_LIL_GUYS; i++) {
+    for (int i = 0; i < rec_count && chamber.conker_count < Cfg::MAX_CONKERS; i++) {
         IdentityRecord& r = recs[i];
-        int idx = chamber.lil_guy_count;
+        int idx = chamber.conker_count;
 
         // Find position from manifest's live positions array
         float pos_x = r.last_x, pos_y = r.last_y;
@@ -1148,30 +1148,30 @@ void Coordinator::_persist_restore_from_disk() {
             }
         }
 
-        chamber.lil_guys[idx].init(
+        chamber.conkers[idx].init(
             static_cast<int8_t>(pos_x),
             static_cast<int8_t>(pos_y),
             static_cast<Role>(r.role),
             r.is_pioneer
         );
-        chamber.lil_guys[idx].id = r.id;
+        chamber.conkers[idx].id = r.id;
         // Restore float position
-        chamber.lil_guys[idx].x = pos_x;
-        chamber.lil_guys[idx].y = pos_y;
-        chamber.lil_guys[idx].prev_x = pos_x;
-        chamber.lil_guys[idx].prev_y = pos_y;
+        chamber.conkers[idx].x = pos_x;
+        chamber.conkers[idx].y = pos_y;
+        chamber.conkers[idx].prev_x = pos_x;
+        chamber.conkers[idx].prev_y = pos_y;
         // Restore lifespan (init randomizes it — override with persisted value)
         if (r.lifespan_ms > 0)
-            chamber.lil_guys[idx].lifespan_ms = r.lifespan_ms;
+            chamber.conkers[idx].lifespan_ms = r.lifespan_ms;
         // Restore personality (init randomizes it — override with persisted value)
-        memcpy(chamber.lil_guys[idx].personality, r.personality,
-               sizeof(chamber.lil_guys[idx].personality));
+        memcpy(chamber.conkers[idx].personality, r.personality,
+               sizeof(chamber.conkers[idx].personality));
         // born_at_ms: approximate from born_unix vs current time
         if (r.born_unix > 0 && g_tod.unix_time > r.born_unix) {
             uint32_t age_secs = g_tod.unix_time - r.born_unix;
-            chamber.lil_guys[idx].born_at_ms = millis() - (age_secs * 1000);
+            chamber.conkers[idx].born_at_ms = millis() - (age_secs * 1000);
         }
-        chamber.lil_guy_count++;
+        chamber.conker_count++;
     }
 
     // Restore brood
@@ -1192,10 +1192,10 @@ void Coordinator::_persist_restore_from_disk() {
         chamber.brood_count++;
     }
 
-    colony.population = chamber.lil_guy_count;
+    colony.population = chamber.conker_count;
 
     Serial.printf("[persist] restored %d workers, %d brood, food=%.0f\r\n",
-                  chamber.lil_guy_count, chamber.brood_count, colony.food_store);
+                  chamber.conker_count, chamber.brood_count, colony.food_store);
 }
 
 // ================================================================
@@ -1230,12 +1230,12 @@ void Coordinator::_bond_tick(uint32_t tick_num) {
 
 void Coordinator::_bond_detect_proximity(uint32_t tick_num) {
     // Scan for worker pairs within 3 cells that are both active (non-idle)
-    for (int i = 0; i < chamber.lil_guy_count; i++) {
-        LilGuy& a = chamber.lil_guys[i];
+    for (int i = 0; i < chamber.conker_count; i++) {
+        Conker& a = chamber.conkers[i];
         if (a.id == 0 || a.departing || !a.alive) continue;
 
-        for (int j = i + 1; j < chamber.lil_guy_count; j++) {
-            LilGuy& b = chamber.lil_guys[j];
+        for (int j = i + 1; j < chamber.conker_count; j++) {
+            Conker& b = chamber.conkers[j];
             if (b.id == 0 || b.departing || !b.alive) continue;
 
             int dist = abs(a.cell_x() - b.cell_x()) + abs(a.cell_y() - b.cell_y());
@@ -1370,8 +1370,8 @@ void Coordinator::_trait_tick(uint32_t tick_num) {
     if (tick_num - _trait_check_tick < 500) return;
     _trait_check_tick = tick_num;
 
-    for (int i = 0; i < chamber.lil_guy_count; i++) {
-        LilGuy& w = chamber.lil_guys[i];
+    for (int i = 0; i < chamber.conker_count; i++) {
+        Conker& w = chamber.conkers[i];
         if (w.id == 0 || !w.alive) continue;
 
         IdentityRecord* rec = registry.get(w.id);
@@ -1450,7 +1450,7 @@ void Coordinator::challenge_start(uint8_t type, float severity, uint32_t tick_nu
     // We use the survival trait bit as a "participating" marker;
     // on end, if still alive, they keep it (survived). On death during, it's cleared.
     Serial.printf("[challenge] started type=%d severity=%.1f, %d participants\r\n",
-                  type, severity, chamber.lil_guy_count);
+                  type, severity, chamber.conker_count);
 }
 
 void Coordinator::challenge_end(uint32_t tick_num) {
@@ -1477,8 +1477,8 @@ void Coordinator::challenge_end(uint32_t tick_num) {
     if (survival_bit == 0) return;
 
     int survivors = 0;
-    for (int i = 0; i < chamber.lil_guy_count; i++) {
-        LilGuy& w = chamber.lil_guys[i];
+    for (int i = 0; i < chamber.conker_count; i++) {
+        Conker& w = chamber.conkers[i];
         if (w.id == 0 || !w.alive) continue;
         IdentityRecord* rec = registry.get(w.id);
         if (!rec) continue;

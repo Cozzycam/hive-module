@@ -17,7 +17,7 @@ import math
 
 import config as C
 from sim.queen import Queen
-from sim.lil_guy import LilGuy, TO_FOOD, TO_HOME
+from sim.conker import Conker, TO_FOOD, TO_HOME
 from sim import brood as brood_mod
 from sim import events
 from sim.pheromones import PheromoneMap
@@ -43,7 +43,7 @@ class Chamber:
             self.queen = Queen(qx, qy)
 
         self.brood   = []       # list[Brood]
-        self.workers = []       # list[LilGuy]
+        self.workers = []       # list[Conker]
 
         # face -> neighbour module_id (None = no neighbour attached).
         self.entries = {face: None for face in C.ENTRY_POINTS}
@@ -254,7 +254,7 @@ class Chamber:
             is_pioneer = (self.colony.total_workers_born
                           < C.QUEEN_FOUNDING_EGG_CAP)
             self.workers.append(
-                LilGuy(b.x, b.y, role=b.role, is_pioneer=is_pioneer),
+                Conker(b.x, b.y, role=b.role, is_pioneer=is_pioneer),
             )
             self.colony.total_workers_born += 1
             self._emit(events.young_hatched(
@@ -308,7 +308,7 @@ class Chamber:
                 cx = int(math.floor(w.x))
                 cy = int(math.floor(w.y))
                 self.add_food(cx, cy, w.food_carried)
-            self._emit(events.lil_guy_died(self._tick))
+            self._emit(events.conker_died(self._tick))
             self.workers.remove(w)
 
         # Hand crossings off to the coordinator

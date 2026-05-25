@@ -143,7 +143,7 @@ private:
 
     // Z-sorted sprite draw lists (static buffers, reused each frame)
     static constexpr int MAX_FLOOR_SPRITES = Cfg::MAX_BROOD + Cfg::MAX_FOOD_PILES;
-    static constexpr int MAX_AGENT_SPRITES = Cfg::MAX_LIL_GUYS + 1; // +1 queen
+    static constexpr int MAX_AGENT_SPRITES = Cfg::MAX_CONKERS + 1; // +1 queen
     SpriteDraw _floor_sprites[MAX_FLOOR_SPRITES];
     int _floor_sprite_count = 0;
     SpriteDraw _agent_sprites[MAX_AGENT_SPRITES];

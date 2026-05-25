@@ -11,7 +11,7 @@ import config as C
 from rendering import palette as P
 from rendering import sprites as S
 from sim import brood as brood_mod
-from sim.lil_guy import TEND_BROOD, TEND_QUEEN, TO_HOME
+from sim.conker import TEND_BROOD, TEND_QUEEN, TO_HOME
 
 
 # Pre-baked pygame Surfaces for each sprite, built lazily.

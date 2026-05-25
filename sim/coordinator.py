@@ -14,7 +14,7 @@ import math
 
 from sim.colony import Colony
 from sim.chamber import Chamber, KIND_CHAMBER
-from sim.lil_guy import TO_FOOD, TO_HOME
+from sim.conker import TO_FOOD, TO_HOME
 from sim import protocol
 from sim import events
 from sim.events import EventBus
@@ -138,7 +138,7 @@ class Coordinator:
 
     # ---- worker handoff across active edges ----
 
-    def handoff(self, lil_guy, from_id, to_id, face):
+    def handoff(self, conker, from_id, to_id, face):
         """Move worker across a chamber boundary.
 
         Key design: the worker's state (TO_FOOD / TO_HOME), food_carried,
@@ -171,8 +171,8 @@ class Coordinator:
             return False
         self.event_bus.emit(events.handoff_outgoing(
             self.tick_count,
-            {'role': lil_guy.role, 'food': lil_guy.food_carried,
-             'state': lil_guy.state, 'from': from_id, 'to': to_id}))
+            {'role': conker.role, 'food': conker.food_carried,
+             'state': conker.state, 'from': from_id, 'to': to_id}))
         dest = self.chambers[to_id]
         opp = C.FACE_OPPOSITE[face]
         ex, ey = C.ENTRY_POINTS[opp]
@@ -183,29 +183,29 @@ class Coordinator:
         target_cy = ey - drow
         if not dest.in_bounds(target_cx, target_cy):
             target_cx, target_cy = ex, ey
-        lil_guy.x = float(target_cx) + 0.5
-        lil_guy.y = float(target_cy) + 0.5
+        conker.x = float(target_cx) + 0.5
+        conker.y = float(target_cy) + 0.5
 
         # Reset interpolation.
-        lil_guy.prev_x = lil_guy.x
-        lil_guy.prev_y = lil_guy.y
+        conker.prev_x = conker.x
+        conker.prev_y = conker.y
 
         # Face inward — the negative of the outward-pointing delta.
-        lil_guy.facing_dx = float(-dcol)
-        lil_guy.facing_dy = float(-drow)
-        lil_guy.last_dx   = float(-dcol)
-        lil_guy.last_dy   = float(-drow)
+        conker.facing_dx = float(-dcol)
+        conker.facing_dy = float(-drow)
+        conker.last_dx   = float(-dcol)
+        conker.last_dy   = float(-drow)
 
         # Clear stale target (was in old chamber).
-        lil_guy.target = None
-        lil_guy.target_cell = None
-        lil_guy.last_cell = (target_cx, target_cy)
+        conker.target = None
+        conker.target_cell = None
+        conker.last_cell = (target_cx, target_cy)
 
         # State, food_carried, steps_walked are PRESERVED.
         # The worker continues its mission in the new chamber.
         # chamber_steps resets so the worker explores the new chamber
         # before seeking exits.
-        lil_guy.chamber_steps = 0
+        conker.chamber_steps = 0
 
         # Fill the handoff gap so the gradient is continuous.
         # Goes through dest.deposit_home/food (not pheromones.*
@@ -218,22 +218,22 @@ class Coordinator:
         # without the -1 bias, the handoff cell sits a few ticks
         # older than its neighbour inward, and decay alone is
         # enough to turn it back into a local-minimum valley.
-        effective_steps = max(0, lil_guy.steps_walked - 1)
+        effective_steps = max(0, conker.steps_walked - 1)
         intensity = C.BASE_MARKER_INTENSITY * math.exp(
             -C.MARKER_STEP_DECAY * effective_steps
         )
-        dep_cx = int(math.floor(lil_guy.x))
-        dep_cy = int(math.floor(lil_guy.y))
-        if lil_guy.state == TO_HOME and lil_guy.food_carried > 0:
+        dep_cx = int(math.floor(conker.x))
+        dep_cy = int(math.floor(conker.y))
+        if conker.state == TO_HOME and conker.food_carried > 0:
             dest.deposit_food(dep_cx, dep_cy, intensity)
-        elif lil_guy.state == TO_FOOD:
+        elif conker.state == TO_FOOD:
             dest.deposit_home(dep_cx, dep_cy, intensity)
 
-        dest.workers.append(lil_guy)
+        dest.workers.append(conker)
         self.event_bus.emit(events.handoff_incoming(
             self.tick_count,
-            {'role': lil_guy.role, 'food': lil_guy.food_carried,
-             'state': lil_guy.state, 'from': from_id, 'to': to_id}))
+            {'role': conker.role, 'food': conker.food_carried,
+             'state': conker.state, 'from': from_id, 'to': to_id}))
         return True
 
     # ---- layout ----

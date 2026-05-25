@@ -8,7 +8,7 @@
 
 void Chamber::init(ColonyState* col, bool with_queen) {
     colony = col;
-    lil_guy_count = 0;
+    conker_count = 0;
     brood_count = 0;
     food_pile_count = 0;
     food_delivery_signal = 0;
@@ -48,10 +48,10 @@ void Chamber::tick(float dt) {
             bool pioneer = colony->total_workers_born < Cfg::FOUNDING_EGG_COUNT;
             int8_t bx = brood[i].x, by = brood[i].y;
             uint32_t brood_id = brood[i].id;
-            add_lil_guy(bx, by, brood[i].role, pioneer);
+            add_conker(bx, by, brood[i].role, pioneer);
             // Transfer brood ID to newly-hatched worker
             if (brood_id != 0) {
-                lil_guys[lil_guy_count - 1].id = brood_id;
+                conkers[conker_count - 1].id = brood_id;
                 if (hatch_count < MAX_LIFECYCLE) {
                     hatch_ids[hatch_count] = brood_id;
                     hatch_tended_by[hatch_count] = brood[i].tended_by;
@@ -116,42 +116,42 @@ void Chamber::tick(float dt) {
     if (food_delivery_signal > 0) food_delivery_signal--;
 
     // Shuffle workers (Fisher-Yates), fixing stack_on and zoomie_target references
-    for (int i = lil_guy_count - 1; i > 0; i--) {
+    for (int i = conker_count - 1; i > 0; i--) {
         int j = g_rng.rand_int(0, i);
         if (i != j) {
-            LilGuy tmp = lil_guys[i]; lil_guys[i] = lil_guys[j]; lil_guys[j] = tmp;
+            Conker tmp = conkers[i]; conkers[i] = conkers[j]; conkers[j] = tmp;
             // Patch any stack_on / zoomie_target references that pointed to i or j
-            for (int k = 0; k < lil_guy_count; k++) {
-                if (lil_guys[k].stack_on == i)      lil_guys[k].stack_on = j;
-                else if (lil_guys[k].stack_on == j) lil_guys[k].stack_on = i;
-                if (lil_guys[k].zoomie_target == i)      lil_guys[k].zoomie_target = j;
-                else if (lil_guys[k].zoomie_target == j) lil_guys[k].zoomie_target = i;
+            for (int k = 0; k < conker_count; k++) {
+                if (conkers[k].stack_on == i)      conkers[k].stack_on = j;
+                else if (conkers[k].stack_on == j) conkers[k].stack_on = i;
+                if (conkers[k].zoomie_target == i)      conkers[k].zoomie_target = j;
+                else if (conkers[k].zoomie_target == j) conkers[k].zoomie_target = i;
             }
         }
     }
 
     // Save prev positions
-    for (int i = 0; i < lil_guy_count; i++) {
-        lil_guys[i].prev_x = lil_guys[i].x;
-        lil_guys[i].prev_y = lil_guys[i].y;
+    for (int i = 0; i < conker_count; i++) {
+        conkers[i].prev_x = conkers[i].x;
+        conkers[i].prev_y = conkers[i].y;
     }
 
     // Worker ticks + death
-    for (int i = lil_guy_count - 1; i >= 0; i--) {
-        if (lil_guys[i].departing) continue;  // frozen, waiting for transfer
-        lil_guys[i].tick(*this, dt);
-        if (!lil_guys[i].alive) {
+    for (int i = conker_count - 1; i >= 0; i--) {
+        if (conkers[i].departing) continue;  // frozen, waiting for transfer
+        conkers[i].tick(*this, dt);
+        if (!conkers[i].alive) {
             // Record death for persistence before removal
-            if (lil_guys[i].id != 0 && death_count < MAX_LIFECYCLE) {
-                uint8_t cause = (lil_guys[i].hunger >= Cfg::HUNGER_STARVE) ? 1 : 0;
-                deaths[death_count++] = {lil_guys[i].id, cause};
+            if (conkers[i].id != 0 && death_count < MAX_LIFECYCLE) {
+                uint8_t cause = (conkers[i].hunger >= Cfg::HUNGER_STARVE) ? 1 : 0;
+                deaths[death_count++] = {conkers[i].id, cause};
             }
-            if (lil_guys[i].food_carried > 0)
-                add_food(lil_guys[i].cell_x(), lil_guys[i].cell_y(),
-                         lil_guys[i].food_carried);
-            Event ev; ev.type = EVT_LIL_GUY_DIED; ev.tick = tick_num;
+            if (conkers[i].food_carried > 0)
+                add_food(conkers[i].cell_x(), conkers[i].cell_y(),
+                         conkers[i].food_carried);
+            Event ev; ev.type = EVT_CONKER_DIED; ev.tick = tick_num;
             emit(ev);
-            remove_lil_guy(i);
+            remove_conker(i);
         }
     }
 
@@ -161,21 +161,21 @@ void Chamber::tick(float dt) {
     _detect_proximity_interactions();
 
     // Validate stacks: off-screen collapse
-    for (int i = 0; i < lil_guy_count; i++) {
-        if (lil_guys[i].stack_on < 0) continue;
+    for (int i = 0; i < conker_count; i++) {
+        if (conkers[i].stack_on < 0) continue;
         // Compute approximate screen Y with stack offset
-        float screen_y = lil_guys[i].y * Cfg::CELL_SIZE;
-        int cur = lil_guys[i].stack_on;
+        float screen_y = conkers[i].y * Cfg::CELL_SIZE;
+        int cur = conkers[i].stack_on;
         while (cur >= 0) {
-            float s = (lil_guys[cur].role == ROLE_MAJOR) ? 4.6f
-                    : (lil_guys[cur].is_pioneer ? 2.3f : 3.2f);
+            float s = (conkers[cur].role == ROLE_MAJOR) ? 4.6f
+                    : (conkers[cur].is_pioneer ? 2.3f : 3.2f);
             screen_y -= static_cast<int>(10.0f * s + 0.5f) * 0.75f;
-            cur = lil_guys[cur].stack_on;
+            cur = conkers[cur].stack_on;
         }
         if (screen_y < 28.0f) {  // HUD_STRIP_H
-            lil_guys[i].stack_on = -1;
-            lil_guys[i].sleeping = false;
-            lil_guys[i].anim_type = LG_ANIM_NONE;
+            conkers[i].stack_on = -1;
+            conkers[i].sleeping = false;
+            conkers[i].anim_type = LG_ANIM_NONE;
         }
     }
 }
@@ -183,28 +183,28 @@ void Chamber::tick(float dt) {
 // ---- proximity interactions ----
 
 void Chamber::_detect_proximity_interactions() {
-    if (!event_bus || lil_guy_count < 2) return;
+    if (!event_bus || conker_count < 2) return;
 
     // Precompute which ants are part of a stack (rider or base)
-    static bool in_stack[Cfg::MAX_LIL_GUYS];
+    static bool in_stack[Cfg::MAX_CONKERS];
     memset(in_stack, 0, sizeof(in_stack));
-    for (int i = 0; i < lil_guy_count; i++) {
-        if (lil_guys[i].stack_on >= 0) {
+    for (int i = 0; i < conker_count; i++) {
+        if (conkers[i].stack_on >= 0) {
             in_stack[i] = true;                    // rider
-            in_stack[lil_guys[i].stack_on] = true; // base
+            in_stack[conkers[i].stack_on] = true; // base
         }
     }
 
     // Simple spatial hash: cell -> first worker index, chain via -1 sentinel.
     // For bounded memory, use a fixed grid array.
     static int16_t grid_head[Cfg::GRID_CELLS];
-    static int16_t grid_next[Cfg::MAX_LIL_GUYS];
+    static int16_t grid_next[Cfg::MAX_CONKERS];
     memset(grid_head, -1, sizeof(grid_head));
 
-    for (int i = 0; i < lil_guy_count; i++) {
-        if (!lil_guys[i].alive) continue;
-        int cx = lil_guys[i].cell_x();
-        int cy = lil_guys[i].cell_y();
+    for (int i = 0; i < conker_count; i++) {
+        if (!conkers[i].alive) continue;
+        int cx = conkers[i].cell_x();
+        int cy = conkers[i].cell_y();
         if (cx < 0 || cx >= Cfg::GRID_WIDTH || cy < 0 || cy >= Cfg::GRID_HEIGHT)
             continue;
         int idx = cy * Cfg::GRID_WIDTH + cx;
@@ -220,8 +220,8 @@ void Chamber::_detect_proximity_interactions() {
 
             // Helper: try interaction between a pair
             auto try_interact = [&](int ai, int bi) {
-                auto& a = lil_guys[ai];
-                auto& b = lil_guys[bi];
+                auto& a = conkers[ai];
+                auto& b = conkers[bi];
 
                 // Trail protection: don't interrupt foraging workers
                 bool a_on_job = (a.state == STATE_TO_FOOD)
@@ -265,9 +265,9 @@ void Chamber::_detect_proximity_interactions() {
                     // Try to recruit a third nearby idle lil guy
                     if (g_rng.rand_float() < Cfg::ZOOMIE_THIRD_CHANCE) {
                         int acx = a.cell_x(), acy = a.cell_y();
-                        for (int ci = 0; ci < lil_guy_count; ci++) {
+                        for (int ci = 0; ci < conker_count; ci++) {
                             if (ci == ai || ci == bi) continue;
-                            auto& c = lil_guys[ci];
+                            auto& c = conkers[ci];
                             if (!c.alive || c.state != STATE_IDLE || c.sleeping) continue;
                             if (in_stack[ci] || c.anim_remaining_ticks > 0) continue;
                             if (c.interaction_cooldown > 0 || c.zoomie_ticks > 0) continue;
@@ -357,8 +357,8 @@ void Chamber::_detect_proximity_interactions() {
                     auto top_of = [&](int idx) -> int {
                         for (;;) {
                             int found = -1;
-                            for (int j = 0; j < lil_guy_count; j++)
-                                if (lil_guys[j].alive && lil_guys[j].stack_on == idx)
+                            for (int j = 0; j < conker_count; j++)
+                                if (conkers[j].alive && conkers[j].stack_on == idx)
                                     { found = j; break; }
                             if (found < 0) return idx;
                             idx = found;
@@ -388,18 +388,18 @@ void Chamber::_detect_proximity_interactions() {
 
                     // Cycle check: ensure hopper isn't already below mount_on
                     bool cycle = false;
-                    for (int check = mount_on; check >= 0; check = lil_guys[check].stack_on)
+                    for (int check = mount_on; check >= 0; check = conkers[check].stack_on)
                         if (check == hopper_i) { cycle = true; break; }
                     if (cycle) return;
 
                     auto weight_of = [&](int idx) -> int {
-                        if (lil_guys[idx].is_pioneer) return Cfg::STACK_WEIGHT_PIONEER;
-                        return (lil_guys[idx].role == ROLE_MAJOR) ? Cfg::STACK_WEIGHT_MAJOR
+                        if (conkers[idx].is_pioneer) return Cfg::STACK_WEIGHT_PIONEER;
+                        return (conkers[idx].role == ROLE_MAJOR) ? Cfg::STACK_WEIGHT_MAJOR
                                                                    : Cfg::STACK_WEIGHT_MINOR;
                     };
 
                     // Mount first
-                    auto& hopper = lil_guys[hopper_i];
+                    auto& hopper = conkers[hopper_i];
                     hopper.stack_on = mount_on;
                     hopper.stack_hop_remaining = 12;
                     hopper.state = STATE_IDLE;
@@ -407,7 +407,7 @@ void Chamber::_detect_proximity_interactions() {
                     hopper.has_target_cell = false;
                     hopper.idle_ticks_remaining = g_rng.rand_int(60, 120);
                     hopper.interaction_cooldown = Cfg::INTERACTION_COOLDOWN_TICKS;
-                    lil_guys[mount_on].interaction_cooldown = Cfg::INTERACTION_COOLDOWN_TICKS;
+                    conkers[mount_on].interaction_cooldown = Cfg::INTERACTION_COOLDOWN_TICKS;
 
                     // Walk the full combined stack from true top to true ground
                     int true_top = top_of(hopper_i);
@@ -417,42 +417,42 @@ void Chamber::_detect_proximity_interactions() {
                     int cur = true_top;
                     while (cur >= 0) {
                         stack_weight += weight_of(cur);
-                        if (lil_guys[cur].is_pioneer) has_pioneer = true;
+                        if (conkers[cur].is_pioneer) has_pioneer = true;
                         ground = cur;
-                        cur = lil_guys[cur].stack_on;
+                        cur = conkers[cur].stack_on;
                     }
                     stack_weight -= weight_of(ground);  // ground supports, isn't supported
 
                     // Check collapse: major on pioneer, or too heavy
                     bool collapse = false;
-                    if (lil_guys[hopper_i].role == ROLE_MAJOR && has_pioneer)
+                    if (conkers[hopper_i].role == ROLE_MAJOR && has_pioneer)
                         collapse = true;
-                    int capacity = lil_guys[ground].is_pioneer ? Cfg::STACK_CAPACITY_PIONEER
-                                 : (lil_guys[ground].role == ROLE_MAJOR ? Cfg::STACK_CAPACITY_MAJOR
+                    int capacity = conkers[ground].is_pioneer ? Cfg::STACK_CAPACITY_PIONEER
+                                 : (conkers[ground].role == ROLE_MAJOR ? Cfg::STACK_CAPACITY_MAJOR
                                                                          : Cfg::STACK_CAPACITY_MINOR);
                     if (stack_weight > capacity)
                         collapse = true;
 
                     if (collapse) {
                         // Start topple animation on entire stack
-                        for (int j = 0; j < lil_guy_count; j++) {
+                        for (int j = 0; j < conker_count; j++) {
                             // Check if this ant is in the stack (including ground)
                             bool in_this_stack = (j == ground);
-                            if (!in_this_stack && lil_guys[j].stack_on >= 0) {
-                                int walk = lil_guys[j].stack_on;
+                            if (!in_this_stack && conkers[j].stack_on >= 0) {
+                                int walk = conkers[j].stack_on;
                                 while (walk >= 0) {
                                     if (walk == ground) { in_this_stack = true; break; }
-                                    walk = lil_guys[walk].stack_on;
+                                    walk = conkers[walk].stack_on;
                                 }
                             }
                             if (in_this_stack) {
                                 // Compute depth: count ants below this one
                                 int depth = 0;
-                                int walk = lil_guys[j].stack_on;
-                                while (walk >= 0) { depth++; walk = lil_guys[walk].stack_on; }
-                                lil_guys[j].topple_depth = depth;
-                                lil_guys[j].anim_type = LG_ANIM_TOPPLE;
-                                lil_guys[j].anim_remaining_ticks =
+                                int walk = conkers[j].stack_on;
+                                while (walk >= 0) { depth++; walk = conkers[walk].stack_on; }
+                                conkers[j].topple_depth = depth;
+                                conkers[j].anim_type = LG_ANIM_TOPPLE;
+                                conkers[j].anim_remaining_ticks =
                                     Cfg::STACK_TOPPLE_TICKS + Cfg::STACK_FALL_TICKS;
                             }
                         }
@@ -577,27 +577,27 @@ void Chamber::_deposit_food_cell(int x, int y, float amount) {
 
 // ---- pool management ----
 
-void Chamber::add_lil_guy(int8_t px, int8_t py, Role c, bool pioneer) {
-    if (lil_guy_count >= Cfg::MAX_LIL_GUYS) return;
-    lil_guys[lil_guy_count].init(px, py, c, pioneer);
-    lil_guy_count++;
+void Chamber::add_conker(int8_t px, int8_t py, Role c, bool pioneer) {
+    if (conker_count >= Cfg::MAX_CONKERS) return;
+    conkers[conker_count].init(px, py, c, pioneer);
+    conker_count++;
 }
 
-void Chamber::remove_lil_guy(int idx) {
-    if (idx < 0 || idx >= lil_guy_count) return;
-    int last = lil_guy_count - 1;
-    lil_guys[idx] = lil_guys[last];
-    lil_guy_count--;
+void Chamber::remove_conker(int idx) {
+    if (idx < 0 || idx >= conker_count) return;
+    int last = conker_count - 1;
+    conkers[idx] = conkers[last];
+    conker_count--;
     // Patch stack_on and zoomie_target references: last moved to idx, idx is gone
-    for (int k = 0; k < lil_guy_count; k++) {
-        if (lil_guys[k].stack_on == last)      lil_guys[k].stack_on = idx;
-        else if (lil_guys[k].stack_on == idx) {
-            lil_guys[k].stack_on = -1;
-            lil_guys[k].sleeping = false;
-            lil_guys[k].anim_type = LG_ANIM_NONE;
+    for (int k = 0; k < conker_count; k++) {
+        if (conkers[k].stack_on == last)      conkers[k].stack_on = idx;
+        else if (conkers[k].stack_on == idx) {
+            conkers[k].stack_on = -1;
+            conkers[k].sleeping = false;
+            conkers[k].anim_type = LG_ANIM_NONE;
         }
-        if (lil_guys[k].zoomie_target == last)      lil_guys[k].zoomie_target = idx;
-        else if (lil_guys[k].zoomie_target == idx)   lil_guys[k].zoomie_target = -1;
+        if (conkers[k].zoomie_target == last)      conkers[k].zoomie_target = idx;
+        else if (conkers[k].zoomie_target == idx)   conkers[k].zoomie_target = -1;
     }
 }
 

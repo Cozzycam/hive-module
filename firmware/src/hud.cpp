@@ -1,7 +1,7 @@
 /* Status HUD — horizontal strip overlay at top of 480x320 display.
  *
  * Layout (left to right):
- *   [pop icon] 127 LilGuys · Day 47 · [food icon] 9 days food ... growing [pulse dot]
+ *   [pop icon] 127 Conkers · Day 47 · [food icon] 9 days food ... growing [pulse dot]
  *
  * Three palette states (day/dusk/night) derived from g_tod.night_factor + phase.
  * Numbers animate toward target over ~200ms (smooth interpolation).
@@ -443,7 +443,7 @@ void hud_draw(Arduino_Canvas* gfx, const Chamber& ch) {
     int dot_y  = text_y + 3;  // center dot vertically with text baseline
 
     // --- Population cluster ---
-    // [icon]  N  LilGuys
+    // [icon]  N  Conkers
     _draw_icon(gfx, x, icon_y, ICON_POP, acc);
     x += 12;
 
@@ -452,7 +452,7 @@ void hud_draw(Arduino_Canvas* gfx, const Chamber& ch) {
     snprintf(buf, sizeof(buf), "%d", pop_display);
     x += _draw_text(gfx, x, text_y, buf, ink);
     x += 5;
-    x += _draw_text(gfx, x, text_y, "LilGuys", ink2);
+    x += _draw_text(gfx, x, text_y, "Conkers", ink2);
 
     // --- Sundial separator ---
     x += 10;

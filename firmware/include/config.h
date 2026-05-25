@@ -18,7 +18,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 59;
+constexpr uint32_t FW_VERSION = 60;
 
 namespace Cfg {
 
@@ -205,7 +205,7 @@ constexpr int   FOOD_SHARE_DURATION_TICKS  = 12;   // ~1.5s at 8 tps
 constexpr int   INTERACTION_COOLDOWN_TICKS = 40;    // ~5s at 8 tps
 
 // ---- Pool limits ----
-constexpr int MAX_LIL_GUYS  = 200;
+constexpr int MAX_CONKERS  = 200;
 constexpr int MAX_BROOD      = 100;
 constexpr int MAX_FOOD_PILES = 64;
 

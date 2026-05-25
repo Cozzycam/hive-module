@@ -20,7 +20,7 @@ PILE_DISCOVERED     = 'pile_discovered'
 QUEEN_LAID_EGG      = 'queen_laid_egg'
 YOUNG_HATCHED       = 'young_hatched'
 YOUNG_DIED          = 'young_died'
-LIL_GUY_DIED        = 'lil_guy_died'
+CONKER_DIED        = 'conker_died'
 HANDOFF_INCOMING    = 'handoff_incoming'
 HANDOFF_OUTGOING    = 'handoff_outgoing'
 
@@ -72,18 +72,18 @@ def young_died(tick):
     return {'type': YOUNG_DIED, 'tick': tick}
 
 
-def lil_guy_died(tick):
-    return {'type': LIL_GUY_DIED, 'tick': tick}
+def conker_died(tick):
+    return {'type': CONKER_DIED, 'tick': tick}
 
 
-def handoff_outgoing(tick, lil_guy_data):
+def handoff_outgoing(tick, conker_data):
     return {'type': HANDOFF_OUTGOING, 'tick': tick,
-            'lil_guy_data': lil_guy_data}
+            'conker_data': conker_data}
 
 
-def handoff_incoming(tick, lil_guy_data):
+def handoff_incoming(tick, conker_data):
     return {'type': HANDOFF_INCOMING, 'tick': tick,
-            'lil_guy_data': lil_guy_data}
+            'conker_data': conker_data}
 
 
 # ---- ring buffer ----

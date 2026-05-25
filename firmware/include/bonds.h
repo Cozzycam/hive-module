@@ -1,4 +1,4 @@
-/* Bonds — directed relationship strengths between LilGuys.
+/* Bonds — directed relationship strengths between Conkers.
  *
  * Stored in a flat pool. Each entry is owner→target with strength 0.0-1.0.
  * Cap: 16 bonds per owner. Pool cap: 1024 total entries.

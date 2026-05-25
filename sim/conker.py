@@ -66,7 +66,7 @@ RETURNING   = TO_HOME
 FORAGE      = TO_FOOD
 
 
-class LilGuy:
+class Conker:
     __slots__ = (
         'x', 'y', 'prev_x', 'prev_y', 'state', 'target',
         'target_cell', 'speed', 'last_cell',
@@ -228,7 +228,7 @@ class LilGuy:
         # Natural death — old age.
         if self.age >= self.max_age:
             self.alive = False
-            chamber._emit(events.lil_guy_died(chamber._tick))
+            chamber._emit(events.conker_died(chamber._tick))
             return
 
         # Metabolism — draw from colony food_store, or nibble from
@@ -249,7 +249,7 @@ class LilGuy:
             self.hunger += C.WORKER_HUNGER_RATE
             if self.hunger >= C.WORKER_STARVE_THRESHOLD:
                 self.alive = False
-                chamber._emit(events.lil_guy_died(chamber._tick))
+                chamber._emit(events.conker_died(chamber._tick))
                 return
 
         # Track time away from the queen chamber.

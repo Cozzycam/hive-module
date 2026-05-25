@@ -14,17 +14,17 @@
 
 | Trigger | File | Lines | Condition | Throttling |
 |---------|------|-------|-----------|------------|
-| Tending brood | `firmware/src/lil_guy.cpp` | 462–468 | Worker reaches target larva (≤1 cell), larva is STAGE_LARVA, needs feeding, colony has food | None — fires once on arrival (state transition gates it) |
-| Tending queen | `firmware/src/lil_guy.cpp` | 493–499 | Worker reaches queen (≤1 cell), queen.needs_feeding() (hunger > 0.3), colony has food | None — same gate |
+| Tending brood | `firmware/src/conker.cpp` | 462–468 | Worker reaches target larva (≤1 cell), larva is STAGE_LARVA, needs feeding, colony has food | None — fires once on arrival (state transition gates it) |
+| Tending queen | `firmware/src/conker.cpp` | 493–499 | Worker reaches queen (≤1 cell), queen.needs_feeding() (hunger > 0.3), colony has food | None — same gate |
 | Proximity: food sharing | `firmware/src/chamber.cpp` | 170–179, 212–221 | One worker has food, other doesn't. 15% chance per frame (`PROXIMITY_FOOD_SHARE_CHANCE`) | Probabilistic per-frame |
 | Proximity: greeting | `firmware/src/chamber.cpp` | 183–192, 225–234 | Two workers same cell or adjacent. 35% chance per frame (`PROXIMITY_GREETING_CHANCE`) | Probabilistic per-frame |
 
-**EVT_FOOD_DELIVERED** — `firmware/src/lil_guy.cpp:409–414`. Worker in STATE_TO_HOME with food reaches queen (≤1 cell). Sets `ch.food_delivery_signal = 200` ticks as recruitment broadcast.
+**EVT_FOOD_DELIVERED** — `firmware/src/conker.cpp:409–414`. Worker in STATE_TO_HOME with food reaches queen (≤1 cell). Sets `ch.food_delivery_signal = 200` ticks as recruitment broadcast.
 
 ### Consumption
 
 - **Renderer** (`firmware/src/renderer.cpp:1140–1189`): Only `EVT_FOOD_DELIVERED` spawns a visual animation (`ANIM_FOOD_DELIVER`). **Interaction events are emitted but have zero visual feedback** — logged to serial only.
-- **No per-lilguy cooldown.** Proximity interactions use probabilistic per-frame gating (35%, 15%), which prevents spam but isn't a true cooldown. A worker can greet every frame if the dice keep rolling.
+- **No per-conker cooldown.** Proximity interactions use probabilistic per-frame gating (35%, 15%), which prevents spam but isn't a true cooldown. A worker can greet every frame if the dice keep rolling.
 
 > **Flag:** Interaction events exist and fire but produce no on-screen effect. The infrastructure is there — just needs renderer-side handling.
 
@@ -45,15 +45,15 @@
 
 ### Trail-following vs exploring
 
-**No discrete distinction at the state level.** `STATE_TO_FOOD` covers both. The difference is internal to `_do_to_food` (`firmware/src/lil_guy.cpp:373–400`):
+**No discrete distinction at the state level.** `STATE_TO_FOOD` covers both. The difference is internal to `_do_to_food` (`firmware/src/conker.cpp:373–400`):
 - Trail following: `_sample_markers(ch, true, dx, dy)` returns true → waypoint set toward gradient
 - Exploring: `_sample_markers` returns false → `_explore_or_wander` chooses random movement
 
 **Cleanest predicate for "on-job":** `w.state == STATE_TO_FOOD || (w.state == STATE_TO_HOME && w.food_carried > 0)`. Both legs of the foraging trip should be protected from interruption.
 
-### Per-lilguy tick function
+### Per-conker tick function
 
-**`LilGuy::tick(Chamber& ch, float dt)`** — `firmware/src/lil_guy.cpp:63–130`
+**`Conker::tick(Chamber& ch, float dt)`** — `firmware/src/conker.cpp:63–130`
 
 Phases:
 1. **Housekeeping** (64–89): death check, hunger/food management
@@ -61,13 +61,13 @@ Phases:
 3. **Movement** (106): `_advance_toward_target(ch)` — smooth sub-cell movement
 4. **Decision** (109–129): only when `!has_target_cell` (arrived at waypoint). If idle and resting, runs `_tick_idle(ch)`. Otherwise dispatches to per-state behavior function.
 
-**Insertion point for new micro-behaviors:** The `_tick_idle` function (`firmware/src/lil_guy.cpp:548–612`) is the natural hook. It manages microstate cycling and repoll-for-work checks.
+**Insertion point for new micro-behaviors:** The `_tick_idle` function (`firmware/src/conker.cpp:548–612`) is the natural hook. It manages microstate cycling and repoll-for-work checks.
 
 ---
 
 ## 3. Pheromone / Trail-Following Logic
 
-### Pheromone deposition (`firmware/src/lil_guy.cpp:183–193`)
+### Pheromone deposition (`firmware/src/conker.cpp:183–193`)
 
 - **Outbound (STATE_TO_FOOD):** Deposits **home** markers. Intensity = `10.0 * exp(-0.02 * steps_walked)`. Deposits on cell entry only.
 - **Return with food (STATE_TO_HOME, food > 0):** Deposits **food** markers. Same decay formula. This is what creates the trail other workers follow.
@@ -91,10 +91,10 @@ Both are `STATE_TO_HOME`. Distinguished solely by `food_carried > 0`:
 
 ## 4. Colony Pressure System
 
-### Idle budget function (`firmware/src/lil_guy.cpp:637–643`)
+### Idle budget function (`firmware/src/conker.cpp:637–643`)
 
 ```cpp
-float LilGuy::_colony_idle_budget(Chamber& ch) {
+float Conker::_colony_idle_budget(Chamber& ch) {
     if (ch.colony->population < 10) return 0.0f;         // founding: everyone works
     if (ch.colony->food_pressure() > 0.9f) return 0.0f;  // famine: everyone works
     float nf = g_tod.night_factor;
@@ -135,7 +135,7 @@ No fixed position. Each microstate transition picks dynamically:
 - **Drift (microstate 1):** Random cardinal direction, 1 cell, at 0.1 cells/tick (slow)
 - **Reface (microstate 2):** No movement — just changes `facing_dx/dy`
 
-### Micro-behavior implementation (`firmware/src/lil_guy.cpp:614–635`)
+### Micro-behavior implementation (`firmware/src/conker.cpp:614–635`)
 
 `_pick_idle_microstate(Chamber& ch)`:
 - Roll random float `r`
@@ -154,7 +154,7 @@ No fixed position. Each microstate transition picks dynamically:
 
 ~10–15 lines of new code. No architectural changes needed.
 
-> **Flag:** There's already a 30% bias toward queen in idle wandering (`firmware/src/lil_guy.cpp:530–532`). A "huddle toward queen" microstate would complement this.
+> **Flag:** There's already a 30% bias toward queen in idle wandering (`firmware/src/conker.cpp:530–532`). A "huddle toward queen" microstate would complement this.
 
 ---
 
@@ -162,7 +162,7 @@ No fixed position. Each microstate transition picks dynamically:
 
 ### Type
 
-**Separate struct, NOT a LilGuy.** Defined in `firmware/include/queen.h`, implemented in `firmware/src/queen.cpp`. Has position (x, y), reserves, hunger, eggs_laid, alive flag. No state machine — just founding vs established phase.
+**Separate struct, NOT a Conker.** Defined in `firmware/include/queen.h`, implemented in `firmware/src/queen.cpp`. Has position (x, y), reserves, hunger, eggs_laid, alive flag. No state machine — just founding vs established phase.
 
 ### Position access
 
@@ -172,10 +172,10 @@ Workers access queen position directly via `ch.queen_obj.x`, `ch.queen_obj.y`. T
 
 | Behavior | Location | Condition |
 |----------|----------|-----------|
-| Famine override: feed queen first | `lil_guy.cpp:225–235` | pressure > 0.9, queen hungry, has food, in range |
-| Normal queen feeding | `lil_guy.cpp:261–268` | queen.needs_feeding(), has food, in range |
-| Idle bias toward queen | `lil_guy.cpp:530–532` | 30% chance during idle drift |
-| Return-home navigates to queen | `lil_guy.cpp:405–428` | STATE_TO_HOME, direct path to queen cell |
+| Famine override: feed queen first | `conker.cpp:225–235` | pressure > 0.9, queen hungry, has food, in range |
+| Normal queen feeding | `conker.cpp:261–268` | queen.needs_feeding(), has food, in range |
+| Idle bias toward queen | `conker.cpp:530–532` | 30% chance during idle drift |
+| Return-home navigates to queen | `conker.cpp:405–428` | STATE_TO_HOME, direct path to queen cell |
 
 ---
 
@@ -183,20 +183,20 @@ Workers access queen position directly via `ch.queen_obj.x`, `ch.queen_obj.y`. T
 
 ### Breathing bob
 
-**Computed from frame counter and position, not stored per-lilguy** (`firmware/src/renderer.cpp:945–955`, now inside `_build_agent_sprites`):
+**Computed from frame counter and position, not stored per-conker** (`firmware/src/renderer.cpp:945–955`, now inside `_build_agent_sprites`):
 
 ```cpp
 // Resting: phase = (_frame + i * 7) % 60, bob = phase < 30 ? 0 : -1
 // Moving:  bob derived from float position (walk cycle)
 ```
 
-Worker index `i * 7` desynchronizes breathing across workers. No per-lilguy animation state exists.
+Worker index `i * 7` desynchronizes breathing across workers. No per-conker animation state exists.
 
-### Adding a short per-lilguy animation
+### Adding a short per-conker animation
 
 **Two approaches:**
 
-1. **Per-lilguy fields** — Add `anim_type`, `anim_age`, `anim_duration` to `LilGuy`. Set in behavior code, decrement in `tick()`, read in renderer. This is the right approach for animations tied to behavior (pause-and-twitch during greeting).
+1. **Per-conker fields** — Add `anim_type`, `anim_age`, `anim_duration` to `Conker`. Set in behavior code, decrement in `tick()`, read in renderer. This is the right approach for animations tied to behavior (pause-and-twitch during greeting).
 
 2. **Renderer animation pool** — The existing `Anim` system (`renderer.h:34–40`) has a 32-slot pool with spawn/draw/age lifecycle. Good for position-anchored effects (sparkles, rings) but not for animations that track a moving entity.
 
@@ -217,9 +217,9 @@ Adding a new type: add enum value, add draw logic in `_draw_one_anim` switch, tr
 
 | Question | Answer |
 |----------|--------|
-| Is this lilguy on a food trail? | `w.state == STATE_TO_FOOD \|\| (w.state == STATE_TO_HOME && w.food_carried > 0)` |
-| Where to hook new idle micro-behavior? | `_pick_idle_microstate()` at `lil_guy.cpp:614–635` — weighted random branch |
+| Is this conker on a food trail? | `w.state == STATE_TO_FOOD \|\| (w.state == STATE_TO_HOME && w.food_carried > 0)` |
+| Where to hook new idle micro-behavior? | `_pick_idle_microstate()` at `conker.cpp:614–635` — weighted random branch |
 | What gates luxury behaviors under food pressure? | `ch.colony->food_pressure() < 0.9f && ch.colony->population >= 10` |
-| Does the renderer know how to play one-shot animations? | Yes — 32-slot `Anim` pool, but position-anchored. Per-lilguy animations need new fields on `LilGuy`. |
+| Does the renderer know how to play one-shot animations? | Yes — 32-slot `Anim` pool, but position-anchored. Per-conker animations need new fields on `Conker`. |
 | Can workers find the queen? | Yes — `ch.queen_obj.x`, `ch.queen_obj.y` directly accessible |
 | Is there already a greeting system? | Yes — proximity greeting events fire at 35%/frame, but produce no visual effect |
