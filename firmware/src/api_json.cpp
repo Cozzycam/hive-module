@@ -97,6 +97,21 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
     by_role["brood_egg"] = coord.colony.brood_egg;
     by_role["brood_seed"] = coord.colony.brood_seed;
 
+    // Living conkers roster (compact — name, age, founder flag, traits)
+    JsonArray lilguys = doc["lilguys"].to<JsonArray>();
+    for (int i = 0; i < conkers_count; i++) {
+        IdentityRecord& r = recs[i];
+        JsonObject lg = lilguys.add<JsonObject>();
+        lg["id"] = r.id;
+        lg["name"] = r.name;
+        lg["age_days"] = r.lived_ms / (86400.0f * 1000.0f);
+        if (r.is_founder) lg["founder"] = true;
+        if (r.traits) {
+            JsonArray tr = lg["traits"].to<JsonArray>();
+            add_traits_array(tr, r.traits);
+        }
+    }
+
     // Food
     JsonObject food = doc["food"].to<JsonObject>();
     food["store"] = coord.colony.food_store;

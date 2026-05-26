@@ -9,6 +9,7 @@ export interface ColonySnapshot {
   population: Population;
   food: Food;
   modules: Module[];
+  lilguys?: LilGuySummary[];  // living roster, included in VPS snapshots
 }
 
 export interface World {

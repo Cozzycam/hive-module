@@ -106,11 +106,12 @@ void vps_push_tick(Coordinator& coord) {
     if (now - _last_push_ms < PUSH_INTERVAL_MS) return;
     _last_push_ms = now;
 
-    // Push colony snapshot
-    char* buf = (char*)malloc(4096);
+    // Push colony snapshot (buffer sized for roster: ~100 bytes per conker)
+    size_t buf_size = 4096 + coord.registry.living_count() * 128;
+    char* buf = (char*)malloc(buf_size);
     if (!buf) return;
 
-    size_t len = api_colony_json(coord, buf, 4096);
+    size_t len = api_colony_json(coord, buf, buf_size);
     if (len > 0) {
         char path[80];
         snprintf(path, sizeof(path), "/api/v1/colonies/%s/snapshot",
