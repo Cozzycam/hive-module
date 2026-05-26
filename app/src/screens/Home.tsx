@@ -24,19 +24,20 @@ export function Home({ onNavigate }: HomeProps) {
 
   const { population, food, modules, world } = snapshot;
 
-  // Notable Now: recently active lilguys from events
+  // Notable Now: recently active lilguys, filtered to living roster
   const notableIds = useMemo(() => {
+    const rosterIds = new Set(snapshot.lilguys?.map(l => l.id) ?? []);
     const seen = new Set<number>();
     const ids: number[] = [];
     for (let i = events.length - 1; i >= 0 && ids.length < 6; i--) {
       const e = events[i];
-      if (e.lilguy && !seen.has(e.lilguy)) {
+      if (e.lilguy && !seen.has(e.lilguy) && (rosterIds.size === 0 || rosterIds.has(e.lilguy))) {
         seen.add(e.lilguy);
         ids.push(e.lilguy);
       }
     }
     return ids;
-  }, [events]);
+  }, [events, snapshot]);
 
   // Weather description
   const weatherLabel = world.weather.replace(/_/g, ' ');
