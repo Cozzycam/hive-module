@@ -32,9 +32,11 @@ export function Diary() {
 
   const filtered = useMemo(() => {
     const cat = EVENT_CATEGORIES[categoryIdx];
+    // Filter out noisy chamber_crossing events from diary
+    const meaningful = events.filter(e => e.type !== 'chamber_crossing');
     const list = cat.types.length === 0
-      ? events
-      : events.filter(e => cat.types.includes(e.type));
+      ? meaningful
+      : meaningful.filter(e => cat.types.includes(e.type));
     return [...list].reverse(); // newest first
   }, [events, categoryIdx]);
 
@@ -125,7 +127,7 @@ function formatEvent(ev: ColonyEvent): { icon: string; description: string } {
     case 'hatch':
       return {
         icon: '\u{1F331}',
-        description: `${name} was born${data.is_pioneer ? ' as a pioneer' : ''}.`,
+        description: `${name} was born${data.is_pioneer ? ' — a founder' : ''}.`,
       };
     case 'death':
       return {
@@ -135,7 +137,7 @@ function formatEvent(ev: ColonyEvent): { icon: string; description: string } {
     case 'role_change':
       return {
         icon: '\u{1F451}',
-        description: `${name} was promoted to ${data.to === 1 ? 'major' : 'minor'}.`,
+        description: `${name} changed role.`,
       };
     case 'bond_formed':
       return {

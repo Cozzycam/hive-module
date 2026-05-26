@@ -110,6 +110,15 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
             JsonArray tr = lg["traits"].to<JsonArray>();
             add_traits_array(tr, r.traits);
         }
+        // Personality (available via VPS, no LAN needed)
+        JsonObject pers = lg["personality"].to<JsonObject>();
+        pers["work_tempo"] = r.personality[0];
+        pers["exploration"] = r.personality[1];
+        pers["route_stickiness"] = r.personality[2];
+        pers["social_frequency"] = r.personality[3];
+        pers["food_preference"] = r.personality[4];
+        pers["hardiness"] = r.personality[5];
+        pers["learning_rate"] = r.personality[6];
     }
 
     // Food
