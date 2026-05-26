@@ -24,20 +24,15 @@ export function Home({ onNavigate }: HomeProps) {
 
   const { population, food, modules, world } = snapshot;
 
-  // Notable Now: recently active lilguys, filtered to living roster
+  // Notable Now: recently active conkers, filtered to living roster
   const notableIds = useMemo(() => {
-    const rosterIds = new Set(snapshot.lilguys?.map(l => l.id) ?? []);
-    const seen = new Set<number>();
-    const ids: number[] = [];
-    for (let i = events.length - 1; i >= 0 && ids.length < 6; i--) {
-      const e = events[i];
-      if (e.lilguy && !seen.has(e.lilguy) && (rosterIds.size === 0 || rosterIds.has(e.lilguy))) {
-        seen.add(e.lilguy);
-        ids.push(e.lilguy);
-      }
+    // If snapshot has a roster (even empty), use it strictly
+    if (snapshot.lilguys) {
+      return snapshot.lilguys.slice(0, 6).map(l => l.id);
     }
-    return ids;
-  }, [events, snapshot]);
+    // Fallback for old snapshots without roster: skip Notable Now
+    return [];
+  }, [snapshot]);
 
   // Weather description
   const weatherLabel = world.weather.replace(/_/g, ' ');
