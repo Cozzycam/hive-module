@@ -1,0 +1,186 @@
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useColony, useColonyActions } from '../state/colony';
+import { Card } from '../components/Card';
+import { Chip } from '../components/Chip';
+import { nameFromId } from '../data/plantNames';
+import { HIVE, TOD_PALETTES } from '../theme/palette';
+import { SIZES } from '../theme/fonts';
+import type { ColonyEvent, EventType } from '../api/types';
+
+const EVENT_CATEGORIES: { label: string; types: EventType[] }[] = [
+  { label: 'All', types: [] },
+  { label: 'Births', types: ['hatch'] },
+  { label: 'Deaths', types: ['death'] },
+  { label: 'Milestones', types: ['milestone', 'colony_event'] },
+  { label: 'Social', types: ['bond_formed', 'bond_broken', 'tended_by_assigned'] },
+  { label: 'Challenges', types: ['challenge_start', 'challenge_end'] },
+  { label: 'Traits', types: ['trait_earned', 'role_change'] },
+];
+
+export function Diary() {
+  const { events, colonyId } = useColony();
+  const { refreshEvents } = useColonyActions();
+  const palette = TOD_PALETTES.day; // Reflective — always day
+
+  const [categoryIdx, setCategoryIdx] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Fetch events on mount
+  useEffect(() => {
+    refreshEvents();
+  }, []);
+
+  const filtered = useMemo(() => {
+    const cat = EVENT_CATEGORIES[categoryIdx];
+    const list = cat.types.length === 0
+      ? events
+      : events.filter(e => cat.types.includes(e.type));
+    return [...list].reverse(); // newest first
+  }, [events, categoryIdx]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refreshEvents();
+    setRefreshing(false);
+  }, [refreshEvents]);
+
+  return (
+    <div style={{ background: palette.bg, minHeight: '100%', padding: '0 16px 100px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 0 8px' }}>
+        <h1 style={{ fontSize: SIZES.xl, fontWeight: 700, color: palette.text, margin: 0 }}>
+          Diary
+        </h1>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          style={{
+            background: 'none', border: `1px solid ${HIVE.sand}`,
+            borderRadius: 16, padding: '4px 12px', fontSize: SIZES.xs,
+            color: palette.dimText, cursor: 'pointer',
+            opacity: refreshing ? 0.5 : 1,
+          }}
+        >
+          {refreshing ? 'Refreshing...' : 'Refresh'}
+        </button>
+      </div>
+
+      {/* Category filters */}
+      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 8, marginBottom: 8 }}>
+        {EVENT_CATEGORIES.map((cat, i) => (
+          <Chip
+            key={cat.label}
+            label={cat.label}
+            active={categoryIdx === i}
+            onClick={() => setCategoryIdx(i)}
+          />
+        ))}
+      </div>
+
+      {/* Events list */}
+      {filtered.length === 0 ? (
+        <div style={{ color: palette.dimText, fontSize: SIZES.base, textAlign: 'center', padding: 32 }}>
+          No events to show
+        </div>
+      ) : (
+        filtered.map((ev, i) => (
+          <DiaryEntry key={`${ev.unix}-${ev.tick}-${i}`} event={ev} palette={palette} />
+        ))
+      )}
+    </div>
+  );
+}
+
+function DiaryEntry({ event, palette }: {
+  event: ColonyEvent;
+  palette: { cardBg: string; text: string; dimText: string };
+}) {
+  const date = new Date(event.unix * 1000);
+  const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const timeStr = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+
+  const { icon, description } = formatEvent(event);
+
+  return (
+    <Card style={{ background: palette.cardBg, padding: 12 }}>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ fontSize: 20, lineHeight: '24px', minWidth: 28, textAlign: 'center' }}>
+          {icon}
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: SIZES.sm, color: palette.text }}>{description}</div>
+          <div style={{ fontSize: SIZES.xs, color: palette.dimText, marginTop: 2 }}>
+            {dateStr} {timeStr}
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function formatEvent(ev: ColonyEvent): { icon: string; description: string } {
+  const name = ev.lilguy ? nameFromId(ev.lilguy) : 'Colony';
+  const data = ev.data as Record<string, unknown>;
+
+  switch (ev.type) {
+    case 'hatch':
+      return {
+        icon: '\u{1F331}',
+        description: `${name} was born${data.is_pioneer ? ' as a pioneer' : ''}.`,
+      };
+    case 'death':
+      return {
+        icon: '\u{1F342}',
+        description: `${name} passed away. ${data.cause === 'starvation' ? 'Cause: starvation.' : ''}`,
+      };
+    case 'role_change':
+      return {
+        icon: '\u{1F451}',
+        description: `${name} was promoted to ${data.to === 1 ? 'major' : 'minor'}.`,
+      };
+    case 'bond_formed':
+      return {
+        icon: '\u{1F91D}',
+        description: `${name} formed a bond with ${data.target_id ? nameFromId(data.target_id as number) : 'another'}.`,
+      };
+    case 'bond_broken':
+      return {
+        icon: '\u{1F494}',
+        description: `${name}'s bond with ${data.target_id ? nameFromId(data.target_id as number) : 'another'} faded.`,
+      };
+    case 'milestone':
+      return {
+        icon: '\u{2B50}',
+        description: `Colony milestone: ${String(data.kind).replace(/_/g, ' ')} (${data.value}).`,
+      };
+    case 'colony_event':
+      return {
+        icon: '\u{1F3E0}',
+        description: `Colony: ${String(data.kind).replace(/_/g, ' ')}.`,
+      };
+    case 'challenge_start':
+      return {
+        icon: '\u{26A0}',
+        description: `${String(data.type).replace(/_/g, ' ')} began (severity ${((data.severity as number) * 100).toFixed(0)}%).`,
+      };
+    case 'challenge_end':
+      return {
+        icon: '\u{2600}',
+        description: `${String(data.type).replace(/_/g, ' ')} ended.`,
+      };
+    case 'trait_earned':
+      return {
+        icon: '\u{1F3C5}',
+        description: `${name} earned the "${data.trait}" trait.`,
+      };
+    case 'tended_by_assigned':
+      return {
+        icon: '\u{1F9B7}',
+        description: `${name} was assigned a caretaker${data.carer_id ? `: ${nameFromId(data.carer_id as number)}` : ''}.`,
+      };
+    default:
+      return {
+        icon: '\u{1F4AC}',
+        description: `${name}: ${ev.type.replace(/_/g, ' ')}.`,
+      };
+  }
+}
