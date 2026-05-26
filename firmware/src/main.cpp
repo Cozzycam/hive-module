@@ -370,7 +370,11 @@ static void process_serial_line(const char* line) {
                             shard.close();
                             SD_MMC.rmdir(sp);
                         } else {
+                            // Direct files (e.g. journal .jsonl files)
+                            char fp[128];
+                            strlcpy(fp, shard.path(), sizeof(fp));
                             shard.close();
+                            SD_MMC.remove(fp);
                         }
                         shard = root.openNextFile();
                     }
@@ -382,13 +386,21 @@ static void process_serial_line(const char* line) {
             SD_MMC.rmdir("/colony");
             Serial.println("[reset] SD colony data removed");
         }
-        // Clear NVS founding time
-        Preferences prefs;
-        prefs.begin("hive", false);
-        prefs.remove("founded");
-        prefs.remove("founded_ok");
-        prefs.end();
-        Serial.println("[reset] NVS founding time cleared");
+        // Clear NVS founding time + VPS push cursor
+        {
+            Preferences prefs;
+            prefs.begin("hive", false);
+            prefs.remove("founded");
+            prefs.remove("founded_ok");
+            prefs.end();
+        }
+        {
+            Preferences prefs;
+            prefs.begin("vps", false);
+            prefs.remove("cursor");
+            prefs.end();
+        }
+        Serial.println("[reset] NVS cleared (founding + VPS cursor)");
         Serial.println("[reset] rebooting...");
         delay(100);
         ESP.restart();
