@@ -160,7 +160,7 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
     fetchLilguyDetail(selectedId).then(d => d && setDetail(d));
     if (colonyId) {
       fetchLilguyEvents(colonyId, selectedId).then(r => {
-        if (r) setLilguyEvents(r.results);
+        if (r) setLilguyEvents(r.results.filter(e => e.type !== 'chamber_crossing'));
       });
     }
   }, [selectedId, colonyId]);

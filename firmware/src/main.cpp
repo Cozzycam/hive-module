@@ -383,6 +383,8 @@ static void process_serial_line(const char* line) {
                 SD_MMC.rmdir(base);
             }
             SD_MMC.remove("/colony/manifest.json");
+            SD_MMC.remove("/colony/bonds.json");
+            SD_MMC.remove("/colony/bonds.json.tmp");
             SD_MMC.rmdir("/colony");
             Serial.println("[reset] SD colony data removed");
         }
