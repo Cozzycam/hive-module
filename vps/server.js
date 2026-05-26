@@ -44,7 +44,7 @@ db.exec(`
     FOREIGN KEY (colony_id) REFERENCES colonies(colony_id)
   );
 
-  CREATE INDEX IF NOT EXISTS idx_events_colony_unix ON events(colony_id, unix);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_events_dedup ON events(colony_id, tick, unix, type, lilguy);
   CREATE INDEX IF NOT EXISTS idx_events_colony_lilguy ON events(colony_id, lilguy, unix);
 `);
 
@@ -57,7 +57,7 @@ const stmts = {
       last_snapshot_unix = excluded.last_snapshot_unix
   `),
   insertEvent: db.prepare(`
-    INSERT INTO events (colony_id, tick, unix, type, lilguy, data, raw)
+    INSERT OR IGNORE INTO events (colony_id, tick, unix, type, lilguy, data, raw)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `),
   getSnapshot: db.prepare(`SELECT last_snapshot FROM colonies WHERE colony_id = ?`),
