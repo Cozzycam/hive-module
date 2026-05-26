@@ -98,7 +98,7 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
         chars.set(l.id, {
           id: l.id, name: l.name, role: 'conker',
           founder: l.founder, age_days: l.age_days,
-          traits: l.traits, bonds: [],
+          traits: l.traits || [], bonds: [],
         });
       }
     }

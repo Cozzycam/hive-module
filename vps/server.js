@@ -44,9 +44,28 @@ db.exec(`
     FOREIGN KEY (colony_id) REFERENCES colonies(colony_id)
   );
 
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_events_dedup ON events(colony_id, tick, unix, type, lilguy);
   CREATE INDEX IF NOT EXISTS idx_events_colony_lilguy ON events(colony_id, lilguy, unix);
 `);
+
+// Dedup index: remove duplicates first, then create unique index
+try {
+  db.exec(`CREATE UNIQUE INDEX idx_events_dedup ON events(colony_id, tick, unix, type, lilguy)`);
+} catch (e) {
+  // Index exists or duplicates prevent creation — clean up and retry
+  try {
+    db.exec(`DROP INDEX IF EXISTS idx_events_dedup`);
+    // Remove duplicates keeping lowest rowid
+    db.exec(`
+      DELETE FROM events WHERE rowid NOT IN (
+        SELECT MIN(rowid) FROM events GROUP BY colony_id, tick, unix, type, lilguy
+      )
+    `);
+    db.exec(`CREATE UNIQUE INDEX idx_events_dedup ON events(colony_id, tick, unix, type, lilguy)`);
+    console.log('Dedup index created after cleaning duplicates');
+  } catch (e2) {
+    console.warn('Could not create dedup index:', e2.message);
+  }
+}
 
 const stmts = {
   upsertColony: db.prepare(`
