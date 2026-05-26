@@ -218,7 +218,10 @@ function ConnectInline({ onClose, onConnected }: {
     let id = colonyIdInput;
     if (!id) {
       const list = await fetchColonies();
-      if (list && list.colonies.length > 0) id = list.colonies[0].colony_id;
+      if (list && list.colonies.length > 0) {
+        const sorted = [...list.colonies].sort((a, b) => b.last_snapshot_unix - a.last_snapshot_unix);
+        id = sorted[0].colony_id;
+      }
     }
     if (!id) {
       setStatus('error');

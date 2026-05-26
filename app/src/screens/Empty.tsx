@@ -114,12 +114,13 @@ function ConnectModal({ onClose, onConnected }: {
       }
     }
 
-    // Try to auto-detect colony ID
+    // Try to auto-detect colony ID (most recently updated)
     let resolvedColonyId = colonyId;
     if (!resolvedColonyId) {
       const colonies = await fetchColonies();
       if (colonies && colonies.colonies.length > 0) {
-        resolvedColonyId = colonies.colonies[0].colony_id;
+        const sorted = [...colonies.colonies].sort((a, b) => b.last_snapshot_unix - a.last_snapshot_unix);
+        resolvedColonyId = sorted[0].colony_id;
       }
     }
 

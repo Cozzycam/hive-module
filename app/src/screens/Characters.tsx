@@ -10,8 +10,8 @@ import { nameFromId } from '../data/plantNames';
 import { personalityPhrase, deriveRoleTag } from '../data/personality';
 import { HIVE, TOD_PALETTES } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
-import { fetchLilguyDetail, fetchLilguyEvents } from '../api/client';
-import type { ColonyEvent, LilGuyDetail, Personality, Bond } from '../api/types';
+import { fetchLilguyDetail, fetchLilguyEvents, fetchLilguys } from '../api/client';
+import type { ColonyEvent, LilGuyDetail, LilGuySummary, Personality, Bond } from '../api/types';
 
 // Reconstruct basic character info from events
 interface CharacterInfo {
@@ -84,7 +84,37 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
   const [detail, setDetail] = useState<LilGuyDetail | null>(null);
   const [lilguyEvents, setLilguyEvents] = useState<ColonyEvent[]>([]);
 
-  const characters = useMemo(() => buildCharactersFromEvents(events), [events]);
+  // Prefer live roster from LAN queen API; fall back to event reconstruction
+  const [lanRoster, setLanRoster] = useState<LilGuySummary[] | null>(null);
+  useEffect(() => {
+    fetchLilguys().then(r => { if (r) setLanRoster(r.results); });
+  }, []);
+
+  const characters = useMemo(() => {
+    // If we have the LAN roster, use it as source of truth for living characters
+    const fromEvents = buildCharactersFromEvents(events);
+    if (lanRoster) {
+      const liveIds = new Set(lanRoster.map(l => l.id));
+      // Mark characters not in live roster as deceased (if not already)
+      for (const [id, c] of fromEvents) {
+        if (!liveIds.has(id) && !c.died_unix) {
+          c.died_unix = -1; // sentinel: gone but no death event
+        }
+      }
+      // Add any LAN roster entries missing from events
+      for (const l of lanRoster) {
+        if (!fromEvents.has(l.id)) {
+          fromEvents.set(l.id, {
+            id: l.id, name: l.name, role: 'conker',
+            founder: l.founder, age_days: l.age_days,
+            traits: l.traits, bonds: [],
+          });
+        }
+      }
+    }
+    return fromEvents;
+  }, [events, lanRoster]);
+
   const charList = useMemo(() => {
     const list = Array.from(characters.values());
     if (filter === 'alive') return list.filter(c => !c.died_unix);
