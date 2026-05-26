@@ -80,12 +80,34 @@ bool ConkerRegistry::_atomic_write(const char* path, const char* json_buf, size_
 
 // ---- Colony ID generation ----
 
+// Three-word colony names: place + nature + nature (32 × 32 × 32 = 32768 combos)
+static const char* const COLONY_W1[] = {
+    "Barn","Glen","Moor","Dell","Holm","Brae","Dale","Fell",
+    "Knoll","Lea","Mere","Copse","Glade","Briar","Holt","Cairn",
+    "Cove","Dune","Ford","Heath","Lane","Mill","Nook","Pike",
+    "Ridge","Shade","Tarn","Vale","Wold","Creek","Haven","Drift",
+};
+static const char* const COLONY_W2[] = {
+    "Spring","Ember","Frost","Bloom","Stone","Thorn","Storm","Moss",
+    "Wren","Fern","Brook","Ash","Birch","Dusk","Sage","Pine",
+    "Flint","Rust","Dawn","Ivy","Hazel","Reed","Gorse","Slate",
+    "Wheat","Lark","Thistle","Clover","Rowan","Swift","Otter","Hawk",
+};
+static const char* const COLONY_W3[] = {
+    "Oak","Elm","Fox","Hare","Bee","Crow","Yew","Sedge",
+    "Whin","Clay","Peat","Lime","Dock","Rue","Mace","Alder",
+    "Sorrel","Vetch","Broom","Holly","Aspen","Finch","Rook","Kite",
+    "Trout","Newt","Stoat","Heron","Shrew","Vole","Mink","Teal",
+};
+
 bool ConkerRegistry::_generate_colony_id() {
-    uint8_t bytes[12];
-    for (int i = 0; i < 12; i++) bytes[i] = esp_random() & 0xFF;
-    for (int i = 0; i < 12; i++)
-        snprintf(_manifest.colony_id + i * 2, 3, "%02x", bytes[i]);
-    _manifest.colony_id[24] = '\0';
+    uint32_t r1 = esp_random();
+    uint32_t r2 = esp_random();
+    int w1 = r1 & 0x1F;         // 0-31
+    int w2 = (r1 >> 5) & 0x1F;  // 0-31
+    int w3 = (r2) & 0x1F;       // 0-31
+    snprintf(_manifest.colony_id, sizeof(_manifest.colony_id),
+             "%s%s%s", COLONY_W1[w1], COLONY_W2[w2], COLONY_W3[w3]);
     return true;
 }
 

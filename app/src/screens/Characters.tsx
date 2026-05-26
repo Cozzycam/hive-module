@@ -86,35 +86,60 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
 
   const { snapshot } = useColony();
 
-  // Use snapshot roster as source of truth (available via VPS and LAN)
+  // Snapshot roster is the source of truth for living characters.
+  // Events only contribute deceased characters and history detail.
   const characters = useMemo(() => {
-    const fromEvents = buildCharactersFromEvents(events);
+    const chars = new Map<number, CharacterInfo>();
     const roster = snapshot?.lilguys;
-    if (roster && roster.length > 0) {
-      const liveIds = new Set(roster.map(l => l.id));
-      // Mark characters not in live roster as deceased
-      for (const [id, c] of fromEvents) {
-        if (!liveIds.has(id) && !c.died_unix) {
-          c.died_unix = -1; // gone but no death event
+
+    // Living characters from snapshot roster
+    if (roster) {
+      for (const l of roster) {
+        chars.set(l.id, {
+          id: l.id, name: l.name, role: 'conker',
+          founder: l.founder, age_days: l.age_days,
+          traits: l.traits, bonds: [],
+        });
+      }
+    }
+
+    // Enrich with event data (death events, bonds, personality, birth time)
+    for (const ev of events) {
+      if (!ev.lilguy) continue;
+      const id = ev.lilguy;
+      if (!chars.has(id)) {
+        // Character not in roster — only add if there's a death event
+        if (ev.type === 'death') {
+          chars.set(id, { id, name: nameFromId(id), role: 'conker', traits: [], bonds: [] });
+        } else {
+          continue; // skip events for unknown characters
         }
       }
-      // Add roster entries missing from events
-      for (const l of roster) {
-        if (!fromEvents.has(l.id)) {
-          fromEvents.set(l.id, {
-            id: l.id, name: l.name, role: 'conker',
-            founder: l.founder, age_days: l.age_days,
-            traits: l.traits, bonds: [],
-          });
-        } else {
-          // Update age from roster (more accurate than events)
-          const c = fromEvents.get(l.id)!;
-          c.age_days = l.age_days;
-          c.founder = l.founder;
+      const c = chars.get(id)!;
+      switch (ev.type) {
+        case 'hatch':
+          c.born_unix = ev.unix;
+          c.founder = !!(ev.data as { is_pioneer?: boolean }).is_pioneer;
+          break;
+        case 'death':
+          c.died_unix = ev.unix;
+          c.deathCause = String((ev.data as { cause?: string }).cause || 'unknown');
+          break;
+        case 'trait_earned':
+          if ((ev.data as { trait?: string }).trait) {
+            c.traits.push(String((ev.data as { trait: string }).trait));
+          }
+          break;
+        case 'bond_formed': {
+          const targetId = (ev.data as { target_id?: number }).target_id;
+          if (targetId && !c.bonds.some(b => b.to.id === targetId)) {
+            c.bonds.push({ to: { id: targetId, name: nameFromId(targetId) }, strength: 0.5 });
+          }
+          break;
         }
       }
     }
-    return fromEvents;
+    return chars;
   }, [events, snapshot]);
 
   const charList = useMemo(() => {
