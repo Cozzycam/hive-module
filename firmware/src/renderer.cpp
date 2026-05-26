@@ -183,16 +183,15 @@ static void _update_night_palette() {
 }
 
 // ---- Sprite scale factors ----
-// Biologically accurate ratios, queen = reference
-// Queen at 2.0x (88px) is the 1.00 anchor; others derived from mass^(1/3)
-static constexpr float SCALE_QUEEN          = 2.0f;   // 44x44 base → 88px  (1.00)
-static constexpr float SCALE_WORKER_MAJOR   = 4.6f;   // 10x10 base → 46px  (0.52)
-static constexpr float SCALE_WORKER_MINOR   = 3.2f;   // 10x10 base → 32px  (0.36)
-static constexpr float SCALE_WORKER_PIONEER = 2.3f;   // 10x10 base → 23px  (0.26)
-static constexpr float SCALE_EGG            = 3.5f;   //  4x4  base → 14px  (0.16)
-static constexpr float SCALE_LARVA          = 4.4f;   //  6x6  base → 26px  (0.30)
-static constexpr float SCALE_PUPA           = 3.2f;   //  8x8  base → 26px  (0.29)
+// Queen at 2.0x (88px) is the 1.00 anchor
+static constexpr float SCALE_QUEEN          = 2.0f;   // 44x44 base → 88px
+static constexpr float SCALE_EGG            = 3.5f;   //  4x4  base → 14px
+static constexpr float SCALE_SEED           = 4.4f;   //  6x6  base → 26px (was LARVA)
+static constexpr float SCALE_HUSK           = 3.2f;   //  8x8  base → 26px (uses old pupa sprite)
 static constexpr float SCALE_FOOD_PILE      = 1.5f;   // 12x8  base → 18x12
+// Legacy aliases
+static constexpr float SCALE_LARVA          = SCALE_SEED;
+static constexpr float SCALE_PUPA           = SCALE_HUSK;
 
 // ---- Sprite frame lookup ----
 // Returns sprite data for a given role + animation frame.
@@ -202,8 +201,7 @@ struct SpriteRef {
     int w, h;
 };
 
-static const SpriteRef* _get_worker_sprite(Role /*role*/, bool /*is_pioneer*/,
-                                            ConkerSpriteFrame frame) {
+static const SpriteRef* _get_worker_sprite(ConkerSpriteFrame frame) {
     static const SpriteRef base = {WORKER_PIONEER, WORKER_PIONEER_W, WORKER_PIONEER_H};
     static const SpriteRef lean = {WORKER_LEAN, WORKER_LEAN_W, WORKER_LEAN_H};
     static const SpriteRef snooze = {WORKER_SLEEP, WORKER_SLEEP_W, WORKER_SLEEP_H};
@@ -1023,16 +1021,25 @@ void Renderer::_build_floor_sprites(const Chamber& ch) {
                 sd.kind = SK_EGG;
                 sd.size_px = static_cast<uint16_t>(EGG_W * SCALE_EGG + 0.5f);
                 break;
-            case STAGE_LARVA:
-                sd.kind = SK_LARVA;
-                sd.size_px = static_cast<uint16_t>(LARVA_W * SCALE_LARVA + 0.5f);
-                break;
-            case STAGE_PUPA:
-                sd.kind = SK_PUPA;
-                sd.size_px = static_cast<uint16_t>(PUPA_W * SCALE_PUPA + 0.5f);
+            case STAGE_SEED:
+                sd.kind = SK_SEED;
+                sd.size_px = static_cast<uint16_t>(LARVA_W * SCALE_SEED + 0.5f);
                 break;
             default: _floor_sprite_count--; break;
         }
+    }
+
+    // Husks (static, drawn underneath workers)
+    for (int i = 0; i < ch.husk_count && _floor_sprite_count < MAX_FLOOR_SPRITES; i++) {
+        auto& h = ch.husks[i];
+        auto& sd = _floor_sprites[_floor_sprite_count++];
+        sd.render_x = h.x * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
+        sd.render_y = h.y * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
+        sd.sort_y   = sd.render_y;
+        sd.kind     = SK_HUSK;
+        sd.size_px  = static_cast<uint16_t>(PUPA_W * h.scale_factor * 0.3f + 0.5f);
+        sd.flags    = 0;
+        sd.entity_idx = i;
     }
 
     std::stable_sort(_floor_sprites, _floor_sprites + _floor_sprite_count, _sprite_cmp);
@@ -1062,9 +1069,7 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
             int cur = w.stack_on;
             while (cur >= 0 && offset < 200.0f) {
                 auto& b = ch.conkers[cur];
-                float s = SCALE_WORKER_MINOR;
-                if (b.role == ROLE_MAJOR)  s = SCALE_WORKER_MAJOR;
-                else if (b.is_pioneer)     s = SCALE_WORKER_PIONEER;
+                float s = b.scale_factor;
                 offset -= static_cast<int>(WORKER_PIONEER_H * s + 0.5f) * 0.6f;
                 stack_depth++;
                 if (b.stack_on < 0) base_idx = cur;  // ground-level ant
@@ -1105,8 +1110,7 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
                 // Compute the height this ant was at
                 float height = 0.0f;
                 for (int d = 0; d < w.topple_depth; d++) {
-                    float s = SCALE_WORKER_MINOR;
-                    height -= static_cast<int>(WORKER_PIONEER_H * s + 0.5f) * 0.6f;
+                    height -= static_cast<int>(WORKER_PIONEER_H * w.scale_factor + 0.5f) * 0.6f;
                 }
                 py += static_cast<int>(height * (1.0f - fall_p));
                 // Alternate left/right by depth, scatter ~1 cell width
@@ -1152,9 +1156,7 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
             }
         }
 
-        float scale = SCALE_WORKER_MINOR;
-        if (w.role == ROLE_MAJOR)  scale = SCALE_WORKER_MAJOR;
-        else if (w.is_pioneer)     scale = SCALE_WORKER_PIONEER;
+        float scale = w.scale_factor;
 
         auto& sd = _agent_sprites[_agent_sprite_count++];
         sd.sort_y    = sort_y_stable;
@@ -1208,30 +1210,50 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
         case SK_EGG:
             _draw_sprite_scaled(sd.render_x, sd.render_y, EGG, EGG_W, EGG_H, SCALE_EGG);
             break;
-        case SK_LARVA:
-            _draw_sprite_scaled(sd.render_x, sd.render_y, LARVA, LARVA_W, LARVA_H, SCALE_LARVA);
+        case SK_SEED:
+            _draw_sprite_scaled(sd.render_x, sd.render_y, LARVA, LARVA_W, LARVA_H, SCALE_SEED);
             break;
-        case SK_PUPA:
-            _draw_sprite_scaled(sd.render_x, sd.render_y, PUPA, PUPA_W, PUPA_H, SCALE_PUPA);
+        case SK_HUSK: {
+            // Husks use old pupa sprite, desaturated, at the dead conker's scale
+            float husk_scale = 1.0f;
+            if (sd.entity_idx >= 0 && sd.entity_idx < ch.husk_count)
+                husk_scale = ch.husks[sd.entity_idx].scale_factor * 0.3f;
+            _draw_sprite_scaled_tinted(sd.render_x, sd.render_y, PUPA, PUPA_W, PUPA_H,
+                                       husk_scale, false, 220);  // heavy grey desaturation
             break;
+        }
         case SK_QUEEN:
             _draw_sprite_scaled(sd.render_x, sd.render_y, QUEEN, QUEEN_W, QUEEN_H, SCALE_QUEEN);
             break;
         case SK_WORKER: {
             auto& w = ch.conkers[sd.entity_idx];
-            float scale = SCALE_WORKER_MINOR;
-            if (w.role == ROLE_MAJOR)  scale = SCALE_WORKER_MAJOR;
-            else if (w.is_pioneer)     scale = SCALE_WORKER_PIONEER;
+            float scale = w.scale_factor;
 
             // Sprite frame lookup: use dedicated frame if available, else base
             ConkerSpriteFrame frame = LG_FRAME_BASE;
             if (w.anim_type == LG_ANIM_GROOMING) frame = LG_FRAME_LEAN;
             else if (w.anim_type == LG_ANIM_SNOOZE) frame = LG_FRAME_SNOOZE;
-            const SpriteRef* spr = _get_worker_sprite(w.role, w.is_pioneer, frame);
-            if (!spr) spr = _get_worker_sprite(w.role, w.is_pioneer, LG_FRAME_BASE);
+            const SpriteRef* spr = _get_worker_sprite(frame);
+            if (!spr) spr = _get_worker_sprite(LG_FRAME_BASE);
+
+            // Visual ageing: desaturate tint as conker ages
+            // 0-50% life: normal, 50-100%: ramp to 70% desaturation
+            uint8_t age_tint = sd.tint_seed;
+            if (w.lifespan_ms > 0) {
+                float age_frac = static_cast<float>(w.lived_ms) / w.lifespan_ms;
+                if (age_frac > 0.5f) {
+                    // Encode grey amount in high bit of tint_seed
+                    // The _draw_sprite_scaled_tinted already applies hue shift;
+                    // we reduce saturation by blending toward grey
+                    float grey_frac = (age_frac - 0.5f) * 2.0f;  // 0.0 to 1.0
+                    if (grey_frac > 1.0f) grey_frac = 1.0f;
+                    // Use a special tint value range 128-255 for ageing
+                    age_tint = 128 + static_cast<uint8_t>(grey_frac * 127.0f);
+                }
+            }
 
             _draw_sprite_scaled_tinted(sd.render_x, sd.render_y, spr->data,
-                                spr->w, spr->h, scale, flip, sd.tint_seed);
+                                spr->w, spr->h, scale, flip, age_tint);
 
             // Food-share receiver pulse: warm dot during first half of animation
             if (w.anim_type == LG_ANIM_FOOD_SHARE_RECEIVER
@@ -1305,13 +1327,19 @@ void Renderer::_draw_sprite_scaled_tinted(int cx, int cy, const uint16_t* data,
 
     bool tint = (_nf > 0.01f);
     // Per-worker RGB offsets from seed: 3 independent subtle shifts
+    // tint_seed 1-127: color variation, 128-255: ageing desaturation
     int tint_r = 0, tint_g = 0, tint_b = 0;
-    if (tint_seed != 0) {
+    float grey_blend = 0.0f;
+    if (tint_seed >= 128) {
+        // Ageing: 128=0% grey, 255=70% grey
+        grey_blend = (tint_seed - 128) / 127.0f * 0.70f;
+    } else if (tint_seed != 0) {
         tint_r = (int)(tint_seed & 0x07) - 3;         // -3..+4
         tint_g = (int)((tint_seed >> 3) & 0x03) - 1;  // -1..+2
         tint_b = (int)((tint_seed >> 5) & 0x07) - 3;  // -3..+4
     }
     bool has_tint = (tint_r | tint_g | tint_b) != 0;
+    bool has_grey = (grey_blend > 0.001f);
     uint16_t row_buf[MAX_SCALED_DIM];
 
     for (int dy = 0; dy < dh; dy++) {
@@ -1342,6 +1370,18 @@ void Renderer::_draw_sprite_scaled_tinted(int cx, int cy, const uint16_t* data,
                 r5 += tint_r; if (r5 < 0) r5 = 0; if (r5 > 31) r5 = 31;
                 g6 += tint_g; if (g6 < 0) g6 = 0; if (g6 > 63) g6 = 63;
                 b5 += tint_b; if (b5 < 0) b5 = 0; if (b5 > 31) b5 = 31;
+                c = (r5 << 11) | (g6 << 5) | b5;
+            }
+            if (has_grey) {
+                int r5 = (c >> 11) & 0x1F;
+                int g6 = (c >> 5)  & 0x3F;
+                int b5 =  c        & 0x1F;
+                // Luminance in 565: approximate grey = (r*2 + g + b*2) / 5
+                int grey5 = (r5 * 2 + (g6 >> 1) + b5 * 2) / 5;
+                int grey6 = grey5 * 2;
+                r5 = r5 + static_cast<int>((grey5 - r5) * grey_blend);
+                g6 = g6 + static_cast<int>((grey6 - g6) * grey_blend);
+                b5 = b5 + static_cast<int>((grey5 - b5) * grey_blend);
                 c = (r5 << 11) | (g6 << 5) | b5;
             }
             row_buf[dx] = c;

@@ -8,8 +8,9 @@ struct ColonyState {
     uint16_t population          = 0;
     uint16_t gatherer_count      = 0;
     uint16_t brood_egg           = 0;
-    uint16_t brood_larva         = 0;
-    uint16_t brood_pupa          = 0;
+    uint16_t brood_seed          = 0;
+    uint16_t brood_larva         = 0;   // legacy alias, kept for API (same as brood_seed)
+    uint16_t brood_pupa          = 0;   // always 0 (pupa stage removed)
     uint16_t total_workers_born  = 0;
     uint16_t worker_census       = 0;   // authoritative headcount (births - deaths)
     float    peak_pressure       = 0.0f;

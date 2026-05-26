@@ -7,8 +7,14 @@
 
 // ---- Enums ----
 enum Face    : uint8_t { FACE_N = 0, FACE_S = 1, FACE_W = 2, FACE_E = 3, FACE_COUNT = 4 };
-enum Role    : uint8_t { ROLE_MINOR = 0, ROLE_MAJOR = 1, ROLE_COUNT = 2 };
-enum BroodStage : uint8_t { STAGE_EGG = 0, STAGE_LARVA = 1, STAGE_PUPA = 2, STAGE_DEAD = 3 };
+enum Role    : uint8_t { ROLE_CONKER = 0, ROLE_COUNT = 1 };
+// Legacy aliases for persistence compatibility (old records may have role=0 or role=1)
+constexpr Role ROLE_MINOR = ROLE_CONKER;
+constexpr Role ROLE_MAJOR = ROLE_CONKER;
+enum BroodStage : uint8_t { STAGE_EGG = 0, STAGE_SEED = 1, STAGE_DEAD = 2 };
+// Legacy alias for persistence/event compatibility
+constexpr BroodStage STAGE_LARVA = STAGE_SEED;
+constexpr BroodStage STAGE_PUPA  = STAGE_SEED;
 enum AntState : uint8_t {
     STATE_IDLE = 0, STATE_TEND_QUEEN = 1, STATE_TEND_BROOD = 2,
     STATE_TO_FOOD = 3, STATE_TO_HOME = 4, STATE_CANNIBALIZE = 5,
@@ -18,7 +24,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 62;
+constexpr uint32_t FW_VERSION = 64;
 
 namespace Cfg {
 
@@ -35,21 +41,49 @@ constexpr float FOOD_STORE_START = 80.0f;
 
 // ---- Lifecycle timing (real-time days) ----
 constexpr float SECS_PER_DAY = 86400.0f;
-constexpr float WORKER_LIFESPAN_MEAN  = 21.0f;   // days
-constexpr float WORKER_LIFESPAN_SD    = 3.0f;    // days
-constexpr float PIONEER_LIFESPAN_MEAN = 14.0f;   // days
-constexpr float PIONEER_LIFESPAN_SD   = 2.0f;    // days
+constexpr float CONKER_LIFESPAN_MEAN  = 21.0f;   // days
+constexpr float CONKER_LIFESPAN_SD    = 3.0f;    // days
+// Legacy aliases
+constexpr float WORKER_LIFESPAN_MEAN  = CONKER_LIFESPAN_MEAN;
+constexpr float WORKER_LIFESPAN_SD    = CONKER_LIFESPAN_SD;
 
 constexpr float EGG_DURATION_DAYS     = 1.0f;
-constexpr float LARVA_DURATION_DAYS   = 2.0f;
-constexpr float PUPA_DURATION_DAYS    = 1.0f;
+constexpr float SEED_DURATION_DAYS    = 2.0f;    // was LARVA(2) + PUPA(1), now single stage
+// Legacy aliases
+constexpr float LARVA_DURATION_DAYS   = SEED_DURATION_DAYS;
+
+// Normal total development: egg(1) + seed(2) = 3 days
+constexpr uint32_t NORMAL_TOTAL_DURATION_MS = 3UL * 86400UL * 1000UL;
+
+// ---- Founder bootstrap (per-egg accelerated development) ----
+constexpr int FOUNDER_COHORT_SIZE = 8;
+// Target total durations (egg + seed combined) for founding eggs, in ms
+constexpr uint32_t FOUNDER_DURATIONS_MS[FOUNDER_COHORT_SIZE] = {
+     600000UL,   // egg 0: 10 minutes
+    1800000UL,   // egg 1: 30 minutes
+    3600000UL,   // egg 2: 1 hour
+   14400000UL,   // egg 3: 4 hours
+   43200000UL,   // egg 4: 12 hours
+   86400000UL,   // egg 5: 24 hours
+  172800000UL,   // egg 6: 48 hours
+  NORMAL_TOTAL_DURATION_MS,  // egg 7: 72 hours (normal)
+};
+
+// ---- Conker size distribution ----
+constexpr float CONKER_SCALE_MEAN = 3.2f;   // matches old minor size
+constexpr float CONKER_SCALE_SD   = 0.5f;
+constexpr float CONKER_SCALE_MIN  = 2.2f;
+constexpr float CONKER_SCALE_MAX  = 4.2f;
 
 // ---- Food rates (per real day) ----
 constexpr float QUEEN_FOOD_PER_DAY    = 3.0f;
 constexpr float WORKER_FOOD_PER_DAY   = 2.0f;
-constexpr float LARVA_FOOD_PER_DAY    = 1.5f;
+constexpr float SEED_FOOD_PER_DAY     = 1.5f;    // was LARVA_FOOD_PER_DAY
 constexpr float EGG_FOOD_COST         = 1.0f;    // food per egg laid
-constexpr float LARVA_TOTAL_FOOD      = LARVA_FOOD_PER_DAY * LARVA_DURATION_DAYS; // 3.0
+constexpr float SEED_TOTAL_FOOD       = SEED_FOOD_PER_DAY * SEED_DURATION_DAYS; // 3.0
+// Legacy aliases
+constexpr float LARVA_FOOD_PER_DAY    = SEED_FOOD_PER_DAY;
+constexpr float LARVA_TOTAL_FOOD      = SEED_TOTAL_FOOD;
 
 // ---- Hunger (individual meal cycle) ----
 constexpr float WORKER_HUNGER_PER_DAY = 100.0f;   // 0→100 in 1 day without eating
@@ -60,8 +94,7 @@ constexpr float HUNGER_STARVE         = 100.0f;    // death threshold
 constexpr float HUNGER_SLOWDOWN       = 80.0f;     // speed penalty starts
 
 // ---- Queen laying (real-time) ----
-constexpr int   FOUNDING_EGG_COUNT        = 10;
-constexpr float FOUNDING_EGG_WINDOW_DAYS  = 0.5f;   // 12 hours
+constexpr int   FOUNDING_EGG_COUNT        = FOUNDER_COHORT_SIZE;  // founding phase = founder cohort
 constexpr float ESTABLISHED_LAY_RATE_BASE = 6.0f;   // eggs/day minimum
 constexpr float ESTABLISHED_LAY_RATE_MAX  = 10.0f;  // eggs/day at high pop
 constexpr float LAY_RATE_POP_SCALE        = 100.0f;
@@ -85,11 +118,10 @@ struct RoleParams {
 };
 
 constexpr RoleParams ROLE_PARAMS[ROLE_COUNT] = {
-    { 4, 8, 6.6f, 0.25f },        // ROLE_MINOR
-    { 6, 6, 16.5f, 1.0f / 6.0f }, // ROLE_MAJOR
+    { 4, 8, 6.6f, 0.25f },        // ROLE_CONKER
 };
 
-constexpr Role DEFAULT_BROOD_ROLE = ROLE_MINOR;
+constexpr Role DEFAULT_BROOD_ROLE = ROLE_CONKER;
 
 // ---- Pheromones (JohnBuffer-inspired) ----
 constexpr float BASE_MARKER_INTENSITY = 10.0f;
@@ -185,15 +217,21 @@ constexpr int QUEEN_BODY_HALF_W = 4;            // cells — idle ants won't ent
 constexpr int QUEEN_BODY_HALF_H = 5;            // cells — idle ants won't enter (y)
 
 // ---- Stack weights & capacities ----
-constexpr int STACK_WEIGHT_PIONEER     = 1;
-constexpr int STACK_WEIGHT_MINOR       = 2;
-constexpr int STACK_WEIGHT_MAJOR       = 3;
-constexpr int STACK_CAPACITY_PIONEER   = 5;   // light — topples fast
-constexpr int STACK_CAPACITY_MINOR     = 7;
-constexpr int STACK_CAPACITY_MAJOR     = 10;
+constexpr int STACK_WEIGHT_CONKER      = 2;
+constexpr int STACK_CAPACITY_CONKER    = 7;
+// Legacy aliases
+constexpr int STACK_WEIGHT_PIONEER     = STACK_WEIGHT_CONKER;
+constexpr int STACK_WEIGHT_MINOR       = STACK_WEIGHT_CONKER;
+constexpr int STACK_WEIGHT_MAJOR       = STACK_WEIGHT_CONKER;
+constexpr int STACK_CAPACITY_PIONEER   = STACK_CAPACITY_CONKER;
+constexpr int STACK_CAPACITY_MINOR     = STACK_CAPACITY_CONKER;
+constexpr int STACK_CAPACITY_MAJOR     = STACK_CAPACITY_CONKER;
 constexpr int STACK_TOPPLE_TICKS       = 12;  // wobble duration before scatter
 constexpr int STACK_FALL_TICKS         = 8;   // fall-down duration after wobble
 constexpr uint32_t STACK_COLLAPSE_COOLDOWN_MS = 120000; // 120s before restacking
+
+// ---- Husk pool ----
+constexpr int MAX_HUSKS = 50;
 
 // ---- Proximity interactions ----
 constexpr int   PROXIMITY_DETECTION_RADIUS = 1;

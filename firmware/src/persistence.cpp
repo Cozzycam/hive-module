@@ -211,6 +211,9 @@ bool ConkerRegistry::_write_record(const IdentityRecord& rec) {
     doc["born_unix"]   = rec.born_unix;
     doc["died_unix"]   = rec.died_unix;
     doc["lifespan_ms"] = rec.lifespan_ms;
+    doc["lived_ms"]    = rec.lived_ms;
+    doc["scale_factor"] = rec.scale_factor;
+    doc["is_founder"]  = rec.is_founder;
     doc["tended_by"]   = rec.tended_by;
     doc["traits"]      = rec.traits;
 
@@ -250,6 +253,7 @@ bool ConkerRegistry::_write_brood(const BroodRecord& rec) {
     doc["hunger"]           = rec.hunger;
     doc["food_invested"]    = rec.food_invested;
     doc["stage_elapsed_ms"] = stage_elapsed;
+    doc["total_duration_ms"] = rec.total_duration_ms;
     doc["born_unix"]        = rec.born_unix;
 
     char buf[256];
@@ -303,6 +307,9 @@ bool ConkerRegistry::_load_living_records() {
                         r.born_unix   = doc["born_unix"] | 0;
                         r.died_unix   = 0;
                         r.lifespan_ms = doc["lifespan_ms"] | 0;
+                        r.lived_ms    = doc["lived_ms"] | 0;
+                        r.scale_factor = doc["scale_factor"] | 3.2f;
+                        r.is_founder  = doc["is_founder"] | false;
                         r.tended_by   = doc["tended_by"] | 0;
                         r.traits      = doc["traits"] | 0;
 
@@ -365,6 +372,7 @@ bool ConkerRegistry::_load_brood_records() {
                         b.y              = doc["y"] | 0;
                         b.hunger         = doc["hunger"] | 0.0f;
                         b.food_invested  = doc["food_invested"] | 0.0f;
+                        b.total_duration_ms = doc["total_duration_ms"] | 0;
                         b.born_unix      = doc["born_unix"] | 0;
                         // Convert elapsed time back to absolute millis
                         uint32_t elapsed = doc["stage_elapsed_ms"] | 0;

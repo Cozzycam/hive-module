@@ -13,6 +13,13 @@ struct FoodPile {
     float  amount;
 };
 
+struct Husk {
+    int8_t   x, y;
+    uint32_t conker_id;
+    uint32_t died_unix;
+    float    scale_factor;
+};
+
 class Chamber {
 public:
     ColonyState* colony;
@@ -31,6 +38,9 @@ public:
 
     FoodPile food_piles[Cfg::MAX_FOOD_PILES];
     int      food_pile_count = 0;
+
+    Husk     husks[Cfg::MAX_HUSKS];
+    int      husk_count = 0;
 
     int8_t  entries[FACE_COUNT];    // neighbor ID per face, -1 = none
     int8_t  home_face = -1;         // face toward queen chamber, -1 = is queen chamber
@@ -74,13 +84,15 @@ public:
     void deposit_food(int x, int y, float amount);
 
     // ---- brood/conker pool management ----
-    void add_conker(int8_t px, int8_t py, Role c, bool pioneer);
+    void add_conker(int8_t px, int8_t py, Role c = ROLE_CONKER, bool pioneer = false);
     void remove_conker(int idx);
-    void add_brood(int8_t px, int8_t py, Role c);
+    void add_brood(int8_t px, int8_t py, Role c = ROLE_CONKER);
+    void add_brood_with_duration(int8_t px, int8_t py, uint32_t duration_ms);
     void remove_brood(int idx);
+    void add_husk(int8_t px, int8_t py, uint32_t conker_id, float scale, uint32_t died_unix);
 
     // ---- brood counts ----
-    void count_brood(uint16_t& eggs, uint16_t& larvae, uint16_t& pupae) const;
+    void count_brood(uint16_t& eggs, uint16_t& seeds) const;
 
     // Used by Conker for food pile checks
     int  _food_pile_index(int x, int y) const;

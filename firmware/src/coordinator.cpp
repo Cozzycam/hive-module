@@ -162,11 +162,12 @@ void Coordinator::_aggregate_colony_stats() {
     // Departing workers are still in chamber.conkers, counted naturally above
     colony.gatherer_count = gatherers;
 
-    uint16_t eggs, larvae, pupae;
-    chamber.count_brood(eggs, larvae, pupae);
+    uint16_t eggs, seeds;
+    chamber.count_brood(eggs, seeds);
     colony.brood_egg   = eggs;
-    colony.brood_larva = larvae;
-    colony.brood_pupa  = pupae;
+    colony.brood_seed  = seeds;
+    colony.brood_larva = seeds;  // legacy alias
+    colony.brood_pupa  = 0;
 
     float queen_reserves = 0.0f;
     if (chamber.has_queen && chamber.queen_obj.alive)
@@ -843,8 +844,11 @@ void Coordinator::_persist_tick(uint32_t tick_num) {
             name_from_id(rec.id, rec.name, sizeof(rec.name));
             rec.role = chamber.conkers[i].role;
             rec.is_pioneer = chamber.conkers[i].is_pioneer;
+            rec.is_founder = chamber.conkers[i].is_founder;
             rec.born_unix = g_tod.unix_time;
             rec.lifespan_ms = chamber.conkers[i].lifespan_ms;
+            rec.lived_ms = chamber.conkers[i].lived_ms;
+            rec.scale_factor = chamber.conkers[i].scale_factor;
             memcpy(rec.personality, chamber.conkers[i].personality, sizeof(rec.personality));
             rec.last_x = chamber.conkers[i].x;
             rec.last_y = chamber.conkers[i].y;
@@ -943,8 +947,11 @@ void Coordinator::_persist_process_hatches() {
                 name_from_id(id, rec.name, sizeof(rec.name));
                 rec.role = chamber.conkers[i].role;
                 rec.is_pioneer = chamber.conkers[i].is_pioneer;
+                rec.is_founder = chamber.conkers[i].is_founder;
                 rec.born_unix = g_tod.unix_time;
                 rec.lifespan_ms = chamber.conkers[i].lifespan_ms;
+                rec.lived_ms = chamber.conkers[i].lived_ms;
+                rec.scale_factor = chamber.conkers[i].scale_factor;
                 rec.tended_by = carer_id;
                 memcpy(rec.personality, chamber.conkers[i].personality, sizeof(rec.personality));
                 rec.last_x = chamber.conkers[i].x;
@@ -959,7 +966,7 @@ void Coordinator::_persist_process_hatches() {
                 je.type = JEVT_HATCH;
                 je.lilguy_id = id;
                 je.hatch.role = chamber.conkers[i].role;
-                je.hatch.is_pioneer = chamber.conkers[i].is_pioneer;
+                je.hatch.is_pioneer = chamber.conkers[i].is_founder;
                 je.hatch.from_brood_id = id;
                 journal.emit(je);
                 break;
@@ -995,6 +1002,12 @@ void Coordinator::_persist_update_positions() {
         Conker& w = chamber.conkers[i];
         if (w.id == 0) continue;
         m.positions[m.pos_count++] = {w.id, w.x, w.y};
+        // Sync lived_ms to identity record (ageing source of truth)
+        IdentityRecord* rec = registry.get(w.id);
+        if (rec) {
+            rec->lived_ms = w.lived_ms;
+            rec->dirty = true;
+        }
     }
 }
 
@@ -1151,10 +1164,11 @@ void Coordinator::_persist_restore_from_disk() {
         chamber.conkers[idx].init(
             static_cast<int8_t>(pos_x),
             static_cast<int8_t>(pos_y),
-            static_cast<Role>(r.role),
-            r.is_pioneer
+            ROLE_CONKER,
+            false
         );
         chamber.conkers[idx].id = r.id;
+        chamber.conkers[idx].is_founder = r.is_founder;
         // Restore float position
         chamber.conkers[idx].x = pos_x;
         chamber.conkers[idx].y = pos_y;
@@ -1163,14 +1177,14 @@ void Coordinator::_persist_restore_from_disk() {
         // Restore lifespan (init randomizes it — override with persisted value)
         if (r.lifespan_ms > 0)
             chamber.conkers[idx].lifespan_ms = r.lifespan_ms;
+        // Restore lived_ms (ageing source of truth — no wall-clock reconstruction)
+        chamber.conkers[idx].lived_ms = r.lived_ms;
+        // Restore scale_factor (init randomizes it — override with persisted value)
+        if (r.scale_factor > 0.0f)
+            chamber.conkers[idx].scale_factor = r.scale_factor;
         // Restore personality (init randomizes it — override with persisted value)
         memcpy(chamber.conkers[idx].personality, r.personality,
                sizeof(chamber.conkers[idx].personality));
-        // born_at_ms: approximate from born_unix vs current time
-        if (r.born_unix > 0 && g_tod.unix_time > r.born_unix) {
-            uint32_t age_secs = g_tod.unix_time - r.born_unix;
-            chamber.conkers[idx].born_at_ms = millis() - (age_secs * 1000);
-        }
         chamber.conker_count++;
     }
 
@@ -1182,11 +1196,15 @@ void Coordinator::_persist_restore_from_disk() {
     for (int i = 0; i < brood_count && chamber.brood_count < Cfg::MAX_BROOD; i++) {
         BroodRecord& br = brecs[i];
         int idx = chamber.brood_count;
-        chamber.brood[idx].init(br.x, br.y, static_cast<Role>(br.role));
+        chamber.brood[idx].init(br.x, br.y, ROLE_CONKER);
         chamber.brood[idx].id = br.id;
-        chamber.brood[idx].stage = static_cast<BroodStage>(br.stage);
+        // Map legacy STAGE_PUPA (2) to STAGE_SEED (1) for old records
+        uint8_t stage_raw = br.stage;
+        if (stage_raw == 2) stage_raw = 1;  // PUPA -> SEED
+        chamber.brood[idx].stage = static_cast<BroodStage>(stage_raw);
         chamber.brood[idx].hunger = br.hunger;
         chamber.brood[idx].food_invested = br.food_invested;
+        chamber.brood[idx].total_duration_ms = br.total_duration_ms;
         // stage_start_ms already converted from elapsed to absolute in _load_brood_records
         chamber.brood[idx].stage_start_ms = br.stage_start_ms;
         chamber.brood_count++;

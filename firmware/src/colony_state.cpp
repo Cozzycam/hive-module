@@ -4,7 +4,7 @@ float ColonyState::daily_burn() const {
     float scale = Cfg::metabolic_scale_factor(population);
     return Cfg::QUEEN_FOOD_PER_DAY
          + population * Cfg::WORKER_FOOD_PER_DAY * scale
-         + brood_larva * Cfg::LARVA_FOOD_PER_DAY;
+         + brood_seed * Cfg::SEED_FOOD_PER_DAY;
 }
 
 float ColonyState::food_pressure() const {

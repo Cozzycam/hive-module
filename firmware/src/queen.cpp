@@ -65,7 +65,7 @@ void Queen::_tend_founding_brood(Chamber& ch, float dt) {
     float feed_per_larva = Cfg::LARVA_FOOD_PER_DAY / Cfg::SECS_PER_DAY * dt;
     for (int i = 0; i < ch.brood_count; i++) {
         auto& b = ch.brood[i];
-        if (b.stage != STAGE_LARVA || !b.alive()) continue;
+        if (b.stage != STAGE_SEED || !b.alive()) continue;
         if (b.food_invested >= Cfg::LARVA_TOTAL_FOOD) continue;
         if (!b.needs_feeding()) continue;
         float consumed = _consume(ch, feed_per_larva);
@@ -90,40 +90,45 @@ bool Queen::_can_lay(Chamber& ch) {
 }
 
 void Queen::_lay_founding(Chamber& ch, float dt) {
-    if (eggs_laid >= Cfg::FOUNDING_EGG_COUNT) {
-        // All founding eggs laid, pause until first worker
+    if (eggs_laid >= Cfg::FOUNDER_COHORT_SIZE) {
+        // All founding eggs laid, pause until first worker hatches
         return;
     }
 
-    float lay_rate = static_cast<float>(Cfg::FOUNDING_EGG_COUNT)
-                   / (Cfg::FOUNDING_EGG_WINDOW_DAYS * Cfg::SECS_PER_DAY);
-    egg_accum += lay_rate * dt;
+    // Hatch-gated cadence: lay egg 0 immediately, then wait for
+    // previous founding brood to fully hatch before laying next.
+    if (eggs_laid > 0) {
+        // Check if any founder brood still exists (egg or seed stage)
+        for (int i = 0; i < ch.brood_count; i++) {
+            if (ch.brood[i].alive() && ch.brood[i].total_duration_ms > 0)
+                return;  // previous founder still developing
+        }
+    }
 
-    while (egg_accum >= 1.0f && eggs_laid < Cfg::FOUNDING_EGG_COUNT) {
-        if (ch.brood_count >= Cfg::MAX_BROOD) break;
-        float consumed = _consume(ch, Cfg::EGG_FOOD_COST);
-        if (consumed < Cfg::EGG_FOOD_COST) {
-            if (consumed > 0) reserves += consumed;
+    // Lay one founding egg
+    if (ch.brood_count >= Cfg::MAX_BROOD) return;
+    float consumed = _consume(ch, Cfg::EGG_FOOD_COST);
+    if (consumed < Cfg::EGG_FOOD_COST) {
+        if (consumed > 0) reserves += consumed;
+        return;
+    }
+    // Place around queen, just outside her sprite (~3 cells from center)
+    int dx, dy;
+    for (int att = 0; att < 20; att++) {
+        dx = g_rng.rand_int(-4, 4);
+        dy = g_rng.rand_int(-4, 4);
+        if (abs(dx) + abs(dy) >= 3 && (abs(dx) > 2 || abs(dy) > 2))
             break;
-        }
-        // Place around queen, not under her (min distance 3 cells)
-        int dx, dy;
-        for (int att = 0; att < 8; att++) {
-            dx = g_rng.rand_int(-5, 5);
-            dy = g_rng.rand_int(-5, 5);
-            if (abs(dx) + abs(dy) >= 3) break;
-        }
-        int ex = x + dx, ey = y + dy;
-        if (ch.in_bounds(ex, ey)) {
-            ch.add_brood(ex, ey, Cfg::DEFAULT_BROOD_ROLE);
-            eggs_laid++;
-            Event ev; ev.type = EVT_QUEEN_LAID_EGG; ev.tick = ch.tick_num;
-            ev.position = {static_cast<int8_t>(ex), static_cast<int8_t>(ey)};
-            ch.emit(ev);
-        } else {
-            reserves += consumed;
-        }
-        egg_accum -= 1.0f;
+    }
+    int ex = x + dx, ey = y + dy;
+    if (ch.in_bounds(ex, ey)) {
+        ch.add_brood_with_duration(ex, ey, Cfg::FOUNDER_DURATIONS_MS[eggs_laid]);
+        eggs_laid++;
+        Event ev; ev.type = EVT_QUEEN_LAID_EGG; ev.tick = ch.tick_num;
+        ev.position = {static_cast<int8_t>(ex), static_cast<int8_t>(ey)};
+        ch.emit(ev);
+    } else {
+        reserves += consumed;  // refund, try next tick
     }
 }
 
@@ -153,12 +158,13 @@ void Queen::_lay_established(Chamber& ch, float dt) {
 
         ch.colony->food_store -= Cfg::EGG_FOOD_COST;
 
-        // Place around queen, not under her (min distance 3 cells)
+        // Place around queen, just outside her sprite (~3 cells from center)
         int dx, dy;
-        for (int att = 0; att < 8; att++) {
-            dx = g_rng.rand_int(-5, 5);
-            dy = g_rng.rand_int(-5, 5);
-            if (abs(dx) + abs(dy) >= 3) break;
+        for (int att = 0; att < 20; att++) {
+            dx = g_rng.rand_int(-4, 4);
+            dy = g_rng.rand_int(-4, 4);
+            if (abs(dx) + abs(dy) >= 3 && (abs(dx) > 2 || abs(dy) > 2))
+                break;
         }
         int ex = x + dx, ey = y + dy;
         if (ch.in_bounds(ex, ey)) {

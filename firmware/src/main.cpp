@@ -325,6 +325,20 @@ static void process_serial_line(const char* line) {
         tod_wifi_set_pass(line + 10);
     } else if (strcmp(line, "wifi forget") == 0) {
         tod_wifi_forget();
+    } else if (strcmp(line, "wifi scan") == 0) {
+        Serial.println("[wifi] Scanning...");
+        topology_set_wifi_active(true);
+        int n = WiFi.scanNetworks(false, false, false, 300);
+        topology_set_wifi_active(false);
+        if (n <= 0) {
+            Serial.println("[wifi] No networks found");
+        } else {
+            for (int i = 0; i < n; i++) {
+                Serial.printf("  %2d: ch%-2d %ddBm %s\r\n",
+                    i+1, WiFi.channel(i), WiFi.RSSI(i), WiFi.SSID(i).c_str());
+            }
+        }
+        WiFi.scanDelete();
     } else if (strcmp(line, "vps status") == 0) {
         vps_push_status();
     } else if (strncmp(line, "vps secret ", 11) == 0) {

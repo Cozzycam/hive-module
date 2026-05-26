@@ -28,6 +28,9 @@ struct __attribute__((packed)) ConkerTransfer {
     uint16_t stall_ticks;
     uint32_t born_at_ms;
     uint32_t lifespan_ms;
+    uint32_t lived_ms;
+    float    scale_factor;
+    uint8_t  is_founder;
     int16_t  idle_ticks_remaining;
     uint8_t  idle_microstate;
     uint8_t  sleeping;
@@ -64,6 +67,9 @@ inline void conker_to_transfer(const Conker& w, ConkerTransfer& t,
     t.stall_ticks     = w.stall_ticks;
     t.born_at_ms      = w.born_at_ms;
     t.lifespan_ms     = w.lifespan_ms;
+    t.lived_ms        = w.lived_ms;
+    t.scale_factor    = w.scale_factor;
+    t.is_founder      = w.is_founder ? 1 : 0;
     t.idle_ticks_remaining = w.idle_ticks_remaining;
     t.idle_microstate = w.idle_microstate;
     t.sleeping        = w.sleeping ? 1 : 0;
@@ -112,6 +118,9 @@ inline void transfer_to_conker(const ConkerTransfer& t, Conker& w,
     w.idle_cooldown   = 0;
     w.born_at_ms      = t.born_at_ms;
     w.lifespan_ms     = t.lifespan_ms;
+    w.lived_ms        = t.lived_ms;
+    w.scale_factor    = t.scale_factor;
+    w.is_founder      = t.is_founder != 0;
     w.idle_ticks_remaining = t.idle_ticks_remaining;
     w.idle_repoll_tick = 0;
     w.idle_microstate = t.idle_microstate;

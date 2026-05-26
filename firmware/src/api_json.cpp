@@ -86,19 +86,16 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
     pop["dead_total"] = coord.registry.manifest().total_workers_died;
     JsonObject by_role = pop["by_role"].to<JsonObject>();
     by_role["queen"] = coord.chamber.has_queen ? 1 : 0;
-    int minors = 0, majors = 0, pioneers = 0;
+    int conkers_count = coord.registry.living_count();
+    int founders = 0;
     IdentityRecord* recs = coord.registry.living_records();
-    for (int i = 0; i < coord.registry.living_count(); i++) {
-        if (recs[i].is_pioneer) pioneers++;
-        else if (recs[i].role == ROLE_MAJOR) majors++;
-        else minors++;
+    for (int i = 0; i < conkers_count; i++) {
+        if (recs[i].is_founder) founders++;
     }
-    by_role["minor"] = minors;
-    by_role["major"] = majors;
-    by_role["pioneer"] = pioneers;
+    by_role["conker"] = conkers_count;
+    by_role["founder"] = founders;
     by_role["brood_egg"] = coord.colony.brood_egg;
-    by_role["brood_larva"] = coord.colony.brood_larva;
-    by_role["brood_pupa"] = coord.colony.brood_pupa;
+    by_role["brood_seed"] = coord.colony.brood_seed;
 
     // Food
     JsonObject food = doc["food"].to<JsonObject>();
@@ -169,12 +166,10 @@ size_t api_lilguys_json(Coordinator& coord, char* buf, size_t buflen,
         JsonObject entry = results.add<JsonObject>();
         entry["id"] = r.id;
         entry["name"] = r.name;
-        entry["role"] = r.is_pioneer ? "pioneer" :
-                        (r.role == ROLE_MAJOR ? "major" : "minor");
+        entry["role"] = "conker";
+        if (r.is_founder) entry["founder"] = true;
 
-        float age_days = 0;
-        if (r.born_unix > 0 && g_tod.unix_time > r.born_unix)
-            age_days = (g_tod.unix_time - r.born_unix) / 86400.0f;
+        float age_days = r.lived_ms / (86400.0f * 1000.0f);
         entry["age_days"] = age_days;
 
         JsonArray traits = entry["traits"].to<JsonArray>();
@@ -195,9 +190,10 @@ size_t api_lilguy_detail_json(Coordinator& coord, uint32_t id,
     doc["schema"] = 1;
     doc["id"] = rec->id;
     doc["name"] = rec->name;
-    doc["role"] = rec->is_pioneer ? "pioneer" :
-                  (rec->role == ROLE_MAJOR ? "major" : "minor");
+    doc["role"] = "conker";
+    if (rec->is_founder) doc["founder"] = true;
     doc["born_unix"] = rec->born_unix;
+    doc["age_days"] = rec->lived_ms / (86400.0f * 1000.0f);
     if (rec->died_unix == 0)
         doc["died_unix"] = nullptr;
     else

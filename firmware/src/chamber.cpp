@@ -13,6 +13,7 @@ void Chamber::init(ColonyState* col, bool with_queen) {
     food_pile_count = 0;
     food_delivery_signal = 0;
     cannibalism_cooldown = 0;
+    husk_count = 0;
     home_face = -1;
     has_queen = with_queen;
     event_bus = nullptr;
@@ -45,11 +46,11 @@ void Chamber::tick(float dt) {
         BroodTransition result = brood[i].tick(dt);
         switch (result) {
         case BROOD_HATCH: {
-            bool pioneer = colony->total_workers_born < Cfg::FOUNDING_EGG_COUNT;
+            bool founder = colony->total_workers_born < Cfg::FOUNDER_COHORT_SIZE;
             int8_t bx = brood[i].x, by = brood[i].y;
             uint32_t brood_id = brood[i].id;
-            add_conker(bx, by, brood[i].role, pioneer);
-            // Transfer brood ID to newly-hatched worker
+            add_conker(bx, by, ROLE_CONKER, false);
+            // Transfer brood ID and set founder tag
             if (brood_id != 0) {
                 conkers[conker_count - 1].id = brood_id;
                 if (hatch_count < MAX_LIFECYCLE) {
@@ -58,24 +59,19 @@ void Chamber::tick(float dt) {
                     hatch_count++;
                 }
             }
+            conkers[conker_count - 1].is_founder = founder;
             colony->total_workers_born++;
             colony->worker_census++;
             if (!queen_obj.founding_done) queen_obj.founding_done = true;
             Event ev; ev.type = EVT_YOUNG_HATCHED; ev.tick = tick_num;
-            ev.young_hatched = {STAGE_PUPA, 0xFF, bx, by};
+            ev.young_hatched = {STAGE_SEED, 0xFF, bx, by};
             emit(ev);
             remove_brood(i);
             break;
         }
-        case BROOD_EGG_TO_LARVA: {
+        case BROOD_EGG_TO_SEED: {
             Event ev; ev.type = EVT_YOUNG_HATCHED; ev.tick = tick_num;
-            ev.young_hatched = {STAGE_EGG, STAGE_LARVA, brood[i].x, brood[i].y};
-            emit(ev);
-            break;
-        }
-        case BROOD_LARVA_TO_PUPA: {
-            Event ev; ev.type = EVT_YOUNG_HATCHED; ev.tick = tick_num;
-            ev.young_hatched = {STAGE_LARVA, STAGE_PUPA, brood[i].x, brood[i].y};
+            ev.young_hatched = {STAGE_EGG, STAGE_SEED, brood[i].x, brood[i].y};
             emit(ev);
             break;
         }
@@ -101,7 +97,7 @@ void Chamber::tick(float dt) {
     float pressure = colony->food_pressure();
     if (pressure > Cfg::FAMINE_BROOD_CULL_PRESSURE) {
         for (int i = brood_count - 1; i >= 0; i--) {
-            if (brood[i].stage == STAGE_LARVA && brood[i].alive()
+            if (brood[i].stage == STAGE_SEED && brood[i].alive()
                     && brood[i].hunger > Cfg::FAMINE_BROOD_CULL_HUNGER) {
                 Event ev; ev.type = EVT_YOUNG_DIED; ev.tick = tick_num;
                 ev.position = {brood[i].x, brood[i].y};
@@ -146,6 +142,10 @@ void Chamber::tick(float dt) {
                 uint8_t cause = (conkers[i].hunger >= Cfg::HUNGER_STARVE) ? 1 : 0;
                 deaths[death_count++] = {conkers[i].id, cause};
             }
+            // Leave a husk at death location
+            add_husk(static_cast<int8_t>(conkers[i].cell_x()),
+                     static_cast<int8_t>(conkers[i].cell_y()),
+                     conkers[i].id, conkers[i].scale_factor, g_tod.unix_time);
             if (conkers[i].food_carried > 0)
                 add_food(conkers[i].cell_x(), conkers[i].cell_y(),
                          conkers[i].food_carried);
@@ -167,8 +167,7 @@ void Chamber::tick(float dt) {
         float screen_y = conkers[i].y * Cfg::CELL_SIZE;
         int cur = conkers[i].stack_on;
         while (cur >= 0) {
-            float s = (conkers[cur].role == ROLE_MAJOR) ? 4.6f
-                    : (conkers[cur].is_pioneer ? 2.3f : 3.2f);
+            float s = conkers[cur].scale_factor;
             screen_y -= static_cast<int>(10.0f * s + 0.5f) * 0.75f;
             cur = conkers[cur].stack_on;
         }
@@ -612,17 +611,31 @@ void Chamber::remove_brood(int idx) {
     brood[idx] = brood[--brood_count];
 }
 
-void Chamber::count_brood(uint16_t& eggs, uint16_t& larvae, uint16_t& pupae) const {
-    eggs = larvae = pupae = 0;
+void Chamber::count_brood(uint16_t& eggs, uint16_t& seeds) const {
+    eggs = seeds = 0;
     for (int i = 0; i < brood_count; i++) {
         if (!brood[i].alive()) continue;
         switch (brood[i].stage) {
-            case STAGE_EGG:   eggs++;   break;
-            case STAGE_LARVA: larvae++; break;
-            case STAGE_PUPA:  pupae++;  break;
+            case STAGE_EGG:  eggs++;  break;
+            case STAGE_SEED: seeds++; break;
             default: break;
         }
     }
+}
+
+void Chamber::add_brood_with_duration(int8_t px, int8_t py, uint32_t duration_ms) {
+    if (brood_count >= Cfg::MAX_BROOD) return;
+    brood[brood_count].init_with_duration(px, py, duration_ms);
+    brood_count++;
+}
+
+void Chamber::add_husk(int8_t px, int8_t py, uint32_t conker_id, float scale, uint32_t died_unix) {
+    if (husk_count >= Cfg::MAX_HUSKS) {
+        // Evict oldest
+        husks[0] = husks[husk_count - 1];
+        husk_count--;
+    }
+    husks[husk_count++] = {px, py, conker_id, died_unix, scale};
 }
 
 int Chamber::_entry_face_at(int x, int y) const {

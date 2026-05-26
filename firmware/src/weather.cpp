@@ -170,7 +170,9 @@ void weather_tick() {
     }
 
     Serial.println("[weather] syncing...");
+    _last_fetch_ms = now;  // back off even on failure to avoid hammering WiFi
+    bool was_connected = WiFi.isConnected();
     if (!tod_wifi_connect(10000)) return;
     weather_fetch();
-    tod_wifi_disconnect();
+    if (!was_connected) tod_wifi_disconnect();
 }

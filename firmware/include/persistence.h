@@ -38,6 +38,9 @@ struct IdentityRecord {
     float    personality[8] = {};     // Phase 3: 0.0-1.0 per dimension
     uint32_t traits       = 0;        // Phase 5: bitmask (zero-stub)
     uint32_t lifespan_ms  = 0;        // predetermined death-of-old-age timer
+    uint32_t lived_ms     = 0;        // cumulative sim-running time (ageing source of truth)
+    float    scale_factor = 3.2f;     // per-conker render scale
+    bool     is_founder   = false;    // first FOUNDER_COHORT_SIZE hatches
     uint16_t chamber_id   = 0;        // module that owns this worker
     float    last_x       = 0;
     float    last_y       = 0;
@@ -56,6 +59,7 @@ struct BroodRecord {
     float    hunger       = 0;
     float    food_invested = 0;
     uint32_t stage_start_ms = 0;      // millis at current stage entry
+    uint32_t total_duration_ms = 0;   // founder bootstrap: total egg+seed time
     uint32_t born_unix    = 0;
 };
 

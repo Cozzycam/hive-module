@@ -61,21 +61,24 @@ void Conker::init(int8_t px, int8_t py, Role c, bool pioneer) {
         personality[i] = (g_rng.rand_float() + g_rng.rand_float()) * 0.5f;
     personality[PERS_RESERVE] = 0.0f;  // reserved for Phase 4+
 
-    role = c;
-    is_pioneer = pioneer;
-    const auto& p = Cfg::ROLE_PARAMS[c];
+    role = ROLE_CONKER;
+    is_pioneer = pioneer;  // legacy, always false for new conkers
+    is_founder = false;
+    lived_ms = 0;
+    const auto& p = Cfg::ROLE_PARAMS[ROLE_CONKER];
     move_ticks   = p.move_ticks;
     sense_radius = p.sense_radius;
     carry_amount = p.carry_amount;
     speed        = p.speed;
 
-    float lifespan_days;
-    if (pioneer)
-        lifespan_days = g_rng.rand_gaussian(Cfg::PIONEER_LIFESPAN_MEAN, Cfg::PIONEER_LIFESPAN_SD);
-    else
-        lifespan_days = g_rng.rand_gaussian(Cfg::WORKER_LIFESPAN_MEAN, Cfg::WORKER_LIFESPAN_SD);
-    if (lifespan_days < 1.0f) lifespan_days = 1.0f;  // clamp minimum
+    float lifespan_days = g_rng.rand_gaussian(Cfg::CONKER_LIFESPAN_MEAN, Cfg::CONKER_LIFESPAN_SD);
+    if (lifespan_days < 1.0f) lifespan_days = 1.0f;
     lifespan_ms = static_cast<uint32_t>(lifespan_days * Cfg::SECS_PER_DAY * 1000.0f);
+
+    // Per-conker size from bell curve
+    scale_factor = g_rng.rand_gaussian(Cfg::CONKER_SCALE_MEAN, Cfg::CONKER_SCALE_SD);
+    if (scale_factor < Cfg::CONKER_SCALE_MIN) scale_factor = Cfg::CONKER_SCALE_MIN;
+    if (scale_factor > Cfg::CONKER_SCALE_MAX) scale_factor = Cfg::CONKER_SCALE_MAX;
 }
 
 // ================================================================
@@ -85,7 +88,10 @@ void Conker::init(int8_t px, int8_t py, Role c, bool pioneer) {
 void Conker::tick(Chamber& ch, float dt) {
     if (!alive) return;
 
-    if (millis() - born_at_ms >= lifespan_ms) {
+    // Accumulate lived time (only advances while sim is running)
+    lived_ms += static_cast<uint32_t>(dt * 1000.0f);
+
+    if (lived_ms >= lifespan_ms) {
         alive = false;
         if (ch.colony->worker_census > 0) ch.colony->worker_census--;
         extern uint16_t g_deaths_old_age;
@@ -114,11 +120,25 @@ void Conker::tick(Chamber& ch, float dt) {
         return;
     }
 
-    // Speed penalty when starving (80-100: linearly reduce to 30%)
+    // Speed: base speed modified by ageing and starvation
+    float base_speed = Cfg::ROLE_PARAMS[ROLE_CONKER].speed;
+
+    // Ageing slowdown: 50-100% of lifespan → ramp from 100% to 50% speed
+    if (lifespan_ms > 0) {
+        float age_frac = static_cast<float>(lived_ms) / lifespan_ms;
+        if (age_frac > 0.5f) {
+            float slow = (age_frac - 0.5f);  // 0.0 to 0.5
+            base_speed *= (1.0f - slow);       // 100% to 50%
+        }
+    }
+
+    speed = base_speed;
+
+    // Starvation penalty (80-100: linearly reduce to 30%)
     if (hunger > Cfg::HUNGER_SLOWDOWN) {
         float penalty = (hunger - Cfg::HUNGER_SLOWDOWN)
                       / (Cfg::HUNGER_STARVE - Cfg::HUNGER_SLOWDOWN);
-        speed = Cfg::ROLE_PARAMS[role].speed * (1.0f - penalty * 0.7f);
+        speed = base_speed * (1.0f - penalty * 0.7f);
     }
 
     // Track time away from queen chamber
@@ -659,9 +679,9 @@ void Conker::_do_to_home(Chamber& ch) {
             has_target_cell = false;
             steps_walked = 0;
             {
+                // Foraging wear: add extra ageing for long trips
                 uint32_t wear_ms = static_cast<uint32_t>(g_rng.rand_float() * 0.2f * Cfg::SECS_PER_DAY * 1000.0f);
-                if (born_at_ms > wear_ms) born_at_ms -= wear_ms;
-                else born_at_ms = 0;
+                lived_ms += wear_ms;
             }
             facing_dx = -facing_dx;
             facing_dy = -facing_dy;

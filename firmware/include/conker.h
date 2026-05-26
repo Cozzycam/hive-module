@@ -58,15 +58,18 @@ struct Conker {
     int8_t   target_cell_x, target_cell_y; // next cell to walk toward
     bool     has_target_cell = false;
     uint32_t born_at_ms     = 0;
+    uint32_t lived_ms       = 0;           // cumulative sim-running time
     bool     alive          = true;
 
-    Role     role           = ROLE_MINOR;
+    Role     role           = ROLE_CONKER;
     uint8_t  move_ticks;                   // kept for reference
     uint8_t  sense_radius;
     float    carry_amount;
     float    speed;                        // cells per tick
     uint32_t lifespan_ms;
-    bool     is_pioneer     = false;
+    float    scale_factor   = 3.2f;        // per-conker render scale (Gaussian at spawn)
+    bool     is_pioneer     = false;       // legacy (always false for new conkers)
+    bool     is_founder     = false;       // true for first FOUNDER_COHORT_SIZE hatches
 
     float    facing_dx, facing_dy;         // normalized velocity direction
     float    last_dx, last_dy;
@@ -122,7 +125,7 @@ struct Conker {
     int cell_x() const { return static_cast<int>(floorf(x)); }
     int cell_y() const { return static_cast<int>(floorf(y)); }
 
-    void init(int8_t px, int8_t py, Role c = ROLE_MINOR, bool pioneer = false);
+    void init(int8_t px, int8_t py, Role c = ROLE_CONKER, bool pioneer = false);
     void tick(Chamber& chamber, float dt);
 
     // Movement methods

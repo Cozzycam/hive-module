@@ -63,11 +63,13 @@ struct GrainSpeck {
 enum SpriteKind : uint8_t {
     SK_FOOD_PILE = 0,
     SK_EGG,
-    SK_LARVA,
-    SK_PUPA,
+    SK_LARVA,      // legacy alias = SK_SEED
+    SK_PUPA,       // legacy alias = SK_HUSK
     SK_WORKER,
     SK_QUEEN,
+    SK_HUSK,
 };
+constexpr SpriteKind SK_SEED = SK_LARVA;
 
 struct SpriteDraw {
     float    sort_y;      // Y for depth sorting (may include bias)
