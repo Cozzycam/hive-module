@@ -51,14 +51,9 @@ BroodTransition Brood::tick(float dt) {
             stage = STAGE_DEAD;
             return BROOD_DIED;
         }
-        // Scale food requirement proportionally if duration is shorter
-        float food_needed = Cfg::SEED_TOTAL_FOOD;
-        if (total_duration_ms > 0) {
-            float ratio = static_cast<float>(seed_dur_ms)
-                        / (Cfg::SEED_DURATION_DAYS * Cfg::SECS_PER_DAY * 1000.0f);
-            food_needed = Cfg::SEED_TOTAL_FOOD * ratio;
-            if (food_needed < 0.5f) food_needed = 0.5f;  // minimum food investment
-        }
+        // Founder brood (accelerated): time-only hatch, no food gate
+        // Normal brood: requires both time and food investment
+        float food_needed = (total_duration_ms > 0) ? 0.0f : Cfg::SEED_TOTAL_FOOD;
         if (elapsed_ms >= seed_dur_ms && food_invested >= food_needed) {
             return BROOD_HATCH;
         }

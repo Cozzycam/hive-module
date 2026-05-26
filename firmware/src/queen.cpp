@@ -39,9 +39,11 @@ void Queen::tick(Chamber& ch, float dt) {
     }
 
     // ---- Egg laying ----
-    if (!founding_done) {
+    // Founder bootstrap: keep using founding cadence until all founder eggs are laid,
+    // even after the first worker hatches (which sets founding_done = true)
+    if (eggs_laid < Cfg::FOUNDER_COHORT_SIZE) {
         _lay_founding(ch, dt);
-    } else {
+    } else if (founding_done) {
         _lay_established(ch, dt);
     }
 }
@@ -66,8 +68,9 @@ void Queen::_tend_founding_brood(Chamber& ch, float dt) {
     for (int i = 0; i < ch.brood_count; i++) {
         auto& b = ch.brood[i];
         if (b.stage != STAGE_SEED || !b.alive()) continue;
-        if (b.food_invested >= Cfg::LARVA_TOTAL_FOOD) continue;
-        if (!b.needs_feeding()) continue;
+        if (b.food_invested >= Cfg::SEED_TOTAL_FOOD) continue;
+        // Founding phase: feed proactively every tick (no hunger gate)
+        // Accelerated brood can't wait hours for hunger to build up
         float consumed = _consume(ch, feed_per_larva);
         if (consumed > 0) {
             b.hunger = 0.0f;
