@@ -2,12 +2,14 @@
 #include <Arduino.h>
 
 void Brood::init(int8_t px, int8_t py, Role c) {
+    id = 0;
+    tended_by = 0;
     x = px;
     y = py;
     stage = STAGE_EGG;
     role = c;
     stage_start_ms = millis();
-    total_duration_ms = 0;  // use default durations
+    total_duration_ms = 0;
     hunger = 0.0f;
     food_invested = 0.0f;
 }

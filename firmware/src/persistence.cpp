@@ -500,6 +500,14 @@ uint32_t ConkerRegistry::allocate_id() {
 
 bool ConkerRegistry::create(const IdentityRecord& rec) {
     if (_alive_count >= MAX_ALIVE) return false;
+    // Guard against duplicate IDs (should never happen, but prevents data corruption)
+    for (int i = 0; i < _alive_count; i++) {
+        if (_alive[i].id == rec.id) {
+            Serial.printf("[persist] WARNING: duplicate create for id=%lu, skipping\r\n",
+                          (unsigned long)rec.id);
+            return false;
+        }
+    }
     _alive[_alive_count] = rec;
     _alive[_alive_count].dirty = false;
     _alive_count++;
