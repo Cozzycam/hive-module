@@ -37,7 +37,33 @@ export function Diary() {
     const list = cat.types.length === 0
       ? meaningful
       : meaningful.filter(e => cat.types.includes(e.type));
-    return [...list].reverse(); // newest first
+    // Group food_delivered events within 10 minutes of each other
+    const grouped: (ColonyEvent | { type: 'food_group'; count: number; totalAmount: number; unix: number; tick: number; lilguy: number; data: Record<string, unknown> })[] = [];
+    const TEN_MIN = 600;
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].type !== 'food_delivered') {
+        grouped.push(list[i]);
+        continue;
+      }
+      let count = 1;
+      let total = ((list[i].data as { amount?: number }).amount) || 0;
+      const startUnix = list[i].unix;
+      while (i + 1 < list.length && list[i + 1].type === 'food_delivered'
+             && Math.abs(list[i + 1].unix - startUnix) < TEN_MIN) {
+        i++;
+        count++;
+        total += ((list[i].data as { amount?: number }).amount) || 0;
+      }
+      if (count === 1) {
+        grouped.push(list[i]);
+      } else {
+        grouped.push({
+          type: 'food_group', count, totalAmount: total,
+          unix: startUnix, tick: list[i].tick, lilguy: 0, data: {},
+        });
+      }
+    }
+    return [...grouped].reverse(); // newest first
   }, [events, categoryIdx]);
 
   const handleRefresh = useCallback(async () => {
@@ -85,7 +111,7 @@ export function Diary() {
         </div>
       ) : (
         filtered.map((ev, i) => (
-          <DiaryEntry key={`${ev.unix}-${ev.tick}-${i}`} event={ev} palette={palette} />
+          <DiaryEntry key={`${ev.unix}-${ev.tick}-${i}`} event={ev as ColonyEvent} palette={palette} />
         ))
       )}
     </div>
@@ -178,6 +204,11 @@ function formatEvent(ev: ColonyEvent): { icon: string; description: string } {
       return {
         icon: '\u{1F9B7}',
         description: `${name} was assigned a caretaker${data.carer_id ? `: ${nameFromId(data.carer_id as number)}` : ''}.`,
+      };
+    case 'food_group' as EventType:
+      return {
+        icon: '\u{1F36F}',
+        description: `${(ev as unknown as { count: number }).count} food deliveries (${((ev as unknown as { totalAmount: number }).totalAmount).toFixed(0)}u total).`,
       };
     default:
       return {
