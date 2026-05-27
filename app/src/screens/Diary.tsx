@@ -18,7 +18,7 @@ const EVENT_CATEGORIES: { label: string; types: EventType[] }[] = [
 ];
 
 export function Diary() {
-  const { events, colonyId } = useColony();
+  const { events, colonyId, snapshot } = useColony();
   const { refreshEvents } = useColonyActions();
   const palette = TOD_PALETTES.day; // Reflective — always day
 
@@ -66,6 +66,15 @@ export function Diary() {
     return [...grouped].reverse(); // newest first
   }, [events, categoryIdx]);
 
+  // Build name lookup from roster (firmware random names)
+  const rosterNames = useMemo(() => {
+    const map = new Map<number, string>();
+    if (snapshot?.lilguys) {
+      for (const l of snapshot.lilguys) map.set(l.id, l.name);
+    }
+    return map;
+  }, [snapshot]);
+
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     await refreshEvents();
@@ -111,22 +120,23 @@ export function Diary() {
         </div>
       ) : (
         filtered.map((ev, i) => (
-          <DiaryEntry key={`${ev.unix}-${ev.tick}-${i}`} event={ev as ColonyEvent} palette={palette} />
+          <DiaryEntry key={`${ev.unix}-${ev.tick}-${i}`} event={ev as ColonyEvent} palette={palette} rosterNames={rosterNames} />
         ))
       )}
     </div>
   );
 }
 
-function DiaryEntry({ event, palette }: {
+function DiaryEntry({ event, palette, rosterNames }: {
   event: ColonyEvent;
   palette: { cardBg: string; text: string; dimText: string };
+  rosterNames: Map<number, string>;
 }) {
   const date = new Date(event.unix * 1000);
   const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   const timeStr = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 
-  const { icon, description } = formatEvent(event);
+  const { icon, description } = formatEvent(event, rosterNames);
 
   return (
     <Card style={{ background: palette.cardBg, padding: 12 }}>
@@ -145,8 +155,8 @@ function DiaryEntry({ event, palette }: {
   );
 }
 
-function formatEvent(ev: ColonyEvent): { icon: string; description: string } {
-  const name = ev.lilguy ? nameFromId(ev.lilguy) : 'Colony';
+function formatEvent(ev: ColonyEvent, rosterNames: Map<number, string>): { icon: string; description: string } {
+  const name = ev.lilguy ? (rosterNames.get(ev.lilguy) || nameFromId(ev.lilguy)) : 'Colony';
   const data = ev.data as Record<string, unknown>;
 
   switch (ev.type) {

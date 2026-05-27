@@ -24,13 +24,11 @@ export function Home({ onNavigate }: HomeProps) {
 
   const { population, food, modules, world } = snapshot;
 
-  // Notable Now: recently active conkers, filtered to living roster
-  const notableIds = useMemo(() => {
-    // If snapshot has a roster (even empty), use it strictly
+  // Notable Now: from living roster
+  const notableConkers = useMemo(() => {
     if (snapshot.lilguys) {
-      return snapshot.lilguys.slice(0, 6).map(l => l.id);
+      return snapshot.lilguys.slice(0, 6);
     }
-    // Fallback for old snapshots without roster: skip Notable Now
     return [];
   }, [snapshot]);
 
@@ -131,35 +129,35 @@ export function Home({ onNavigate }: HomeProps) {
       )}
 
       {/* Notable Now */}
-      {notableIds.length > 0 && (
+      {notableConkers.length > 0 && (
         <>
           <div style={{ fontSize: SIZES.xs, fontWeight: 600, color: tod.dimText, textTransform: 'uppercase', letterSpacing: 1, margin: '16px 0 8px' }}>
             Notable Now
           </div>
-          {notableIds.map(id => (
+          {notableConkers.map(l => (
             <Card
-              key={id}
+              key={l.id}
               style={{ background: tod.cardBg, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
-              onClick={() => onNavigate('characters', { lilguyId: id })}
+              onClick={() => onNavigate('characters', { lilguyId: l.id })}
             >
               <div>
                 <div style={{ fontSize: SIZES.base, fontWeight: 600, color: tod.text }}>
-                  {nameFromId(id)}
+                  {l.name}
                 </div>
                 <div style={{ fontSize: SIZES.sm, color: tod.dimText }}>
-                  {deriveRoleTag(undefined, 'worker', [])}
+                  {deriveRoleTag(l.personality, 'conker', l.traits || [])}
                 </div>
               </div>
               <button
-                onClick={(e) => { e.stopPropagation(); togglePin(id); }}
+                onClick={(e) => { e.stopPropagation(); togglePin(l.id); }}
                 style={{
                   background: 'none', border: 'none', cursor: 'pointer',
-                  fontSize: 18, color: isPinned(id) ? HIVE.accent : HIVE.sand,
+                  fontSize: 18, color: isPinned(l.id) ? HIVE.accent : HIVE.sand,
                   padding: 4,
                 }}
-                aria-label={isPinned(id) ? 'Unpin' : 'Pin'}
+                aria-label={isPinned(l.id) ? 'Unpin' : 'Pin'}
               >
-                {isPinned(id) ? '\u2605' : '\u2606'}
+                {isPinned(l.id) ? '\u2605' : '\u2606'}
               </button>
             </Card>
           ))}
