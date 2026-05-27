@@ -38,3 +38,11 @@ inline void name_from_id(uint32_t id, char* buf, size_t buflen) {
     else
         snprintf(buf, buflen, "%s_%lu", WORDLIST[idx], (unsigned long)(suffix + 1));
 }
+
+#ifdef ARDUINO
+#include <esp_random.h>
+inline void name_random(char* buf, size_t buflen) {
+    uint32_t idx = esp_random() % 200;
+    snprintf(buf, buflen, "%s", WORDLIST[idx]);
+}
+#endif

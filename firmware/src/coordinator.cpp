@@ -840,8 +840,7 @@ void Coordinator::_persist_tick(uint32_t tick_num) {
             // Create a record for this worker
             IdentityRecord rec;
             rec.id = chamber.conkers[i].id;
-            name_from_id(rec.id, rec.name, sizeof(rec.name));
-            name_from_id(rec.id, rec.name, sizeof(rec.name));
+            name_random(rec.name, sizeof(rec.name));
             rec.role = chamber.conkers[i].role;
             rec.is_pioneer = chamber.conkers[i].is_pioneer;
             rec.is_founder = chamber.conkers[i].is_founder;
@@ -944,7 +943,7 @@ void Coordinator::_persist_process_hatches() {
 
                 IdentityRecord rec;
                 rec.id = id;
-                name_from_id(id, rec.name, sizeof(rec.name));
+                name_random(rec.name, sizeof(rec.name));
                 rec.role = chamber.conkers[i].role;
                 rec.is_pioneer = chamber.conkers[i].is_pioneer;
                 rec.is_founder = chamber.conkers[i].is_founder;
@@ -1072,7 +1071,7 @@ void Coordinator::_persist_migrate_live_colony() {
         w.id = registry.allocate_id();
         IdentityRecord rec;
         rec.id = w.id;
-        name_from_id(rec.id, rec.name, sizeof(rec.name));
+        name_random(rec.name, sizeof(rec.name));
         rec.role = w.role;
         rec.is_pioneer = w.is_pioneer;
         rec.born_unix = m.founded_unix;  // approximate
