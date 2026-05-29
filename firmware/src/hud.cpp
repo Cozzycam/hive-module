@@ -416,18 +416,64 @@ void hud_draw(Arduino_Canvas* gfx, const Chamber& ch) {
     HudPalette pal;
     _get_palette(pal);
 
-    // --- Draw background strip ---
-    // We blend the HUD bg over whatever the renderer drew underneath.
-    // For performance, use fillRect with a pre-blended opaque approximation
-    // (true alpha compositing per-pixel over the framebuffer would be too slow).
+    // --- Draw translucent background strip ---
+    // Alpha-blend HUD bg over the rendered scene using the palette's bg_a.
+    // 480x28 = 13,440 pixels; ~2-3ms on ESP32-S3 with PSRAM framebuffer.
+    //
+    // The canvas is 320x480 native (portrait) with setRotation(1) for landscape.
+    // Raw FB has stride LCD_WIDTH=320. Rotation 1 maps screen (sx, sy) to
+    // native (319-sy, sx), so the HUD strip (screen y 0..27) occupies native
+    // columns 292..319 across all 480 native rows. We iterate in native order
+    // for cache efficiency.
     uint16_t bg_565 = _rgb565(pal.bg_r, pal.bg_g, pal.bg_b);
-    // Draw semi-transparent by blending with a darkened version of itself
-    // approximating alpha over typical soil backgrounds
-    gfx->fillRect(0, 0, SCREEN_W, HUD_STRIP_H, bg_565);
+    uint16_t* fb = (uint16_t*)gfx->getFramebuffer();
+    if (fb && pal.bg_a < 255) {
+        int a = (pal.bg_a * 257 + 128) >> 8;  // 0-256 fixed-point
+        int inv_a = 256 - a;
+        int sr5 = (pal.bg_r >> 3) * a;
+        int sg6 = (pal.bg_g >> 2) * a;
+        int sb5 = (pal.bg_b >> 3) * a;
+        int nc_start = LCD_WIDTH - HUD_STRIP_H;  // native col 292
+        for (int nr = 0; nr < LCD_HEIGHT; nr++) {
+            uint16_t* row = fb + nr * LCD_WIDTH;
+            for (int nc = nc_start; nc < LCD_WIDTH; nc++) {
+                uint16_t px = row[nc];
+                int dr = (px >> 11) & 0x1F;
+                int dg = (px >> 5)  & 0x3F;
+                int db =  px        & 0x1F;
+                int r = (sr5 + dr * inv_a) >> 8;
+                int g = (sg6 + dg * inv_a) >> 8;
+                int b = (sb5 + db * inv_a) >> 8;
+                row[nc] = (r << 11) | (g << 5) | b;
+            }
+        }
+    } else {
+        gfx->fillRect(0, 0, SCREEN_W, HUD_STRIP_H, bg_565);
+    }
 
-    // Bottom rim line
-    uint16_t rim_565 = _rgb565(pal.rim_r, pal.rim_g, pal.rim_b);
-    gfx->drawFastHLine(0, HUD_STRIP_H - 1, SCREEN_W, rim_565);
+    // Bottom rim line: screen y=HUD_STRIP_H-1 → native col = 320-HUD_STRIP_H = 292
+    if (fb && pal.rim_a < 255) {
+        int a = (pal.rim_a * 257 + 128) >> 8;
+        int inv_a = 256 - a;
+        int sr5 = (pal.rim_r >> 3) * a;
+        int sg6 = (pal.rim_g >> 2) * a;
+        int sb5 = (pal.rim_b >> 3) * a;
+        int rim_nc = LCD_WIDTH - HUD_STRIP_H;
+        for (int nr = 0; nr < LCD_HEIGHT; nr++) {
+            int idx = nr * LCD_WIDTH + rim_nc;
+            uint16_t px = fb[idx];
+            int dr = (px >> 11) & 0x1F;
+            int dg = (px >> 5)  & 0x3F;
+            int db =  px        & 0x1F;
+            int r = (sr5 + dr * inv_a) >> 8;
+            int g = (sg6 + dg * inv_a) >> 8;
+            int b = (sb5 + db * inv_a) >> 8;
+            fb[idx] = (r << 11) | (g << 5) | b;
+        }
+    } else {
+        uint16_t rim_565 = _rgb565(pal.rim_r, pal.rim_g, pal.rim_b);
+        gfx->drawFastHLine(0, HUD_STRIP_H - 1, SCREEN_W, rim_565);
+    }
 
     // --- Prepare colors ---
     uint16_t ink  = _rgb565(pal.ink_r, pal.ink_g, pal.ink_b);

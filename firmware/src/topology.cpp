@@ -68,6 +68,12 @@ static volatile int _ack_write = 0;
 static volatile int _ack_count = 0;
 static PendingAck _ack_buf[ACK_BUF_SIZE];
 
+// Death sync receive buffer (ISR -> coordinator via drain)
+static const int DS_BUF_SIZE = 8;
+static volatile int _ds_write = 0;
+static volatile int _ds_count = 0;
+static PendingDeathSync _ds_buf[DS_BUF_SIZE];
+
 // Handoff drop counter (extern, defined in main.cpp)
 extern uint32_t g_handoffs_dropped;
 
@@ -277,6 +283,15 @@ static void _on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int l
                 _remote_pop[f] = ps->population;
                 break;
             }
+        }
+    } else if (msg_type == TOPO_DEATH_SYNC && len >= (int)sizeof(DeathSyncMessage)) {
+        // Death sync — buffer for coordinator (queen)
+        if (_ds_count < DS_BUF_SIZE) {
+            int idx = _ds_write;
+            memcpy(_ds_buf[idx].data, data, len);
+            _ds_buf[idx].len = len;
+            _ds_write = (idx + 1) % DS_BUF_SIZE;
+            _ds_count++;
         }
     } else if (msg_type == TOPO_OTA_ANNOUNCE && len >= (int)sizeof(OtaAnnounceMessage)) {
         const OtaAnnounceMessage* oa = reinterpret_cast<const OtaAnnounceMessage*>(data);
@@ -704,6 +719,17 @@ int topology_drain_handoff_acks(PendingAck* out, int max_out) {
         int idx = (_ack_write - _ack_count + ACK_BUF_SIZE) % ACK_BUF_SIZE;
         out[n] = _ack_buf[idx];
         _ack_count--;
+        n++;
+    }
+    return n;
+}
+
+int topology_drain_death_syncs(PendingDeathSync* out, int max_out) {
+    int n = 0;
+    while (_ds_count > 0 && n < max_out) {
+        int idx = (_ds_write - _ds_count + DS_BUF_SIZE) % DS_BUF_SIZE;
+        out[n] = _ds_buf[idx];
+        _ds_count--;
         n++;
     }
     return n;

@@ -3,6 +3,7 @@
 #include "chamber.h"
 #include "events.h"
 #include "rng.h"
+#include <Arduino.h>
 #include <cmath>
 
 void Queen::init(int8_t px, int8_t py) {
@@ -98,14 +99,12 @@ void Queen::_lay_founding(Chamber& ch, float dt) {
         return;
     }
 
-    // Hatch-gated cadence: lay egg 0 immediately, then wait for
-    // previous founding brood to fully hatch before laying next.
-    if (eggs_laid > 0) {
-        // Check if any founder brood still exists (egg or seed stage)
-        for (int i = 0; i < ch.brood_count; i++) {
-            if (ch.brood[i].alive() && ch.brood[i].total_duration_ms > 0)
-                return;  // previous founder still developing
-        }
+    // Hatch-gated cadence: one founder at a time. Wait for any existing
+    // founder brood to fully hatch before laying next. Also guards against
+    // eggs_laid being stale after reboot (manifest flush is periodic).
+    for (int i = 0; i < ch.brood_count; i++) {
+        if (ch.brood[i].alive() && ch.brood[i].total_duration_ms > 0)
+            return;  // previous founder still developing
     }
 
     // Lay one founding egg

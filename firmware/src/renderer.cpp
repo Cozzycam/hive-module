@@ -1219,7 +1219,7 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
             if (sd.entity_idx >= 0 && sd.entity_idx < ch.husk_count)
                 husk_scale = ch.husks[sd.entity_idx].scale_factor * 0.3f;
             _draw_sprite_scaled_tinted(sd.render_x, sd.render_y, PUPA, PUPA_W, PUPA_H,
-                                       husk_scale, false, 220);  // heavy grey desaturation
+                                       husk_scale, false, 0, 0.70f);  // heavy grey desaturation
             break;
         }
         case SK_QUEEN:
@@ -1236,24 +1236,19 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
             const SpriteRef* spr = _get_worker_sprite(frame);
             if (!spr) spr = _get_worker_sprite(LG_FRAME_BASE);
 
-            // Visual ageing: desaturate tint as conker ages
+            // Visual ageing: desaturate as conker ages
             // 0-50% life: normal, 50-100%: ramp to 70% desaturation
-            uint8_t age_tint = sd.tint_seed;
+            float age_grey = 0.0f;
             if (w.lifespan_ms > 0) {
                 float age_frac = static_cast<float>(w.lived_ms) / w.lifespan_ms;
                 if (age_frac > 0.5f) {
-                    // Encode grey amount in high bit of tint_seed
-                    // The _draw_sprite_scaled_tinted already applies hue shift;
-                    // we reduce saturation by blending toward grey
-                    float grey_frac = (age_frac - 0.5f) * 2.0f;  // 0.0 to 1.0
-                    if (grey_frac > 1.0f) grey_frac = 1.0f;
-                    // Use a special tint value range 128-255 for ageing
-                    age_tint = 128 + static_cast<uint8_t>(grey_frac * 127.0f);
+                    age_grey = (age_frac - 0.5f) * 2.0f * 0.70f;
+                    if (age_grey > 0.70f) age_grey = 0.70f;
                 }
             }
 
             _draw_sprite_scaled_tinted(sd.render_x, sd.render_y, spr->data,
-                                spr->w, spr->h, scale, flip, age_tint);
+                                spr->w, spr->h, scale, flip, sd.tint_seed, age_grey);
 
             // Food-share receiver pulse: warm dot during first half of animation
             if (w.anim_type == LG_ANIM_FOOD_SHARE_RECEIVER
@@ -1315,7 +1310,8 @@ void Renderer::_draw_sprite_scaled(int cx, int cy, const uint16_t* data,
 
 void Renderer::_draw_sprite_scaled_tinted(int cx, int cy, const uint16_t* data,
                                            int sw, int sh, float scale,
-                                           bool flip_h, uint8_t tint_seed) {
+                                           bool flip_h, uint8_t tint_seed,
+                                           float age_grey) {
     int dw = static_cast<int>(sw * scale + 0.5f);
     int dh = static_cast<int>(sh * scale + 0.5f);
     if (dw > MAX_SCALED_DIM) dw = MAX_SCALED_DIM;
@@ -1326,20 +1322,16 @@ void Renderer::_draw_sprite_scaled_tinted(int cx, int cy, const uint16_t* data,
     _mark_dirty(ox, oy, dw, dh);
 
     bool tint = (_nf > 0.01f);
-    // Per-worker RGB offsets from seed: 3 independent subtle shifts
-    // tint_seed 1-127: color variation, 128-255: ageing desaturation
+    // Per-worker RGB offsets from seed: visible colour variation on TFT.
+    // Full 1-255 range used for colour; ageing grey passed separately.
     int tint_r = 0, tint_g = 0, tint_b = 0;
-    float grey_blend = 0.0f;
-    if (tint_seed >= 128) {
-        // Ageing: 128=0% grey, 255=70% grey
-        grey_blend = (tint_seed - 128) / 127.0f * 0.70f;
-    } else if (tint_seed != 0) {
-        tint_r = (int)(tint_seed & 0x07) - 3;         // -3..+4
-        tint_g = (int)((tint_seed >> 3) & 0x03) - 1;  // -1..+2
-        tint_b = (int)((tint_seed >> 5) & 0x07) - 3;  // -3..+4
+    if (tint_seed != 0) {
+        tint_r = ((int)(tint_seed & 0x07) - 3) * 2;        // -6..+8
+        tint_g = ((int)((tint_seed >> 3) & 0x07) - 3);     // -3..+4
+        tint_b = ((int)((tint_seed >> 6) & 0x03) - 1) * 2; // -2..+2
     }
     bool has_tint = (tint_r | tint_g | tint_b) != 0;
-    bool has_grey = (grey_blend > 0.001f);
+    bool has_grey = (age_grey > 0.001f);
     uint16_t row_buf[MAX_SCALED_DIM];
 
     for (int dy = 0; dy < dh; dy++) {
@@ -1376,12 +1368,11 @@ void Renderer::_draw_sprite_scaled_tinted(int cx, int cy, const uint16_t* data,
                 int r5 = (c >> 11) & 0x1F;
                 int g6 = (c >> 5)  & 0x3F;
                 int b5 =  c        & 0x1F;
-                // Luminance in 565: approximate grey = (r*2 + g + b*2) / 5
                 int grey5 = (r5 * 2 + (g6 >> 1) + b5 * 2) / 5;
                 int grey6 = grey5 * 2;
-                r5 = r5 + static_cast<int>((grey5 - r5) * grey_blend);
-                g6 = g6 + static_cast<int>((grey6 - g6) * grey_blend);
-                b5 = b5 + static_cast<int>((grey5 - b5) * grey_blend);
+                r5 = r5 + static_cast<int>((grey5 - r5) * age_grey);
+                g6 = g6 + static_cast<int>((grey6 - g6) * age_grey);
+                b5 = b5 + static_cast<int>((grey5 - b5) * age_grey);
                 c = (r5 << 11) | (g6 << 5) | b5;
             }
             row_buf[dx] = c;

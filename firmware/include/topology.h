@@ -18,6 +18,7 @@ enum TopoMsgType : uint8_t {
     TOPO_STATE_SYNC = 0x13, // queen colony state broadcast (tod + stats)
     TOPO_ANNOUNCE   = 0x20, // queen announces chamber assignment to satellite
     TOPO_WIFI_CREDS = 0x22, // queen → satellite: WiFi credentials for solo mode
+    TOPO_DEATH_SYNC   = 0x15,  // satellite → queen: worker died on satellite
     TOPO_OTA_ANNOUNCE = 0x30, // queen → satellites: "new firmware, connect to WiFi"
     TOPO_OTA_READY    = 0x31, // queen → satellites: "server at IP:port, download now"
 };
@@ -128,6 +129,14 @@ struct BoundaryPheroData {
     uint32_t last_rx_ms;
 };
 
+// Death sync message (satellite → queen: worker died remotely)
+struct __attribute__((packed)) DeathSyncMessage {
+    uint8_t  msg_type;    // TOPO_DEATH_SYNC
+    uint16_t sender_id;
+    uint32_t conker_id;
+    uint8_t  cause;       // 0=old_age, 1=starved
+};
+
 // Handoff ACK message (receiver → sender)
 struct __attribute__((packed)) HandoffAck {
     uint8_t  msg_type;    // TOPO_HANDOFF_ACK
@@ -151,6 +160,13 @@ struct PendingAck {
     int     len;
 };
 int  topology_drain_handoff_acks(PendingAck* out, int max_out);
+
+// Death sync receive buffer — queen drains these each tick
+struct PendingDeathSync {
+    uint8_t data[16];
+    int     len;
+};
+int  topology_drain_death_syncs(PendingDeathSync* out, int max_out);
 
 // Remote population tracking (queen reads these)
 uint16_t topology_remote_population(Face f);

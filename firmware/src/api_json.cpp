@@ -205,6 +205,9 @@ size_t api_lilguys_json(Coordinator& coord, char* buf, size_t buflen,
 
         JsonArray traits = entry["traits"].to<JsonArray>();
         add_traits_array(traits, r.traits);
+
+        entry["scale_factor"] = r.scale_factor;
+        entry["tint_seed"] = r.tint_seed;
     }
 
     return serializeJson(doc, buf, buflen);
@@ -231,6 +234,10 @@ size_t api_lilguy_detail_json(Coordinator& coord, uint32_t id,
         doc["died_unix"] = nullptr;
     else
         doc["died_unix"] = rec->died_unix;
+
+    // Appearance
+    doc["scale_factor"] = rec->scale_factor;
+    doc["tint_seed"] = rec->tint_seed;
 
     // Tended by
     if (rec->tended_by != 0) {

@@ -276,7 +276,7 @@ bool ConkerRegistry::_write_brood(const BroodRecord& rec) {
     doc["hunger"]           = rec.hunger;
     doc["food_invested"]    = rec.food_invested;
     doc["stage_elapsed_ms"] = stage_elapsed;
-    doc["total_duration_ms"] = rec.total_duration_ms;
+    doc["total_duration_ms"] = (unsigned long)rec.total_duration_ms;
     doc["born_unix"]        = rec.born_unix;
 
     char buf[256];
@@ -396,8 +396,8 @@ bool ConkerRegistry::_load_brood_records() {
                         b.y              = doc["y"] | 0;
                         b.hunger         = doc["hunger"] | 0.0f;
                         b.food_invested  = doc["food_invested"] | 0.0f;
-                        b.total_duration_ms = doc["total_duration_ms"] | 0;
-                        b.born_unix      = doc["born_unix"] | 0;
+                        b.total_duration_ms = doc["total_duration_ms"] | (uint32_t)0;
+                        b.born_unix      = doc["born_unix"] | (uint32_t)0;
                         // Convert elapsed time back to absolute millis
                         uint32_t elapsed = doc["stage_elapsed_ms"] | 0;
                         b.stage_start_ms = millis() - elapsed;

@@ -88,6 +88,9 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
     // ---- Receive incoming handoffs (workers arriving from other modules) ----
     _receive_handoffs(bus, tick_num);
 
+    // ---- Receive death syncs from satellites (queen only) ----
+    if (is_queen()) _receive_death_syncs();
+
     // ---- Service pending outgoing handoffs (ACK processing, retries, timeouts) ----
     _service_pending_handoffs();
 
@@ -96,6 +99,9 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
 
     // ---- Chamber tick (movement, behavior, lifecycle events) ----
     chamber.tick(dt);
+
+    // ---- Satellite: send death syncs to queen ----
+    if (!is_queen()) _send_death_syncs();
 
     // ---- Edge crossing detection + outgoing handoff ----
     _check_edge_crossings(bus, tick_num);
@@ -115,6 +121,9 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
 
     // ---- Persistence: assign IDs, process hatches/deaths, periodic flush ----
     if (is_queen()) _persist_tick(tick_num);
+
+    // ---- Queen: check for workers lost on disconnected satellites ----
+    if (is_queen()) _check_lost_workers();
 
     // ---- WorldCondition: sync time ----
     if (is_queen()) _world_tick();
@@ -255,6 +264,9 @@ void Coordinator::on_topology_change(Face face, bool connected, uint16_t module_
         Serial.printf("[coord] announcing chamber on face %s -> module 0x%04X, home_face=%s\r\n",
             face_letter(face), module_id, face_letter(satellite_home));
 
+        // Satellite reconnected — clear disconnect timer
+        _satellite_disconnect_ms[face] = 0;
+
         // Journal: module connected
         JournalEntry je = {};
         je.tick = 0;  // no tick context in topology callback
@@ -305,6 +317,10 @@ void Coordinator::on_topology_change(Face face, bool connected, uint16_t module_
         }
         Serial.printf("[coord] module 0x%04X disconnected from face %s\r\n",
             module_id, face_letter(face));
+
+        // Start disconnect timer for lost worker detection
+        _satellite_disconnect_ms[face] = millis();
+        if (_satellite_disconnect_ms[face] == 0) _satellite_disconnect_ms[face] = 1;
 
         // Journal: module disconnected
         JournalEntry je = {};
@@ -648,6 +664,9 @@ void Coordinator::_place_arrival(const ConkerTransfer& t, EventBus& bus,
     transfer_to_conker(t, w, ex, ey, fdx, fdy);
     w.arrival_ms = millis();
 
+    // Clear stale cross-module target — conker will recompute on next tick
+    w.has_target = false;
+
     // Auto-stack: multiple arrivals on the same face in the same tick
     if (first_idx[af] >= 0) {
         int top = first_idx[af];
@@ -726,6 +745,9 @@ void Coordinator::_receive_handoffs(EventBus& bus, uint32_t tick_num) {
 
         _place_arrival(t, bus, tick_num, first_idx);
 
+        // Worker returned — remove from remote tracking
+        _untrack_remote_worker(t.conker_id);
+
         // Send ACK to sender
         if (src_face >= 0) {
             _last_seen_seq[src_face] = t.seq;
@@ -754,6 +776,9 @@ void Coordinator::_service_pending_handoffs() {
         if (ack.msg_type != TOPO_HANDOFF_ACK) continue;
         for (int j = 0; j < MAX_PENDING_OUT; j++) {
             if (_pending_out[j].active && _pending_out[j].payload.seq == ack.seq) {
+                // Track this worker as being on a remote satellite
+                _track_remote_worker(_pending_out[j].payload.conker_id,
+                                     _pending_out[j].face);
                 _pending_out[j].active = false;
                 break;
             }
@@ -796,6 +821,148 @@ void Coordinator::_service_pending_handoffs() {
             _pending_out[i].active = false;
             g_handoffs_dropped++;
         }
+    }
+#endif
+}
+
+// ================================================================
+//  Remote worker tracking + death sync + lost worker recovery
+// ================================================================
+
+void Coordinator::_track_remote_worker(uint32_t id, uint8_t face) {
+    // Check if already tracked (re-ACK of same worker)
+    for (int i = 0; i < MAX_REMOTE_WORKERS; i++) {
+        if (_remote_workers[i].active && _remote_workers[i].id == id) return;
+    }
+    for (int i = 0; i < MAX_REMOTE_WORKERS; i++) {
+        if (!_remote_workers[i].active) {
+            _remote_workers[i] = {id, face, millis(), true};
+            return;
+        }
+    }
+}
+
+void Coordinator::_untrack_remote_worker(uint32_t id) {
+    for (int i = 0; i < MAX_REMOTE_WORKERS; i++) {
+        if (_remote_workers[i].active && _remote_workers[i].id == id) {
+            _remote_workers[i].active = false;
+            return;
+        }
+    }
+}
+
+void Coordinator::_send_death_syncs() {
+#ifdef ARDUINO
+    if (chamber.death_count == 0) return;
+    for (int d = 0; d < chamber.death_count; d++) {
+        DeathSyncMessage msg;
+        msg.msg_type  = TOPO_DEATH_SYNC;
+        msg.sender_id = topology_my_id();
+        msg.conker_id = chamber.deaths[d].id;
+        msg.cause     = chamber.deaths[d].cause;
+        // Send toward queen (home_face)
+        if (chamber.home_face >= 0) {
+            topology_send_to_face(static_cast<Face>(chamber.home_face),
+                                  (const uint8_t*)&msg, sizeof(msg));
+            Serial.printf("[death-sync] sent id=%lu cause=%d to queen\r\n",
+                          (unsigned long)msg.conker_id, msg.cause);
+        }
+    }
+#endif
+}
+
+void Coordinator::_receive_death_syncs() {
+#ifdef ARDUINO
+    PendingDeathSync pending[8];
+    int n = topology_drain_death_syncs(pending, 8);
+    for (int i = 0; i < n; i++) {
+        if (pending[i].len < (int)sizeof(DeathSyncMessage)) continue;
+        const DeathSyncMessage& msg = *reinterpret_cast<const DeathSyncMessage*>(pending[i].data);
+        if (msg.msg_type != TOPO_DEATH_SYNC) continue;
+
+        uint32_t id = msg.conker_id;
+        uint8_t cause = msg.cause;
+
+        // Untrack from remote workers
+        _untrack_remote_worker(id);
+
+        // Mark dead in registry
+        registry.mark_dead(id, g_tod.unix_time);
+        registry.manifest().total_workers_died++;
+        bonds.remove_owner(id);
+
+        // Journal: death event (happened on satellite)
+        JournalEntry je = {};
+        je.tick = chamber.tick_num;
+        je.unix_time = g_tod.unix_time;
+        je.type = JEVT_DEATH;
+        je.lilguy_id = id;
+        je.death.cause = cause;
+        journal.emit(je);
+
+        Serial.printf("[death-sync] received: id=%lu cause=%d — marked dead in registry\r\n",
+                      (unsigned long)id, cause);
+    }
+#endif
+}
+
+void Coordinator::_check_lost_workers() {
+#ifdef ARDUINO
+    uint32_t now = millis();
+    for (int i = 0; i < MAX_REMOTE_WORKERS; i++) {
+        if (!_remote_workers[i].active) continue;
+        uint8_t face = _remote_workers[i].face;
+        uint32_t disc_ms = _satellite_disconnect_ms[face];
+
+        // Only respawn if satellite has been disconnected for 30s+
+        if (disc_ms == 0) continue;  // still connected
+        if (now - disc_ms < 30000) continue;  // not long enough
+
+        uint32_t id = _remote_workers[i].id;
+        _remote_workers[i].active = false;
+
+        // Check registry — only respawn if still considered alive
+        IdentityRecord* rec = registry.get(id);
+        if (!rec || rec->died_unix != 0) continue;
+
+        // Respawn at queen chamber center
+        if (chamber.conker_count >= Cfg::MAX_CONKERS) {
+            Serial.printf("[lost-worker] id=%lu — chamber full, cannot respawn\r\n",
+                          (unsigned long)id);
+            continue;
+        }
+
+        int8_t qx = chamber.queen_obj.x;
+        int8_t qy = chamber.queen_obj.y;
+        int idx = chamber.conker_count++;
+        Conker& w = chamber.conkers[idx];
+        w = Conker{};  // reset to defaults
+        w.id = id;
+        w.alive = true;
+        w.x = static_cast<float>(qx) + 0.5f;
+        w.y = static_cast<float>(qy) + 0.5f;
+        w.prev_x = w.x;
+        w.prev_y = w.y;
+        w.role = static_cast<Role>(rec->role);
+        w.is_founder = rec->is_founder;
+        w.scale_factor = rec->scale_factor;
+        w.tint_seed = rec->tint_seed;
+        w.born_at_ms = rec->born_unix > 0 ? millis() - (g_tod.unix_time - rec->born_unix) * 1000 : millis();
+
+        // Restore personality from registry (already 0.0-1.0 floats)
+        for (int p = 0; p < PERS_COUNT && p < 8; p++)
+            w.personality[p] = rec->personality[p];
+
+        // Recompute role params
+        w.move_ticks   = Cfg::ROLE_PARAMS[w.role].move_ticks;
+        w.sense_radius = Cfg::ROLE_PARAMS[w.role].sense_radius;
+        w.carry_amount = Cfg::ROLE_PARAMS[w.role].carry_amount;
+        w.speed        = Cfg::ROLE_PARAMS[w.role].speed;
+        w.lifespan_ms  = rec->lifespan_ms;
+        w.lived_ms     = rec->lived_ms;  // last flushed value — conservative
+
+        Serial.printf("[lost-worker] respawned id=%lu at queen after satellite disconnect\r\n",
+                      (unsigned long)id);
     }
 #endif
 }
@@ -852,28 +1019,35 @@ void Coordinator::_persist_tick(uint32_t tick_num) {
     // Process deaths — mark_dead in registry
     _persist_process_deaths();
 
-    // Assign IDs to workers that somehow have id==0 (handoff from old firmware, etc.)
+    // Ensure every worker in the chamber has an IdentityRecord.
+    // Catches: id==0 (unassigned), or non-zero id with no record (handoff arrival
+    // from satellite that had no persistence, or record lost on disk).
     for (int i = 0; i < chamber.conker_count; i++) {
-        if (chamber.conkers[i].id == 0) {
-            chamber.conkers[i].id = registry.allocate_id();
-            // Create a record for this worker
-            IdentityRecord rec;
-            rec.id = chamber.conkers[i].id;
-            name_random(rec.name, sizeof(rec.name));
-            rec.role = chamber.conkers[i].role;
-            rec.is_pioneer = chamber.conkers[i].is_pioneer;
-            rec.is_founder = chamber.conkers[i].is_founder;
-            rec.born_unix = g_tod.unix_time;
-            rec.lifespan_ms = chamber.conkers[i].lifespan_ms;
-            rec.lived_ms = chamber.conkers[i].lived_ms;
-            rec.scale_factor = chamber.conkers[i].scale_factor;
-            rec.tint_seed = chamber.conkers[i].tint_seed;
-            memcpy(rec.personality, chamber.conkers[i].personality, sizeof(rec.personality));
-            rec.last_x = chamber.conkers[i].x;
-            rec.last_y = chamber.conkers[i].y;
-            rec.last_state = chamber.conkers[i].state;
-            registry.create(rec);
-        }
+        Conker& w = chamber.conkers[i];
+        bool needs_record = (w.id == 0) || (w.id != 0 && !registry.get(w.id));
+        if (!needs_record) continue;
+
+        if (w.id == 0)
+            w.id = registry.allocate_id();
+
+        IdentityRecord rec;
+        rec.id = w.id;
+        name_random(rec.name, sizeof(rec.name));
+        rec.role = w.role;
+        rec.is_pioneer = w.is_pioneer;
+        rec.is_founder = w.is_founder;
+        rec.born_unix = g_tod.unix_time;
+        rec.lifespan_ms = w.lifespan_ms;
+        rec.lived_ms = w.lived_ms;
+        rec.scale_factor = w.scale_factor;
+        rec.tint_seed = w.tint_seed;
+        memcpy(rec.personality, w.personality, sizeof(rec.personality));
+        rec.last_x = w.x;
+        rec.last_y = w.y;
+        rec.last_state = w.state;
+        registry.create(rec);
+        Serial.printf("[persist] created missing record for id=%lu\r\n",
+                      (unsigned long)w.id);
     }
 
     // Milestone tracking
@@ -930,6 +1104,7 @@ void Coordinator::_persist_assign_new_brood_ids() {
             rec.hunger = chamber.brood[i].hunger;
             rec.food_invested = chamber.brood[i].food_invested;
             rec.stage_start_ms = chamber.brood[i].stage_start_ms;
+            rec.total_duration_ms = chamber.brood[i].total_duration_ms;
             rec.born_unix = g_tod.unix_time;
             registry.create_brood(rec);
         }
@@ -1124,6 +1299,7 @@ void Coordinator::_persist_migrate_live_colony() {
     }
 
     registry.flush();
+    registry.flush_manifest();  // re-save manifest with queen state set above
 
     // Journal: colony founded event
     JournalEntry je = {};

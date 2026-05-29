@@ -1,20 +1,20 @@
 import { useMemo } from 'react';
 
 // Firmware tint algorithm (from renderer.cpp):
-// tint_r = (tint_seed & 0x07) - 3         → -3..+4
-// tint_g = ((tint_seed >> 3) & 0x03) - 1  → -1..+2
-// tint_b = ((tint_seed >> 5) & 0x07) - 3  → -3..+4
-// Applied as per-channel shift on RGB values (each channel 0-255 in firmware is 0-31 in RGB565)
+// tint_r = ((tint_seed & 0x07) - 3) * 2        → -6..+8
+// tint_g = ((tint_seed >> 3) & 0x07) - 3        → -3..+4
+// tint_b = (((tint_seed >> 6) & 0x03) - 1) * 2  → -2..+2
+// Full seed range 1-255 used for colour; ageing grey handled separately.
 
 function tintToCSS(seed: number): string {
   if (seed === 0) return 'none';
-  const r = (seed & 0x07) - 3;
-  const g = ((seed >> 3) & 0x03) - 1;
-  const b = ((seed >> 5) & 0x07) - 3;
-  // Scale to CSS-friendly range: firmware shifts ±3 on 5-bit (0-31) channels
-  // That's roughly ±10% per channel. Map to hue-rotate + saturate for simplicity.
-  const hueShift = (r - b) * 8;  // red vs blue balance → hue
-  const satBoost = 1.0 + g * 0.1; // green component → saturation
+  const r = ((seed & 0x07) - 3) * 2;
+  const g = ((seed >> 3) & 0x07) - 3;
+  const b = (((seed >> 6) & 0x03) - 1) * 2;
+  // Map RGB565 channel offsets to CSS hue-rotate + saturate.
+  // R vs B balance drives hue; G drives saturation.
+  const hueShift = (r - b) * 5;  // ±50 degrees
+  const satBoost = 1.0 + g * 0.08;
   return `hue-rotate(${hueShift}deg) saturate(${satBoost})`;
 }
 

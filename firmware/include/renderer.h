@@ -187,7 +187,8 @@ private:
                              bool flip_h = false);
     void _draw_sprite_scaled_tinted(int cx, int cy, const uint16_t* data,
                                     int sw, int sh, float scale,
-                                    bool flip_h, uint8_t tint_seed);
+                                    bool flip_h, uint8_t tint_seed,
+                                    float age_grey = 0.0f);
 
     // Kept for boot splash compatibility
     void _draw_queen(const Chamber& ch);
