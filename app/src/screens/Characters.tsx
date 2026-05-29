@@ -354,6 +354,16 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
           <div style={{ display: 'flex', justifyContent: 'center' }}>
             <BondsWeb name={char.name} bonds={bonds} />
           </div>
+          <div style={{ marginTop: 8 }}>
+            {bonds.map((b, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0' }}>
+                <span style={{ fontSize: SIZES.sm, color: palette.text, fontWeight: 500 }}>{b.to.name}</span>
+                <span style={{ fontSize: SIZES.xs, color: palette.dimText }}>
+                  {Math.round(b.strength * 100)}%
+                </span>
+              </div>
+            ))}
+          </div>
         </Card>
       )}
 
