@@ -1,6 +1,7 @@
 /* Worker transfer payload for ESP-NOW handoff between modules. */
 #pragma once
 #include <cstdint>
+#include <cstring>
 #include "conker.h"
 
 // Packed transfer struct — sim-meaningful fields only.
@@ -36,6 +37,7 @@ struct __attribute__((packed)) ConkerTransfer {
     uint8_t  sleeping;
     uint32_t sleep_until_ms;
     uint8_t  tint_seed;
+    char     name[16];           // display name (truncated to fit payload)
 };
 
 static_assert(sizeof(ConkerTransfer) <= 250, "ConkerTransfer exceeds ESP-NOW max payload");
@@ -75,6 +77,8 @@ inline void conker_to_transfer(const Conker& w, ConkerTransfer& t,
     t.sleeping        = w.sleeping ? 1 : 0;
     t.sleep_until_ms  = w.sleep_until_ms;
     t.tint_seed       = w.tint_seed;
+    memset(t.name, 0, sizeof(t.name));
+    strncpy(t.name, w.name, sizeof(t.name) - 1);
 }
 
 // Deserialize transfer payload into a Conker at a given entry position.
@@ -147,6 +151,8 @@ inline void transfer_to_conker(const ConkerTransfer& t, Conker& w,
     w.zoomie_target        = -1;
     w.zoomie_ticks         = 0;
     w.tint_seed            = t.tint_seed;
+    memset(w.name, 0, sizeof(w.name));
+    strncpy(w.name, t.name, sizeof(w.name) - 1);
     w.arrival_face         = static_cast<int8_t>(t.arrival_face);
     w.arrival_ms           = 0;  // caller sets to millis() after placement
     w.departing            = false;

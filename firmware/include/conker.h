@@ -50,6 +50,7 @@ enum PersonalityDim : uint8_t {
 
 struct Conker {
     uint32_t id             = 0;           // persistent identity (0 = unassigned)
+    char     name[16]       = {};          // display name (carried via handoff)
     float    personality[PERS_COUNT] = {}; // 0.0-1.0 per dimension
     float    x, y, prev_x, prev_y;        // float cell-center coords
     AntState state          = STATE_IDLE;

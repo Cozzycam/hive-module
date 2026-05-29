@@ -98,6 +98,7 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
     _apply_boundary_pheromones();
 
     // ---- Chamber tick (movement, behavior, lifecycle events) ----
+    // Gather state is wired from Sim by main.cpp before tick()
     chamber.tick(dt);
 
     // ---- Satellite: send death syncs to queen ----
@@ -122,8 +123,8 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
     // ---- Persistence: assign IDs, process hatches/deaths, periodic flush ----
     if (is_queen()) _persist_tick(tick_num);
 
-    // ---- Queen: check for workers lost on disconnected satellites ----
-    if (is_queen()) _check_lost_workers();
+    // ---- Queen: reconcile registry vs chamber — respawn lost workers ----
+    if (is_queen()) _reconcile_workers();
 
     // ---- WorldCondition: sync time ----
     if (is_queen()) _world_tick();
@@ -264,9 +265,6 @@ void Coordinator::on_topology_change(Face face, bool connected, uint16_t module_
         Serial.printf("[coord] announcing chamber on face %s -> module 0x%04X, home_face=%s\r\n",
             face_letter(face), module_id, face_letter(satellite_home));
 
-        // Satellite reconnected — clear disconnect timer
-        _satellite_disconnect_ms[face] = 0;
-
         // Journal: module connected
         JournalEntry je = {};
         je.tick = 0;  // no tick context in topology callback
@@ -317,10 +315,6 @@ void Coordinator::on_topology_change(Face face, bool connected, uint16_t module_
         }
         Serial.printf("[coord] module 0x%04X disconnected from face %s\r\n",
             module_id, face_letter(face));
-
-        // Start disconnect timer for lost worker detection
-        _satellite_disconnect_ms[face] = millis();
-        if (_satellite_disconnect_ms[face] == 0) _satellite_disconnect_ms[face] = 1;
 
         // Journal: module disconnected
         JournalEntry je = {};
@@ -745,9 +739,6 @@ void Coordinator::_receive_handoffs(EventBus& bus, uint32_t tick_num) {
 
         _place_arrival(t, bus, tick_num, first_idx);
 
-        // Worker returned — remove from remote tracking
-        _untrack_remote_worker(t.conker_id);
-
         // Send ACK to sender
         if (src_face >= 0) {
             _last_seen_seq[src_face] = t.seq;
@@ -776,9 +767,6 @@ void Coordinator::_service_pending_handoffs() {
         if (ack.msg_type != TOPO_HANDOFF_ACK) continue;
         for (int j = 0; j < MAX_PENDING_OUT; j++) {
             if (_pending_out[j].active && _pending_out[j].payload.seq == ack.seq) {
-                // Track this worker as being on a remote satellite
-                _track_remote_worker(_pending_out[j].payload.conker_id,
-                                     _pending_out[j].face);
                 _pending_out[j].active = false;
                 break;
             }
@@ -826,30 +814,8 @@ void Coordinator::_service_pending_handoffs() {
 }
 
 // ================================================================
-//  Remote worker tracking + death sync + lost worker recovery
+//  Death sync + missing worker reconciliation
 // ================================================================
-
-void Coordinator::_track_remote_worker(uint32_t id, uint8_t face) {
-    // Check if already tracked (re-ACK of same worker)
-    for (int i = 0; i < MAX_REMOTE_WORKERS; i++) {
-        if (_remote_workers[i].active && _remote_workers[i].id == id) return;
-    }
-    for (int i = 0; i < MAX_REMOTE_WORKERS; i++) {
-        if (!_remote_workers[i].active) {
-            _remote_workers[i] = {id, face, millis(), true};
-            return;
-        }
-    }
-}
-
-void Coordinator::_untrack_remote_worker(uint32_t id) {
-    for (int i = 0; i < MAX_REMOTE_WORKERS; i++) {
-        if (_remote_workers[i].active && _remote_workers[i].id == id) {
-            _remote_workers[i].active = false;
-            return;
-        }
-    }
-}
 
 void Coordinator::_send_death_syncs() {
 #ifdef ARDUINO
@@ -860,7 +826,6 @@ void Coordinator::_send_death_syncs() {
         msg.sender_id = topology_my_id();
         msg.conker_id = chamber.deaths[d].id;
         msg.cause     = chamber.deaths[d].cause;
-        // Send toward queen (home_face)
         if (chamber.home_face >= 0) {
             topology_send_to_face(static_cast<Face>(chamber.home_face),
                                   (const uint8_t*)&msg, sizeof(msg));
@@ -880,91 +845,138 @@ void Coordinator::_receive_death_syncs() {
         const DeathSyncMessage& msg = *reinterpret_cast<const DeathSyncMessage*>(pending[i].data);
         if (msg.msg_type != TOPO_DEATH_SYNC) continue;
 
-        uint32_t id = msg.conker_id;
-        uint8_t cause = msg.cause;
-
-        // Untrack from remote workers
-        _untrack_remote_worker(id);
-
-        // Mark dead in registry
-        registry.mark_dead(id, g_tod.unix_time);
+        registry.mark_dead(msg.conker_id, g_tod.unix_time);
         registry.manifest().total_workers_died++;
-        bonds.remove_owner(id);
+        bonds.remove_owner(msg.conker_id);
 
-        // Journal: death event (happened on satellite)
         JournalEntry je = {};
         je.tick = chamber.tick_num;
         je.unix_time = g_tod.unix_time;
         je.type = JEVT_DEATH;
-        je.lilguy_id = id;
-        je.death.cause = cause;
+        je.lilguy_id = msg.conker_id;
+        je.death.cause = msg.cause;
         journal.emit(je);
 
-        Serial.printf("[death-sync] received: id=%lu cause=%d — marked dead in registry\r\n",
-                      (unsigned long)id, cause);
+        Serial.printf("[death-sync] received: id=%lu cause=%d — marked dead\r\n",
+                      (unsigned long)msg.conker_id, msg.cause);
     }
 #endif
 }
 
-void Coordinator::_check_lost_workers() {
+void Coordinator::_reconcile_workers() {
 #ifdef ARDUINO
     uint32_t now = millis();
-    for (int i = 0; i < MAX_REMOTE_WORKERS; i++) {
-        if (!_remote_workers[i].active) continue;
-        uint8_t face = _remote_workers[i].face;
-        uint32_t disc_ms = _satellite_disconnect_ms[face];
 
-        // Only respawn if satellite has been disconnected for 30s+
-        if (disc_ms == 0) continue;  // still connected
-        if (now - disc_ms < 30000) continue;  // not long enough
+    // Run every 10 seconds
+    if (now - _last_reconcile_ms < 10000) return;
+    _last_reconcile_ms = now;
 
-        uint32_t id = _remote_workers[i].id;
-        _remote_workers[i].active = false;
+    // Deduplicate: if two conkers share the same ID, remove the later one
+    for (int i = 0; i < chamber.conker_count; i++) {
+        if (!chamber.conkers[i].alive || chamber.conkers[i].id == 0) continue;
+        for (int j = i + 1; j < chamber.conker_count; j++) {
+            if (chamber.conkers[j].id == chamber.conkers[i].id) {
+                Serial.printf("[reconcile] duplicate id=%lu — removing index %d\r\n",
+                              (unsigned long)chamber.conkers[j].id, j);
+                chamber.remove_conker(j);
+                j--;  // recheck this index after swap-with-last
+            }
+        }
+    }
 
-        // Check registry — only respawn if still considered alive
-        IdentityRecord* rec = registry.get(id);
-        if (!rec || rec->died_unix != 0) continue;
+    // For each alive conker in the registry, check if it's in the local chamber.
+    // Account for satellite populations: up to remote_pop conkers may be away legitimately.
+    int remote_pop = 0;
+    for (int f = 0; f < FACE_COUNT; f++)
+        remote_pop += topology_remote_population(static_cast<Face>(f));
 
-        // Respawn at queen chamber center
-        if (chamber.conker_count >= Cfg::MAX_CONKERS) {
-            Serial.printf("[lost-worker] id=%lu — chamber full, cannot respawn\r\n",
-                          (unsigned long)id);
+    IdentityRecord* recs = registry.living_records();
+    int alive_count = registry.living_count();
+
+    // Count how many alive conkers are NOT in the local chamber
+    int away_count = 0;
+
+    for (int r = 0; r < alive_count; r++) {
+        uint32_t id = recs[r].id;
+        if (id == 0 || recs[r].died_unix != 0) continue;
+
+        // Check if in local chamber
+        bool in_chamber = false;
+        for (int c = 0; c < chamber.conker_count; c++) {
+            if (chamber.conkers[c].id == id) { in_chamber = true; break; }
+        }
+        if (in_chamber) {
+            // Clear from missing list if present
+            for (int m = 0; m < MAX_MISSING; m++) {
+                if (_missing_workers[m].active && _missing_workers[m].id == id)
+                    _missing_workers[m].active = false;
+            }
             continue;
         }
 
-        int8_t qx = chamber.queen_obj.x;
-        int8_t qy = chamber.queen_obj.y;
-        int idx = chamber.conker_count++;
-        Conker& w = chamber.conkers[idx];
-        w = Conker{};  // reset to defaults
-        w.id = id;
-        w.alive = true;
-        w.x = static_cast<float>(qx) + 0.5f;
-        w.y = static_cast<float>(qy) + 0.5f;
-        w.prev_x = w.x;
-        w.prev_y = w.y;
-        w.role = static_cast<Role>(rec->role);
-        w.is_founder = rec->is_founder;
-        w.scale_factor = rec->scale_factor;
-        w.tint_seed = rec->tint_seed;
-        w.born_at_ms = rec->born_unix > 0 ? millis() - (g_tod.unix_time - rec->born_unix) * 1000 : millis();
+        // Not in local chamber — could be on a satellite or lost
+        away_count++;
+        if (away_count <= remote_pop) continue;  // accounted for by satellite headcount
 
-        // Restore personality from registry (already 0.0-1.0 floats)
-        for (int p = 0; p < PERS_COUNT && p < 8; p++)
-            w.personality[p] = rec->personality[p];
-
-        // Recompute role params
-        w.move_ticks   = Cfg::ROLE_PARAMS[w.role].move_ticks;
-        w.sense_radius = Cfg::ROLE_PARAMS[w.role].sense_radius;
-        w.carry_amount = Cfg::ROLE_PARAMS[w.role].carry_amount;
-        w.speed        = Cfg::ROLE_PARAMS[w.role].speed;
-        w.lifespan_ms  = rec->lifespan_ms;
-        w.lived_ms     = rec->lived_ms;  // last flushed value — conservative
-
-        Serial.printf("[lost-worker] respawned id=%lu at queen after satellite disconnect\r\n",
-                      (unsigned long)id);
+        // Unaccounted — check if already in missing list
+        int slot = -1;
+        bool already_tracked = false;
+        for (int m = 0; m < MAX_MISSING; m++) {
+            if (_missing_workers[m].active && _missing_workers[m].id == id) {
+                already_tracked = true;
+                // Check timeout
+                if (now - _missing_workers[m].missing_since_ms >= 30000) {
+                    // 30s missing — respawn
+                    _missing_workers[m].active = false;
+                    _respawn_worker(id, &recs[r]);
+                }
+                break;
+            }
+            if (!_missing_workers[m].active && slot < 0) slot = m;
+        }
+        if (!already_tracked && slot >= 0) {
+            _missing_workers[slot] = {id, now, true};
+            Serial.printf("[reconcile] id=%lu not in chamber or satellite — tracking\r\n",
+                          (unsigned long)id);
+        }
     }
 #endif
+}
+
+void Coordinator::_respawn_worker(uint32_t id, IdentityRecord* rec) {
+    if (chamber.conker_count >= Cfg::MAX_CONKERS) {
+        Serial.printf("[reconcile] id=%lu — chamber full, cannot respawn\r\n",
+                      (unsigned long)id);
+        return;
+    }
+
+    int8_t qx = chamber.queen_obj.x;
+    int8_t qy = chamber.queen_obj.y;
+    int idx = chamber.conker_count++;
+    Conker& w = chamber.conkers[idx];
+    w = Conker{};
+    w.id = id;
+    strncpy(w.name, rec->name, sizeof(w.name) - 1);
+    w.alive = true;
+    w.x = static_cast<float>(qx) + 0.5f;
+    w.y = static_cast<float>(qy) + 0.5f;
+    w.prev_x = w.x;
+    w.prev_y = w.y;
+    w.role = static_cast<Role>(rec->role);
+    w.is_founder = rec->is_founder;
+    w.scale_factor = rec->scale_factor;
+    w.tint_seed = rec->tint_seed;
+    w.born_at_ms = rec->born_unix > 0 ? millis() - (g_tod.unix_time - rec->born_unix) * 1000 : millis();
+    for (int p = 0; p < PERS_COUNT && p < 8; p++)
+        w.personality[p] = rec->personality[p];
+    w.move_ticks   = Cfg::ROLE_PARAMS[w.role].move_ticks;
+    w.sense_radius = Cfg::ROLE_PARAMS[w.role].sense_radius;
+    w.carry_amount = Cfg::ROLE_PARAMS[w.role].carry_amount;
+    w.speed        = Cfg::ROLE_PARAMS[w.role].speed;
+    w.lifespan_ms  = rec->lifespan_ms;
+    w.lived_ms     = rec->lived_ms;
+
+    Serial.printf("[reconcile] respawned id=%lu at queen\r\n", (unsigned long)id);
 }
 
 // ================================================================
@@ -1033,6 +1045,7 @@ void Coordinator::_persist_tick(uint32_t tick_num) {
         IdentityRecord rec;
         rec.id = w.id;
         name_random(rec.name, sizeof(rec.name));
+        strncpy(w.name, rec.name, sizeof(w.name) - 1);
         rec.role = w.role;
         rec.is_pioneer = w.is_pioneer;
         rec.is_founder = w.is_founder;
@@ -1139,6 +1152,7 @@ void Coordinator::_persist_process_hatches() {
                 IdentityRecord rec;
                 rec.id = id;
                 name_random(rec.name, sizeof(rec.name));
+                strncpy(chamber.conkers[i].name, rec.name, sizeof(chamber.conkers[i].name) - 1);
                 rec.role = chamber.conkers[i].role;
                 rec.is_pioneer = chamber.conkers[i].is_pioneer;
                 rec.is_founder = chamber.conkers[i].is_founder;
@@ -1270,6 +1284,7 @@ void Coordinator::_persist_migrate_live_colony() {
         IdentityRecord rec;
         rec.id = w.id;
         name_random(rec.name, sizeof(rec.name));
+        strncpy(w.name, rec.name, sizeof(w.name) - 1);
         rec.role = w.role;
         rec.is_pioneer = w.is_pioneer;
         rec.born_unix = m.founded_unix;  // approximate
@@ -1383,6 +1398,8 @@ void Coordinator::_persist_restore_from_disk() {
         // Restore tint_seed (init randomizes it — override with persisted value)
         if (r.tint_seed > 0)
             chamber.conkers[idx].tint_seed = r.tint_seed;
+        // Restore name from registry
+        strncpy(chamber.conkers[idx].name, r.name, sizeof(chamber.conkers[idx].name) - 1);
         // Restore personality (init randomizes it — override with persisted value)
         memcpy(chamber.conkers[idx].personality, r.personality,
                sizeof(chamber.conkers[idx].personality));

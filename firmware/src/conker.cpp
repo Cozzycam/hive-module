@@ -88,6 +88,59 @@ void Conker::init(int8_t px, int8_t py, Role c, bool pioneer) {
 void Conker::tick(Chamber& ch, float dt) {
     if (!alive) return;
 
+    // Gather override: rush toward finger in a ring, lean when close
+    if (ch.gather_active) {
+        lived_ms += static_cast<uint32_t>(dt * 1000.0f);
+
+        float target_x, target_y;
+        if (ch.gather_is_exit) {
+            // Heading to edge to cross modules — go straight to entry point
+            target_x = ch.gather_x;
+            target_y = ch.gather_y;
+        } else {
+            // Local gather — form a ring around the finger
+            float ring_radius = 2.5f;
+            float angle = (id * 2654435761u) / 4294967296.0f * 6.2832f;
+            target_x = ch.gather_x + ring_radius * cosf(angle);
+            target_y = ch.gather_y + ring_radius * sinf(angle);
+            if (target_x < 0.5f) target_x = 0.5f;
+            if (target_y < 0.5f) target_y = 0.5f;
+            if (target_x > Cfg::GRID_WIDTH - 0.5f) target_x = Cfg::GRID_WIDTH - 0.5f;
+            if (target_y > Cfg::GRID_HEIGHT - 0.5f) target_y = Cfg::GRID_HEIGHT - 0.5f;
+        }
+
+        float dx = target_x - x;
+        float dy = target_y - y;
+        float dist = sqrtf(dx * dx + dy * dy);
+        if (dist > 0.3f) {
+            float spd = speed * 3.0f * dt * 8.0f;
+            if (spd > dist) spd = dist;
+            x += (dx / dist) * spd;
+            y += (dy / dist) * spd;
+            facing_dx = dx / dist;
+            facing_dy = dy / dist;
+            last_dx = facing_dx;
+            last_dy = facing_dy;
+            anim_type = LG_ANIM_NONE;
+        } else if (!ch.gather_is_exit) {
+            // On the ring — lean toward the center (finger)
+            float cdx = ch.gather_x - x;
+            float cdy = ch.gather_y - y;
+            anim_type = LG_ANIM_GROOMING;
+            anim_remaining_ticks = 8;
+            anim_lean_dx = (cdx > 0.1f) ? 1 : (cdx < -0.1f) ? -1 : 0;
+            anim_lean_dy = (cdy > 0.1f) ? 1 : (cdy < -0.1f) ? -1 : 0;
+        }
+        // Exit gathers: don't clamp — let edge crossing detect the boundary position
+        if (!ch.gather_is_exit) {
+            if (x < 0.5f) x = 0.5f;
+            if (y < 0.5f) y = 0.5f;
+            if (x > Cfg::GRID_WIDTH - 0.5f) x = Cfg::GRID_WIDTH - 0.5f;
+            if (y > Cfg::GRID_HEIGHT - 0.5f) y = Cfg::GRID_HEIGHT - 0.5f;
+        }
+        return;
+    }
+
     // Accumulate lived time (only advances while sim is running)
     lived_ms += static_cast<uint32_t>(dt * 1000.0f);
 

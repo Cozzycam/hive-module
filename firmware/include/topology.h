@@ -19,6 +19,7 @@ enum TopoMsgType : uint8_t {
     TOPO_ANNOUNCE   = 0x20, // queen announces chamber assignment to satellite
     TOPO_WIFI_CREDS = 0x22, // queen → satellite: WiFi credentials for solo mode
     TOPO_DEATH_SYNC   = 0x15,  // satellite → queen: worker died on satellite
+    TOPO_GATHER_SYNC  = 0x16,  // broadcast: finger held, conkers gather
     TOPO_OTA_ANNOUNCE = 0x30, // queen → satellites: "new firmware, connect to WiFi"
     TOPO_OTA_READY    = 0x31, // queen → satellites: "server at IP:port, download now"
 };
@@ -129,6 +130,14 @@ struct BoundaryPheroData {
     uint32_t last_rx_ms;
 };
 
+// Gather sync message (broadcast: finger held, come to me)
+struct __attribute__((packed)) GatherSyncMessage {
+    uint8_t  msg_type;    // TOPO_GATHER_SYNC
+    uint16_t sender_id;
+    uint8_t  active;      // 1 = gathering, 0 = released
+    uint8_t  face;        // sender's face toward receiver
+};
+
 // Death sync message (satellite → queen: worker died remotely)
 struct __attribute__((packed)) DeathSyncMessage {
     uint8_t  msg_type;    // TOPO_DEATH_SYNC
@@ -167,6 +176,9 @@ struct PendingDeathSync {
     int     len;
 };
 int  topology_drain_death_syncs(PendingDeathSync* out, int max_out);
+
+// Gather sync — receiver polls this
+bool topology_has_gather(GatherSyncMessage* out);  // returns true + copies, clears flag
 
 // Remote population tracking (queen reads these)
 uint16_t topology_remote_population(Face f);

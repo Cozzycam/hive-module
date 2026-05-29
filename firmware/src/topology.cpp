@@ -80,6 +80,10 @@ extern uint32_t g_handoffs_dropped;
 // Remote population per face (updated by TOPO_POP_SYNC messages)
 static volatile uint16_t _remote_pop[FACE_COUNT] = {0, 0, 0, 0};
 
+// Gather sync (volatile, polled by coordinator)
+static volatile bool _gather_pending = false;
+static GatherSyncMessage _gather_msg;
+
 // Boundary pheromone data from neighbours
 static BoundaryPheroData _boundary_phero[FACE_COUNT] = {};
 
@@ -293,6 +297,9 @@ static void _on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int l
             _ds_write = (idx + 1) % DS_BUF_SIZE;
             _ds_count++;
         }
+    } else if (msg_type == TOPO_GATHER_SYNC && len >= (int)sizeof(GatherSyncMessage)) {
+        memcpy(&_gather_msg, data, sizeof(GatherSyncMessage));
+        _gather_pending = true;
     } else if (msg_type == TOPO_OTA_ANNOUNCE && len >= (int)sizeof(OtaAnnounceMessage)) {
         const OtaAnnounceMessage* oa = reinterpret_cast<const OtaAnnounceMessage*>(data);
         _ota_announce_version = oa->fw_version;
@@ -733,6 +740,13 @@ int topology_drain_death_syncs(PendingDeathSync* out, int max_out) {
         n++;
     }
     return n;
+}
+
+bool topology_has_gather(GatherSyncMessage* out) {
+    if (!_gather_pending) return false;
+    _gather_pending = false;
+    *out = _gather_msg;
+    return true;
 }
 
 uint16_t topology_remote_population(Face f) {

@@ -11,6 +11,10 @@ public:
     Coordinator coordinator;
     EventBus    event_bus;
     uint32_t    tick_count = 0;
+    uint32_t    selected_conker_id = 0;  // conker ID, 0 = none
+    bool        gathering = false;      // finger held — conkers rush to point
+    bool        gather_is_exit = false; // true = heading to edge to cross modules
+    float       gather_x = 0, gather_y = 0;  // cell coords of gather point
 
     void init();
     void tick(float dt);

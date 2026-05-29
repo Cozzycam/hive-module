@@ -51,18 +51,52 @@ void Sim::handle_touch() {
     TouchEvent te;
     if (!touch_poll(&te))
         return;
-    int cx = te.x / Cfg::CELL_SIZE;
-    int cy = te.y / Cfg::CELL_SIZE;
+
+    // If we were gathering (hold), suppress the release tap
+    if (gathering) return;
+
+    int tx = te.x;
+    int ty = te.y;
+    int cx = tx / Cfg::CELL_SIZE;
+    int cy = ty / Cfg::CELL_SIZE;
     if (cx < 0 || cx >= Cfg::GRID_WIDTH || cy < 0 || cy >= Cfg::GRID_HEIGHT)
         return;
-    coordinator.chamber.add_food(cx, cy, Cfg::TAP_FEED_AMOUNT);
+
+    // Hit-test conkers: find nearest within tap radius (pixel distance)
+    Chamber& ch = coordinator.chamber;
+    int best = -1;
+    int best_dist2 = 35 * 35;  // max 35px tap radius
+    for (int i = 0; i < ch.conker_count; i++) {
+        if (!ch.conkers[i].alive) continue;
+        int px = static_cast<int>(ch.conkers[i].x * Cfg::CELL_SIZE);
+        int py = static_cast<int>(ch.conkers[i].y * Cfg::CELL_SIZE);
+        int dx = tx - px;
+        int dy = ty - py;
+        int d2 = dx * dx + dy * dy;
+        if (d2 < best_dist2) {
+            best_dist2 = d2;
+            best = i;
+        }
+    }
+
+    if (best >= 0) {
+        // Tapped a conker — select it
+        selected_conker_id = ch.conkers[best].id;
+        return;
+    }
+
+    // Tapped empty space — if selected, just deselect (no food)
+    if (selected_conker_id != 0) {
+        selected_conker_id = 0;
+        return;
+    }
+    ch.add_food(cx, cy, Cfg::TAP_FEED_AMOUNT);
     Event ev;
     ev.type = EVT_FOOD_TAPPED;
     ev.tick = tick_count;
     ev.food_tapped = {static_cast<int8_t>(cx), static_cast<int8_t>(cy)};
     event_bus.emit(ev);
 
-    // Journal: food tap
     JournalEntry je = {};
     je.tick = tick_count;
     je.unix_time = g_tod.unix_time;
@@ -70,6 +104,4 @@ void Sim::handle_touch() {
     je.lilguy_id = 0;
     je.food_tap = {static_cast<int8_t>(cx), static_cast<int8_t>(cy), Cfg::TAP_FEED_AMOUNT};
     coordinator.journal.emit(je);
-
-    Serial.printf("[touch] fed (%d,%d) +%.0f\r\n", cx, cy, Cfg::TAP_FEED_AMOUNT);
 }

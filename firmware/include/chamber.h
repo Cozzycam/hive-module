@@ -26,6 +26,9 @@ public:
     PheromoneGrid pheromones;
     EventBus*    event_bus = nullptr;   // transient, set per-tick by Sim
     uint32_t     tick_num  = 0;         // transient, set per-tick by Sim
+    bool         gather_active = false; // transient: finger held, conkers rush here
+    bool         gather_is_exit = false; // true = heading to edge to cross modules
+    float        gather_x = 0, gather_y = 0; // cell coords
 
     Queen  queen_obj;
     bool   has_queen = false;

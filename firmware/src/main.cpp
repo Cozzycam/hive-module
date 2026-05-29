@@ -29,6 +29,7 @@
 #include "time_of_day.h"
 #include "weather.h"
 #include "hud.h"
+#include "names.h"
 #include "topology.h"
 #include <WiFi.h>
 #include <ArduinoOTA.h>
@@ -597,6 +598,62 @@ void loop() {
         handle_serial();
         sim.handle_touch();
 
+        // Hold detection — conkers gather to finger
+        TouchEvent hold_ev;
+        bool local_hold = touch_holding(&hold_ev);
+        if (local_hold) {
+            sim.gathering = true;
+            sim.gather_is_exit = false;
+            sim.gather_x = hold_ev.x / static_cast<float>(Cfg::CELL_SIZE);
+            sim.gather_y = hold_ev.y / static_cast<float>(Cfg::CELL_SIZE);
+            // Broadcast gather to neighbors so their conkers come too
+            for (int f = 0; f < FACE_COUNT; f++) {
+                if (sim.coordinator.chamber.entries[f] >= 0) {
+                    GatherSyncMessage msg;
+                    msg.msg_type  = TOPO_GATHER_SYNC;
+                    msg.sender_id = topology_my_id();
+                    msg.active    = 1;
+                    msg.face      = static_cast<uint8_t>(f);
+                    topology_send_to_face(static_cast<Face>(f),
+                                          (const uint8_t*)&msg, sizeof(msg));
+                }
+            }
+        } else {
+            // Check for remote gather from neighbor
+            GatherSyncMessage gmsg;
+            if (topology_has_gather(&gmsg)) {
+                if (gmsg.active) {
+                    sim.gathering = true;
+                    sim.gather_is_exit = true;
+                    uint8_t local_face = Cfg::FACE_OPPOSITE[gmsg.face];
+                    sim.gather_x = static_cast<float>(Cfg::ENTRY_X[local_face]) + 0.5f;
+                    sim.gather_y = static_cast<float>(Cfg::ENTRY_Y[local_face]) + 0.5f;
+                } else {
+                    sim.gathering = false;
+                }
+            } else if (sim.gathering && !local_hold) {
+                // No local hold and no fresh remote message — release
+                // (remote sends active=0 on release, or we timeout)
+                sim.gathering = false;
+            }
+            // Broadcast release when local hold ends
+            static bool _was_gathering = false;
+            if (_was_gathering && !local_hold) {
+                for (int f = 0; f < FACE_COUNT; f++) {
+                    if (sim.coordinator.chamber.entries[f] >= 0) {
+                        GatherSyncMessage msg;
+                        msg.msg_type  = TOPO_GATHER_SYNC;
+                        msg.sender_id = topology_my_id();
+                        msg.active    = 0;
+                        msg.face      = static_cast<uint8_t>(f);
+                        topology_send_to_face(static_cast<Face>(f),
+                                              (const uint8_t*)&msg, sizeof(msg));
+                    }
+                }
+            }
+            _was_gathering = local_hold;
+        }
+
         // Sim ticks — run multiple if at high speed
         while (now - last_tick_ms >= interval) {
             last_tick_ms += interval;
@@ -605,6 +662,12 @@ void loop() {
             float dt = (sim_now - last_sim_ms) / 1000.0f;
             if (dt > 1.0f) dt = 1.0f;  // cap dt to avoid jumps
             last_sim_ms = sim_now;
+
+            // Wire gather state into chamber before tick
+            sim.coordinator.chamber.gather_active = sim.gathering;
+            sim.coordinator.chamber.gather_is_exit = sim.gather_is_exit;
+            sim.coordinator.chamber.gather_x = sim.gather_x;
+            sim.coordinator.chamber.gather_y = sim.gather_y;
 
             sim.tick(dt);
 
@@ -634,6 +697,53 @@ void loop() {
         if (lerp_t > 1.0f) lerp_t = 1.0f;
 
         renderer.draw(sim.coordinator.chamber, lerp_t);
+
+        // Selection overlay: highlight circle + name above selected conker
+        if (sim.selected_conker_id != 0) {
+            int sel_idx = -1;
+            for (int i = 0; i < sim.coordinator.chamber.conker_count; i++) {
+                if (sim.coordinator.chamber.conkers[i].id == sim.selected_conker_id) {
+                    sel_idx = i; break;
+                }
+            }
+            if (sel_idx >= 0) {
+            Conker& w = sim.coordinator.chamber.conkers[sel_idx];
+            if (w.alive) {
+                int px = static_cast<int>(w.x * Cfg::CELL_SIZE);
+                int py = static_cast<int>(w.y * Cfg::CELL_SIZE);
+                int radius = static_cast<int>(w.scale_factor * 6.0f);
+
+                // Highlight circle
+                gfx->drawCircle(px, py, radius, 0xFFFF);
+                gfx->drawCircle(px, py, radius + 1, 0xFFFF);
+
+                // Name label above head
+                const char* name = w.name[0] ? w.name : "???";
+                {
+                    gfx->setTextSize(1);
+                    gfx->setTextWrap(false);
+                    int tw = 0;
+                    for (const char* p = name; *p; p++) tw += 6;
+                    int lx = px - tw / 2;
+                    int ly = py - radius - 12;
+                    if (ly < 2) ly = 2;
+                    // Background pill for readability
+                    gfx->fillRoundRect(lx - 3, ly - 1, tw + 6, 11, 3, 0x0000);
+                    gfx->setCursor(lx, ly);
+                    gfx->setTextColor(0xFFFF);
+                    gfx->print(name);
+                }
+
+                renderer.mark_dirty_external(px - radius - 5, py - radius - 16,
+                                              radius * 2 + 10, radius * 2 + 28);
+            } else {
+                sim.selected_conker_id = 0;  // died while selected
+            }
+            } else {
+                sim.selected_conker_id = 0;  // no longer in chamber
+            }
+        }
+
         if (sim.coordinator.is_queen() && !renderer.is_splash_active()) {
             hud_draw(gfx, sim.coordinator.chamber);
             renderer.mark_dirty_external(0, 0, 480, 28);  // HUD strip

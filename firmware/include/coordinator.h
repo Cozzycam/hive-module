@@ -94,23 +94,20 @@ private:
     uint16_t   _handoff_seq = 0;
     void _service_pending_handoffs();
 
-    // Remote worker tracking — workers currently on satellites
-    static constexpr int MAX_REMOTE_WORKERS = 16;
-    struct RemoteWorker {
+    // Missing worker reconciliation — periodic census check
+    static constexpr int MAX_MISSING = 16;
+    struct MissingWorker {
         uint32_t id;
-        uint8_t  face;
-        uint32_t sent_ms;       // millis() when ACK confirmed
+        uint32_t missing_since_ms;  // millis() when first noticed missing
         bool     active = false;
     };
-    RemoteWorker _remote_workers[MAX_REMOTE_WORKERS];
-    void _track_remote_worker(uint32_t id, uint8_t face);
-    void _untrack_remote_worker(uint32_t id);
+    MissingWorker _missing_workers[MAX_MISSING];
+    uint32_t _last_reconcile_ms = 0;
+    void _reconcile_workers();
+    void _respawn_worker(uint32_t id, IdentityRecord* rec);
+
     void _receive_death_syncs();
     void _send_death_syncs();
-    void _check_lost_workers();
-
-    // Per-face satellite disconnect time (0 = connected)
-    uint32_t _satellite_disconnect_ms[FACE_COUNT] = {0, 0, 0, 0};
 
     // Dedup table for incoming handoffs (one seq per face, 0xFFFF = never seen)
     uint16_t _last_seen_seq[FACE_COUNT] = {0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF};

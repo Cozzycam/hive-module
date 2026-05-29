@@ -14,6 +14,7 @@
  */
 
 #include "touch.h"
+#include <Arduino.h>
 #include <Wire.h>
 
 static constexpr uint8_t TOUCH_I2C_ADDR = 0x3B;
@@ -36,6 +37,10 @@ static constexpr uint8_t TCA9554_TOUCH_RST  = 3;   // P3 = touch reset
 static bool     _was_touching = false;
 static int16_t  _press_x = 0;    // native coords at press
 static int16_t  _press_y = 0;
+static uint32_t _press_start_ms = 0;
+static int16_t  _current_nx = 0; // latest native coords while held
+static int16_t  _current_ny = 0;
+static constexpr uint32_t HOLD_THRESHOLD_MS = 300;
 
 // Read raw touch data. Returns true if a finger is currently down,
 // and fills native_x/native_y with portrait-orientation coords.
@@ -119,6 +124,9 @@ bool touch_poll(TouchEvent* out) {
         // Finger just went down — record press position
         _press_x = nx;
         _press_y = ny;
+        _press_start_ms = millis();
+        _current_nx = nx;
+        _current_ny = ny;
         _was_touching = true;
         return false;
     }
@@ -139,11 +147,13 @@ bool touch_poll(TouchEvent* out) {
     }
 
     if (touching && _was_touching) {
-        // Still touching — check for drag to cancel tap
+        // Still touching — update current position
+        _current_nx = nx;
+        _current_ny = ny;
+        // Check for drag to cancel tap
         int dx = nx - _press_x;
         int dy = ny - _press_y;
         if (dx * dx + dy * dy > TAP_THRESHOLD * TAP_THRESHOLD) {
-            // Moved too far — this is a drag, not a tap
             _press_x = -1000;
             _press_y = -1000;
         }
@@ -151,4 +161,13 @@ bool touch_poll(TouchEvent* out) {
 
     _was_touching = touching;
     return false;
+}
+
+bool touch_holding(TouchEvent* out) {
+    if (!_was_touching) return false;
+    if (millis() - _press_start_ms < HOLD_THRESHOLD_MS) return false;
+    // Rotate to landscape
+    out->x = _current_ny;
+    out->y = 319 - _current_nx;
+    return true;
 }

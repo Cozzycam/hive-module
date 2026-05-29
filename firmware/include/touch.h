@@ -25,3 +25,7 @@ void touch_init();
 /* Poll for a tap event (press-release on a single point, not drag).
  * Returns true and fills *out if an event is available. */
 bool touch_poll(TouchEvent* out);
+
+/* Returns true if a finger is currently held down (>300ms).
+ * Fills *out with the current rotated display coordinates. */
+bool touch_holding(TouchEvent* out);
