@@ -1026,6 +1026,8 @@ void Coordinator::_persist_update_positions() {
         IdentityRecord* rec = registry.get(w.id);
         if (rec) {
             rec->lived_ms = w.lived_ms;
+            if (rec->tint_seed == 0 && w.tint_seed != 0)
+                rec->tint_seed = w.tint_seed;
             rec->dirty = true;
         }
     }
