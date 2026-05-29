@@ -104,7 +104,9 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
         JsonObject lg = lilguys.add<JsonObject>();
         lg["id"] = r.id;
         lg["name"] = r.name;
-        lg["age_days"] = r.lived_ms / (86400.0f * 1000.0f);
+        lg["age_days"] = (r.born_unix > 0 && g_tod.unix_time > r.born_unix)
+            ? (g_tod.unix_time - r.born_unix) / 86400.0f
+            : r.lived_ms / (86400.0f * 1000.0f);
         if (r.is_founder) lg["founder"] = true;
         if (r.traits) {
             JsonArray tr = lg["traits"].to<JsonArray>();
@@ -193,7 +195,9 @@ size_t api_lilguys_json(Coordinator& coord, char* buf, size_t buflen,
         entry["role"] = "conker";
         if (r.is_founder) entry["founder"] = true;
 
-        float age_days = r.lived_ms / (86400.0f * 1000.0f);
+        float age_days = (r.born_unix > 0 && g_tod.unix_time > r.born_unix)
+            ? (g_tod.unix_time - r.born_unix) / 86400.0f
+            : r.lived_ms / (86400.0f * 1000.0f);
         entry["age_days"] = age_days;
 
         JsonArray traits = entry["traits"].to<JsonArray>();
@@ -217,7 +221,9 @@ size_t api_lilguy_detail_json(Coordinator& coord, uint32_t id,
     doc["role"] = "conker";
     if (rec->is_founder) doc["founder"] = true;
     doc["born_unix"] = rec->born_unix;
-    doc["age_days"] = rec->lived_ms / (86400.0f * 1000.0f);
+    doc["age_days"] = (rec->born_unix > 0 && g_tod.unix_time > rec->born_unix)
+        ? (g_tod.unix_time - rec->born_unix) / 86400.0f
+        : rec->lived_ms / (86400.0f * 1000.0f);
     if (rec->died_unix == 0)
         doc["died_unix"] = nullptr;
     else

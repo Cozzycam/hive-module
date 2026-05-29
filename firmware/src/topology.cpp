@@ -84,6 +84,10 @@ static volatile uint32_t _state_sync_last_ms = 0;
 static volatile bool _announce_pending = false;
 static AnnounceMessage _announce_msg;
 
+// WiFi credentials (single-shot, set by ISR, read by main loop)
+static volatile bool _wifi_creds_pending = false;
+static WifiCredsMessage _wifi_creds_msg;
+
 // OTA cascade (single-shot flags, set by ISR, read by main loop)
 static volatile bool     _ota_announce_pending = false;
 static volatile uint32_t _ota_announce_version = 0;
@@ -247,6 +251,9 @@ static void _on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int l
     } else if (msg_type == TOPO_ANNOUNCE && len >= (int)sizeof(AnnounceMessage)) {
         memcpy(&_announce_msg, data, sizeof(AnnounceMessage));
         _announce_pending = true;
+    } else if (msg_type == TOPO_WIFI_CREDS && len >= (int)sizeof(WifiCredsMessage)) {
+        memcpy(&_wifi_creds_msg, data, sizeof(WifiCredsMessage));
+        _wifi_creds_pending = true;
     } else if (msg_type == TOPO_STATE_SYNC && len >= 15) {
         // Queen state broadcast — update g_tod + weather on satellite
         const StateSyncMessage* ss = reinterpret_cast<const StateSyncMessage*>(data);
@@ -714,6 +721,13 @@ bool topology_has_announce(AnnounceMessage* out) {
     if (!_announce_pending) return false;
     memcpy(out, &_announce_msg, sizeof(AnnounceMessage));
     _announce_pending = false;
+    return true;
+}
+
+bool topology_has_wifi_creds(WifiCredsMessage* out) {
+    if (!_wifi_creds_pending) return false;
+    memcpy(out, &_wifi_creds_msg, sizeof(WifiCredsMessage));
+    _wifi_creds_pending = false;
     return true;
 }
 

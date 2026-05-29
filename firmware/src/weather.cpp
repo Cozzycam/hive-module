@@ -92,13 +92,13 @@ static bool _json_int(const String& json, const char* key, int& out) {
 bool weather_fetch() {
     char url[256];
     snprintf(url, sizeof(url),
-        "https://api.open-meteo.com/v1/forecast"
+        "http://api.open-meteo.com/v1/forecast"
         "?latitude=%.4f&longitude=%.4f"
         "&current=temperature_2m,weather_code,wind_speed_10m,relative_humidity_2m",
         LOC_LAT, LOC_LON);
 
-    WiFiClientSecure client;
-    client.setInsecure();  // skip cert verification (just weather data)
+    WiFiClient client;
+    client.setTimeout(10);  // 10s connect timeout
 
     HTTPClient http;
     http.begin(client, url);

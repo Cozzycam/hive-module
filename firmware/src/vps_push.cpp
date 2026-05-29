@@ -7,6 +7,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <Preferences.h>
 #include <mbedtls/md.h>
 
@@ -74,8 +75,11 @@ static bool _post(const char* path, const char* body, int body_len) {
     char hmac[65] = {};
     _hmac_sha256(_secret, strlen(_secret), body, body_len, hmac, sizeof(hmac));
 
+    WiFiClient client;
+    client.setTimeout(10);  // 10s socket timeout
+
     HTTPClient http;
-    http.begin(url);
+    http.begin(client, url);
     http.addHeader("Content-Type", "application/json");
     http.addHeader("X-HMAC-SHA256", hmac);
     http.setTimeout(10000);

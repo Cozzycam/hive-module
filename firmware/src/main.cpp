@@ -688,6 +688,12 @@ void loop() {
     if (sim.coordinator.is_queen())
         tod_wifi_reconnect_tick();
 
+    // Satellite: solo WiFi sync when no queen connection
+    if (!sim.coordinator.is_queen()) {
+        bool queen_connected = topology_has_state_sync();
+        tod_satellite_wifi_tick(queen_connected);
+    }
+
     // VPS push (queen only, every 30s internally)
     if (sim.coordinator.is_queen())
         vps_push_tick(sim.coordinator);

@@ -17,6 +17,7 @@ enum TopoMsgType : uint8_t {
     TOPO_PHERO_SYNC = 0x12, // boundary pheromone mirror
     TOPO_STATE_SYNC = 0x13, // queen colony state broadcast (tod + stats)
     TOPO_ANNOUNCE   = 0x20, // queen announces chamber assignment to satellite
+    TOPO_WIFI_CREDS = 0x22, // queen → satellite: WiFi credentials for solo mode
     TOPO_OTA_ANNOUNCE = 0x30, // queen → satellites: "new firmware, connect to WiFi"
     TOPO_OTA_READY    = 0x31, // queen → satellites: "server at IP:port, download now"
 };
@@ -87,6 +88,14 @@ struct __attribute__((packed)) AnnounceMessage {
     uint16_t boot_id;       // random ID generated at queen boot (changes on reboot)
 };
 
+// WiFi credentials (queen → satellite on connect, for solo mode)
+struct __attribute__((packed)) WifiCredsMessage {
+    uint8_t  msg_type;       // TOPO_WIFI_CREDS
+    uint16_t sender_id;
+    char     ssid[32];
+    char     pass[64];
+};
+
 // Colony state broadcast (queen → satellites)
 struct __attribute__((packed)) StateSyncMessage {
     uint8_t  msg_type;       // TOPO_STATE_SYNC
@@ -155,6 +164,9 @@ uint32_t topology_state_sync_age_ms(); // millis since last state sync
 
 // Chamber announcement — satellite reads this
 bool topology_has_announce(AnnounceMessage* out);  // returns true + copies once, then clears
+
+// WiFi credentials — satellite reads this
+bool topology_has_wifi_creds(WifiCredsMessage* out);  // returns true + copies once, then clears
 
 // OTA cascade messages
 struct __attribute__((packed)) OtaAnnounceMessage {

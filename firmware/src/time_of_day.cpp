@@ -390,8 +390,9 @@ static void _rtc_write(uint32_t unix_time) {
 // Disconnect from AP but keep WiFi STA alive for ESP-NOW.
 // Erases stored AP config so it won't auto-reconnect and interfere with ESP-NOW channel.
 static void _wifi_teardown() {
-    WiFi.disconnect(false, true);  // disconnect + erase AP config
-    delay(10);  // let WiFi task process
+    WiFi.setAutoReconnect(false);   // prevent event handler from calling esp_wifi_connect()
+    WiFi.disconnect(false, true);   // disconnect + erase AP config
+    delay(100);                      // let WiFi task fully release the channel
     esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
 }
 
@@ -489,7 +490,9 @@ bool tod_wifi_connect(uint32_t timeout_ms) {
         if (millis() - start > timeout_ms) {
             Serial.println("[wifi] Connect timeout");
             _last_disconnect_reason = WiFi.status();
-            WiFi.disconnect();
+            WiFi.setAutoReconnect(false);
+            WiFi.disconnect(false, true);
+            delay(100);
             esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
             topology_set_wifi_active(false);
             return false;
@@ -600,6 +603,8 @@ void tod_wifi_reconnect() {
     Serial.printf("[wifi] connecting to '%s'...\r\n", _wifi_ssid);
     topology_set_wifi_active(true);
     WiFi.mode(WIFI_STA);
+    esp_wifi_disconnect();  // clear any stuck "connecting" state
+    delay(50);
     WiFi.begin(_wifi_ssid, _wifi_pass);
 
     unsigned long start = millis();
@@ -607,8 +612,9 @@ void tod_wifi_reconnect() {
         if (millis() - start > 15000) {
             _last_disconnect_reason = WiFi.status();
             Serial.printf("[wifi] reconnect failed (status=%d)\r\n", _last_disconnect_reason);
-            WiFi.disconnect();
-            // Restore previous channel for ESP-NOW
+            WiFi.setAutoReconnect(false);
+            WiFi.disconnect(false, true);
+            delay(100);
             esp_wifi_set_channel(_prev_channel ? _prev_channel : 1, WIFI_SECOND_CHAN_NONE);
             topology_set_wifi_active(false);
             return;
@@ -632,6 +638,77 @@ void tod_wifi_reconnect() {
         topology_set_wifi_channel(new_channel);
     }
     topology_set_wifi_active(false);
+}
+
+// ================================================================
+//  Get current WiFi credentials (for sharing with satellites)
+// ================================================================
+
+void tod_wifi_get_creds(char* ssid, int ssid_len, char* pass, int pass_len) {
+    strlcpy(ssid, _wifi_ssid, ssid_len);
+    strlcpy(pass, _wifi_pass, pass_len);
+}
+
+// ================================================================
+//  Satellite solo WiFi sync (NTP + weather when no queen)
+// ================================================================
+
+static uint32_t _solo_start_ms = 0;
+static uint32_t _solo_last_sync_ms = 0;
+static const uint32_t SOLO_DELAY_MS = 30000;       // wait 30s before first sync
+static const uint32_t SOLO_INTERVAL_MS = 600000;    // re-sync every 10 min
+
+void tod_satellite_wifi_tick(bool queen_connected) {
+    if (queen_connected) {
+        _solo_start_ms = 0;
+        _solo_last_sync_ms = 0;
+        return;
+    }
+
+    uint32_t now = millis();
+
+    // Start solo timer on first call without queen
+    if (_solo_start_ms == 0) {
+        _solo_start_ms = now;
+        return;
+    }
+
+    // Wait 30s before first sync attempt
+    if (now - _solo_start_ms < SOLO_DELAY_MS) return;
+
+    // Interval between syncs
+    if (_solo_last_sync_ms != 0 && now - _solo_last_sync_ms < SOLO_INTERVAL_MS) return;
+
+    // Skip if no real WiFi creds
+    if (_using_factory_creds) return;
+
+    Serial.println("[wifi] satellite solo sync...");
+    _solo_last_sync_ms = now;
+
+    if (!tod_wifi_connect(10000)) return;
+
+    // NTP sync
+    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+    struct tm tm;
+    unsigned long start = millis();
+    while (!getLocalTime(&tm, 100)) {
+        if (millis() - start > 5000) {
+            Serial.println("[wifi] solo NTP timeout");
+            tod_wifi_disconnect();
+            return;
+        }
+        delay(100);
+    }
+    time_t t;
+    time(&t);
+    g_tod.unix_time = (uint32_t)t;
+    g_tod.ntp_synced = true;
+    Serial.printf("[wifi] solo NTP OK: unix=%lu\r\n", g_tod.unix_time);
+
+    // Weather
+    weather_fetch();
+
+    tod_wifi_disconnect();
 }
 
 // ================================================================
@@ -677,6 +754,8 @@ void tod_wifi_reconnect_tick() {
     // Non-blocking-ish attempt with short timeout to avoid stalling loop
     topology_set_wifi_active(true);
     WiFi.mode(WIFI_STA);
+    esp_wifi_disconnect();  // clear any stuck "connecting" state
+    delay(50);
     WiFi.begin(_wifi_ssid, _wifi_pass);
 
     unsigned long start = millis();
@@ -695,8 +774,9 @@ void tod_wifi_reconnect_tick() {
 
             Serial.printf("[wifi] reconnect failed (status=%d), next in %lus\r\n",
                 _last_disconnect_reason, _reconnect_interval_ms / 1000);
-            WiFi.disconnect();
-            // Restore ESP-NOW channel — don't disrupt topology
+            WiFi.setAutoReconnect(false);
+            WiFi.disconnect(false, true);
+            delay(100);
             esp_wifi_set_channel(_prev_channel ? _prev_channel : 1, WIFI_SECOND_CHAN_NONE);
             topology_set_wifi_active(false);
             return;

@@ -59,5 +59,11 @@ void tod_wifi_forget();
 void tod_wifi_status();
 void tod_wifi_reconnect();
 
+// Get current WiFi credentials (for queen to share with satellites)
+void tod_wifi_get_creds(char* ssid, int ssid_len, char* pass, int pass_len);
+
 // Background reconnect — call from main loop (handles timing internally)
 void tod_wifi_reconnect_tick();
+
+// Satellite solo WiFi sync — call from main loop when no queen for 30s
+void tod_satellite_wifi_tick(bool queen_connected);

@@ -243,6 +243,15 @@ void Coordinator::on_topology_change(Face face, bool connected, uint16_t module_
 
         topology_send_to_face(face, (const uint8_t*)&ann, sizeof(ann));
 
+        // Send WiFi credentials so satellite can sync when solo
+        WifiCredsMessage wcm;
+        wcm.msg_type  = TOPO_WIFI_CREDS;
+        wcm.sender_id = topology_my_id();
+        memset(wcm.ssid, 0, sizeof(wcm.ssid));
+        memset(wcm.pass, 0, sizeof(wcm.pass));
+        tod_wifi_get_creds(wcm.ssid, sizeof(wcm.ssid), wcm.pass, sizeof(wcm.pass));
+        topology_send_to_face(face, (const uint8_t*)&wcm, sizeof(wcm));
+
         Serial.printf("[coord] announcing chamber on face %s -> module 0x%04X, home_face=%s\r\n",
             face_letter(face), module_id, face_letter(satellite_home));
 
@@ -425,6 +434,16 @@ void Coordinator::_sync_topology_to_chamber() {
             _last_queen_boot_id = ann.boot_id;
             Serial.printf("[coord] received announce: home_face=%s from queen 0x%04X boot_id=0x%04X\r\n",
                 face_letter(ann.your_home_face), ann.parent_id, ann.boot_id);
+        }
+
+        // Receive WiFi credentials from queen
+        WifiCredsMessage wcm;
+        if (topology_has_wifi_creds(&wcm)) {
+            if (wcm.ssid[0] != '\0') {
+                tod_wifi_set_ssid(wcm.ssid);
+                tod_wifi_set_pass(wcm.pass);
+                Serial.printf("[coord] WiFi creds received from queen: '%s'\r\n", wcm.ssid);
+            }
         }
     }
 #endif
