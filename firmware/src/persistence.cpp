@@ -235,6 +235,7 @@ bool ConkerRegistry::_write_record(const IdentityRecord& rec) {
     doc["lifespan_ms"] = rec.lifespan_ms;
     doc["lived_ms"]    = rec.lived_ms;
     doc["scale_factor"] = rec.scale_factor;
+    doc["tint_seed"]   = rec.tint_seed;
     doc["is_founder"]  = rec.is_founder;
     doc["tended_by"]   = rec.tended_by;
     doc["traits"]      = rec.traits;
@@ -331,6 +332,7 @@ bool ConkerRegistry::_load_living_records() {
                         r.lifespan_ms = doc["lifespan_ms"] | 0;
                         r.lived_ms    = doc["lived_ms"] | 0;
                         r.scale_factor = doc["scale_factor"] | 3.2f;
+                        r.tint_seed   = doc["tint_seed"] | 0;
                         r.is_founder  = doc["is_founder"] | false;
                         r.tended_by   = doc["tended_by"] | 0;
                         r.traits      = doc["traits"] | 0;

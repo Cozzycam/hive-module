@@ -85,6 +85,8 @@ export interface LilGuySummary {
   age_days: number;     // computed from lived_ms in firmware
   traits: string[];
   personality?: Personality;
+  scale_factor?: number;
+  tint_seed?: number;
 }
 
 // ---- LilGuy detail (queen LAN: GET /api/v1/lilguys/:id) ----

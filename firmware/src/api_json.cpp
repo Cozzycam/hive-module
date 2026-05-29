@@ -112,6 +112,9 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
             JsonArray tr = lg["traits"].to<JsonArray>();
             add_traits_array(tr, r.traits);
         }
+        // Appearance
+        lg["scale_factor"] = r.scale_factor;
+        lg["tint_seed"] = r.tint_seed;
         // Personality (available via VPS, no LAN needed)
         JsonObject pers = lg["personality"].to<JsonObject>();
         pers["work_tempo"] = r.personality[0];

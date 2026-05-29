@@ -6,6 +6,7 @@ import { Card } from '../components/Card';
 import { Chip } from '../components/Chip';
 import { PersonalityPetals } from '../components/PersonalityPetals';
 import { BondsWeb } from '../components/BondsWeb';
+import { ConkerSprite } from '../components/ConkerSprite';
 import { nameFromId } from '../data/plantNames';
 import { personalityPhrase, deriveRoleTag } from '../data/personality';
 import { HIVE, TOD_PALETTES } from '../theme/palette';
@@ -25,6 +26,8 @@ interface CharacterInfo {
   traits: string[];
   bonds: Bond[];
   personality?: Personality;
+  scale_factor?: number;
+  tint_seed?: number;
   deathCause?: string;
 }
 
@@ -100,6 +103,8 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
           founder: l.founder, age_days: l.age_days,
           traits: l.traits || [], bonds: [],
           personality: l.personality,
+          scale_factor: l.scale_factor,
+          tint_seed: l.tint_seed,
         });
       }
     }
@@ -286,6 +291,17 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
           <span style={{ color: HIVE.dimText }}> \u00b7 Deceased</span>
         )}
       </div>
+
+      {/* Conker sprite with scale */}
+      {(char.scale_factor || char.tint_seed) && (
+        <Card style={{ background: palette.cardBg }}>
+          <ConkerSprite
+            scaleFactor={char.scale_factor}
+            tintSeed={char.tint_seed}
+            palette={palette}
+          />
+        </Card>
+      )}
 
       {/* Memorial banner for deceased */}
       {isDeceased && (

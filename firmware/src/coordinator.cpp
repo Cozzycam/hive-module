@@ -867,6 +867,7 @@ void Coordinator::_persist_tick(uint32_t tick_num) {
             rec.lifespan_ms = chamber.conkers[i].lifespan_ms;
             rec.lived_ms = chamber.conkers[i].lived_ms;
             rec.scale_factor = chamber.conkers[i].scale_factor;
+            rec.tint_seed = chamber.conkers[i].tint_seed;
             memcpy(rec.personality, chamber.conkers[i].personality, sizeof(rec.personality));
             rec.last_x = chamber.conkers[i].x;
             rec.last_y = chamber.conkers[i].y;
@@ -970,6 +971,7 @@ void Coordinator::_persist_process_hatches() {
                 rec.lifespan_ms = chamber.conkers[i].lifespan_ms;
                 rec.lived_ms = chamber.conkers[i].lived_ms;
                 rec.scale_factor = chamber.conkers[i].scale_factor;
+                rec.tint_seed = chamber.conkers[i].tint_seed;
                 rec.tended_by = carer_id;
                 memcpy(rec.personality, chamber.conkers[i].personality, sizeof(rec.personality));
                 rec.last_x = chamber.conkers[i].x;
@@ -1200,6 +1202,9 @@ void Coordinator::_persist_restore_from_disk() {
         // Restore scale_factor (init randomizes it — override with persisted value)
         if (r.scale_factor > 0.0f)
             chamber.conkers[idx].scale_factor = r.scale_factor;
+        // Restore tint_seed (init randomizes it — override with persisted value)
+        if (r.tint_seed > 0)
+            chamber.conkers[idx].tint_seed = r.tint_seed;
         // Restore personality (init randomizes it — override with persisted value)
         memcpy(chamber.conkers[idx].personality, r.personality,
                sizeof(chamber.conkers[idx].personality));
