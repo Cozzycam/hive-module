@@ -4,6 +4,7 @@ import { usePins } from '../state/pins';
 import { useTOD } from '../state/tod';
 import { Card } from '../components/Card';
 import { ConnectionDot } from '../components/ConnectionDot';
+import { DigestCard } from '../components/DigestCard';
 import { TopologyMiniMap } from '../components/TopologyMiniMap';
 import { nameFromId } from '../data/plantNames';
 import { deriveRoleTag } from '../data/personality';
@@ -65,6 +66,9 @@ export function Home({ onNavigate }: HomeProps) {
           </button>
         </div>
       </div>
+
+      {/* While you were away */}
+      <DigestCard palette={tod} />
 
       {/* Right Now tile */}
       <Card style={{ background: tod.cardBg }}>
