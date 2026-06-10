@@ -150,6 +150,10 @@ inline void transfer_to_conker(const ConkerTransfer& t, Conker& w,
     w.stack_cooldown_ms    = 0;
     w.zoomie_target        = -1;
     w.zoomie_ticks         = 0;
+    w.flair_kind           = 0;
+    w.flair_ticks          = 0;
+    w.flair_casts_used     = 0;
+    w.flair_ceremony_done  = false;
     w.tint_seed            = t.tint_seed;
     memset(w.name, 0, sizeof(w.name));
     strncpy(w.name, t.name, sizeof(w.name) - 1);

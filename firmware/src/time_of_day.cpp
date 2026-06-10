@@ -51,6 +51,9 @@ static uint8_t  _reconnect_failures = 0;
 static uint8_t  _last_disconnect_reason = 0;   // WiFi.status() at disconnect
 static uint32_t _last_connect_ms = 0;          // millis when last associated
 static uint8_t  _prev_channel = 0;             // channel before disconnect
+static uint8_t  _last_ap_channel = 0;          // last successful AP channel — survives
+                                               // disconnect so topology can start ESP-NOW
+                                               // on the queen's channel after reboot
 
 // ================================================================
 //  WiFi credential loading (NVS with factory fallback)
@@ -415,6 +418,7 @@ static bool _ntp_sync() {
     }
     _ever_connected = true;
     _last_connect_ms = millis();
+    _last_ap_channel = WiFi.channel();
     _reconnect_failures = 0;
     _reconnect_interval_ms = 60000;
     Serial.printf("[tod] WiFi connected, IP=%s ch=%d\r\n",
@@ -493,7 +497,8 @@ bool tod_wifi_connect(uint32_t timeout_ms) {
             WiFi.setAutoReconnect(false);
             WiFi.disconnect(false, true);
             delay(100);
-            esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
+            esp_wifi_set_channel(_last_ap_channel ? _last_ap_channel : 1,
+                                 WIFI_SECOND_CHAN_NONE);
             topology_set_wifi_active(false);
             return false;
         }
@@ -501,12 +506,17 @@ bool tod_wifi_connect(uint32_t timeout_ms) {
     }
     _ever_connected = true;
     _last_connect_ms = millis();
+    _last_ap_channel = WiFi.channel();
     _reconnect_failures = 0;
     _reconnect_interval_ms = 60000;
     Serial.printf("[wifi] Connected, IP=%s ch=%d\r\n",
         WiFi.localIP().toString().c_str(), WiFi.channel());
     topology_set_wifi_active(false);
     return true;
+}
+
+uint8_t tod_last_wifi_channel() {
+    return _last_ap_channel;
 }
 
 void tod_wifi_disconnect() {
@@ -624,10 +634,12 @@ void tod_wifi_reconnect() {
 
     _ever_connected = true;
     _last_connect_ms = millis();
+    _last_ap_channel = WiFi.channel();
     _reconnect_failures = 0;
     _reconnect_interval_ms = 60000;
 
     uint8_t new_channel = WiFi.channel();
+    _last_ap_channel = new_channel;
     Serial.printf("[wifi] reconnected, IP=%s ch=%d\r\n",
         WiFi.localIP().toString().c_str(), new_channel);
 
@@ -792,6 +804,7 @@ void tod_wifi_reconnect_tick() {
     _reconnect_interval_ms = 60000;
 
     uint8_t new_channel = WiFi.channel();
+    _last_ap_channel = new_channel;
     Serial.printf("[wifi] reconnected! IP=%s ch=%d (was ch=%d)\r\n",
         WiFi.localIP().toString().c_str(), new_channel, _prev_channel);
 

@@ -22,6 +22,28 @@ static void add_traits_array(JsonArray& arr, uint32_t traits) {
     }
 }
 
+// Live behaviour state for a worker, looked up in the local chamber.
+// Workers currently on another module aren't in our chamber — report "away".
+static const char* conker_state_str(Coordinator& coord, uint32_t id) {
+    for (int i = 0; i < coord.chamber.conker_count; i++) {
+        const Conker& c = coord.chamber.conkers[i];
+        if (c.id != id) continue;
+        switch (c.state) {
+            case STATE_IDLE:        return c.sleeping ? "sleeping" : "idle";
+            case STATE_TEND_QUEEN:  return "tending_queen";
+            case STATE_TEND_BROOD:  return "tending_brood";
+            case STATE_TO_FOOD:     return "gathering";
+            case STATE_TO_HOME:     return "homebound";
+            case STATE_CANNIBALIZE: return "cannibalizing";
+            case STATE_ZOOMIES:     return "zoomies";
+            case STATE_EATING:      return "eating";
+            case STATE_MOURNING:    return "mourning";
+            default:                return "idle";
+        }
+    }
+    return "away";
+}
+
 static const char* phase_str(DayPhase p) {
     switch (p) {
         case PHASE_DAY:   return "day";
@@ -208,6 +230,7 @@ size_t api_lilguys_json(Coordinator& coord, char* buf, size_t buflen,
 
         entry["scale_factor"] = r.scale_factor;
         entry["tint_seed"] = r.tint_seed;
+        entry["state"] = conker_state_str(coord, r.id);
     }
 
     return serializeJson(doc, buf, buflen);
@@ -238,6 +261,8 @@ size_t api_lilguy_detail_json(Coordinator& coord, uint32_t id,
     // Appearance
     doc["scale_factor"] = rec->scale_factor;
     doc["tint_seed"] = rec->tint_seed;
+
+    doc["state"] = conker_state_str(coord, id);
 
     // Tended by
     if (rec->tended_by != 0) {

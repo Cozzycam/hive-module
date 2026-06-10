@@ -81,7 +81,18 @@ void Sim::handle_touch() {
 
     if (best >= 0) {
         // Tapped a conker — select it
-        selected_conker_id = ch.conkers[best].id;
+        auto& c = ch.conkers[best];
+        selected_conker_id = c.id;
+        // It notices: stop, face the glass, little startle hop.
+        // Only idle conkers react — jobs and sleep are never interrupted.
+        if (c.state == STATE_IDLE && !c.sleeping && c.stack_on < 0
+                && c.anim_remaining_ticks == 0) {
+            c.anim_type = LG_ANIM_NOTICE;
+            c.anim_remaining_ticks = 12;
+            c.facing_dx = 0.0f; c.facing_dy = 1.0f;  // toward the viewer
+            c.last_dx = 0.0f;   c.last_dy = 1.0f;
+            c.has_target_cell = false;
+        }
         return;
     }
 

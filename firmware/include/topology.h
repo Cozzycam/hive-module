@@ -78,6 +78,8 @@ struct __attribute__((packed)) PopSyncMessage {
     uint8_t  msg_type;   // TOPO_POP_SYNC
     uint16_t sender_id;
     uint16_t population;
+    // Gatherer count (added later — receiver checks length for backwards compat)
+    uint16_t gatherers;
 };
 
 // Chamber announcement (queen → satellite on connect)
@@ -182,6 +184,7 @@ bool topology_has_gather(GatherSyncMessage* out);  // returns true + copies, cle
 
 // Remote population tracking (queen reads these)
 uint16_t topology_remote_population(Face f);
+uint16_t topology_remote_gatherers(Face f);
 
 // Boundary pheromone data from neighbour (coordinator applies to local grid)
 const BoundaryPheroData& topology_boundary_phero(Face f);

@@ -1136,6 +1136,10 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
             }
             px += static_cast<int>(w.anim_lean_dx * 2.0f * lean);
             py += static_cast<int>(w.anim_lean_dy * 2.0f * lean);
+        } else if (w.anim_type == LG_ANIM_NOTICE) {
+            // Startle hop: noticed the giant outside the glass
+            float p = 1.0f - static_cast<float>(w.anim_remaining_ticks) / 12.0f;
+            py -= static_cast<int>(sinf(p * 3.14159f) * 5.0f);
         } else if (w.anim_type == LG_ANIM_FOOD_SHARE_GIVER
                 || w.anim_type == LG_ANIM_FOOD_SHARE_RECEIVER
                 || w.anim_type == LG_ANIM_SNOOZE) {
@@ -1153,6 +1157,20 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
                 float phase = (fx + fy) * 2.0f;
                 int bob = (static_cast<int>(phase) & 1) ? -1 : 0;
                 py += bob;
+
+                // Carry waddle: render-only sway perpendicular to travel,
+                // heavier loads sway more. Cell path (and the laid trail)
+                // is untouched — this never alters sim position.
+                if (w.state == STATE_TO_HOME && w.food_carried > 0) {
+                    float load = (w.carry_amount > 0.0f)
+                               ? w.food_carried / w.carry_amount : 1.0f;
+                    if (load > 1.0f) load = 1.0f;
+                    float amp = Cfg::CARRY_WADDLE_AMP_PX * (0.5f + 0.5f * load);
+                    float wphase = (fx + fy) * Cfg::CARRY_WADDLE_FREQ + i * 0.7f;
+                    float sway = sinf(wphase * 6.28318f) * amp;
+                    px += static_cast<int>(-w.facing_dy * sway);
+                    py += static_cast<int>( w.facing_dx * sway);
+                }
             }
         }
 

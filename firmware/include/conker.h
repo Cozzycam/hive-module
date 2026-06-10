@@ -21,6 +21,7 @@ enum ConkerAnim : uint8_t {
     LG_ANIM_GROOMING            = 4,
     LG_ANIM_SNOOZE              = 5,
     LG_ANIM_TOPPLE              = 6,
+    LG_ANIM_NOTICE              = 7,  // tapped: stop, face the glass, startle hop
 };
 
 // Sprite frame selection — animations can request dedicated sprite art
@@ -111,6 +112,12 @@ struct Conker {
     int16_t  zoomie_target        = -1;  // index of conker being chased
     int16_t  zoomie_ticks         = 0;   // countdown to end
 
+    // Forage flair (cosmetic; reset on every task pick)
+    uint8_t  flair_kind           = 0;   // 0=none, 1=search cast, 2=pile inspect linger
+    uint8_t  flair_ticks          = 0;   // countdown while holding a flair pause
+    uint8_t  flair_casts_used     = 0;   // casts this trip (capped)
+    bool     flair_ceremony_done  = false;  // pickup inspection done this trip
+
     uint8_t  tint_seed            = 0;   // per-worker colour variation (set at init)
     int8_t   arrival_face        = -1;  // face this ant arrived from (-1 = locally spawned)
     uint32_t arrival_ms          = 0;   // millis() when placed after transfer
@@ -125,6 +132,11 @@ struct Conker {
     // Helper: current grid cell from float position
     int cell_x() const { return static_cast<int>(floorf(x)); }
     int cell_y() const { return static_cast<int>(floorf(y)); }
+
+    // Elder: past 70% of lifespan — huddle magnet, gets groomed, never climbed on
+    bool is_elder() const {
+        return lifespan_ms > 0 && lived_ms >= static_cast<uint32_t>(lifespan_ms * 0.7f);
+    }
 
     void init(int8_t px, int8_t py, Role c = ROLE_CONKER, bool pioneer = false);
     void tick(Chamber& chamber, float dt);
@@ -147,6 +159,7 @@ struct Conker {
     void _do_eating(Chamber& ch);
     void _do_cannibalize(Chamber& ch);
     void _do_zoomies(Chamber& ch);
+    void _do_mourning(Chamber& ch);
     bool _target_still_valid(Chamber& ch);
 
     // Marker sampling -- returns true and sets out_dx/out_dy if gradient found
@@ -155,6 +168,9 @@ struct Conker {
     void _step_toward_cell(int tx, int ty, Chamber& ch);
     void _persistent_forward_step(Chamber& ch);
     void _explore_or_wander(Chamber& ch);
+    void _explore_with_flair(Chamber& ch);  // blind exploration + chance of a search cast
+    bool _flair_allowed(Chamber& ch);
+    int  _max_foragers(Chamber& ch);  // forager cap incl. waggle recruitment boost
 
     bool _within_sense(int tx, int ty) const {
         int cx = cell_x(), cy = cell_y();

@@ -162,14 +162,22 @@ void Coordinator::_aggregate_colony_stats() {
         _last_pop_update_ms = now;
     }
 
+    // Empty-handed homebound workers still count — they hold their forage
+    // slot until they arrive, preventing over-recruitment while in transit.
     int gatherers = 0;
     for (int i = 0; i < chamber.conker_count; i++) {
         auto& w = chamber.conkers[i];
-        if (w.state == STATE_TO_FOOD
-                || (w.state == STATE_TO_HOME && w.food_carried > 0))
+        if (w.state == STATE_TO_FOOD || w.state == STATE_TO_HOME)
             gatherers++;
     }
-    // Departing workers are still in chamber.conkers, counted naturally above
+#ifdef ARDUINO
+    // Queen: add gatherers currently on satellite modules (mirrors population)
+    if (is_queen()) {
+        for (int f = 0; f < FACE_COUNT; f++) {
+            gatherers += topology_remote_gatherers(static_cast<Face>(f));
+        }
+    }
+#endif
     colony.gatherer_count = gatherers;
 
     uint16_t eggs, seeds;
@@ -199,6 +207,7 @@ void Coordinator::_broadcast_population() {
     msg.msg_type   = TOPO_POP_SYNC;
     msg.sender_id  = topology_my_id();
     msg.population = chamber.conker_count;
+    msg.gatherers  = colony.gatherer_count;  // local count (satellites don't aggregate)
 
     for (int f = 0; f < FACE_COUNT; f++) {
         if (chamber.entries[f] >= 0) {
@@ -1188,6 +1197,55 @@ void Coordinator::_persist_process_deaths() {
     for (int d = 0; d < chamber.death_count; d++) {
         uint32_t id = chamber.deaths[d].id;
         uint8_t cause = chamber.deaths[d].cause;
+
+        // Mourning: bonded partners pay respects at the husk. Must run
+        // before bonds.remove_owner() erases the relationships. Skipped
+        // when the colony is stressed — survival first.
+        if (colony.food_pressure() <= Cfg::FLAIR_MAX_PRESSURE) {
+            int8_t hx = -1, hy = -1;
+            for (int h = chamber.husk_count - 1; h >= 0; h--) {
+                if (chamber.husks[h].conker_id == id) {
+                    hx = chamber.husks[h].x; hy = chamber.husks[h].y;
+                    break;
+                }
+            }
+            BondEntry bs[8];
+            int bc = bonds.get_bonds(id, bs, 8);
+            int mourners = 0;
+            for (int b = 0; b < bc && hx >= 0
+                    && mourners < Cfg::MOURN_MAX_PARTNERS; b++) {
+                if (bs[b].strength < Cfg::MOURN_MIN_BOND) continue;
+                for (int i = 0; i < chamber.conker_count; i++) {
+                    Conker& w = chamber.conkers[i];
+                    if (w.id != bs[b].target || !w.alive) continue;
+                    // Never interrupt a carrier or a departing worker
+                    if (w.food_carried > 0 || w.departing) break;
+                    w.state = STATE_MOURNING;
+                    w.target_x = hx; w.target_y = hy;
+                    w.has_target = true;
+                    w.has_target_cell = false;
+                    w.zoomie_ticks = Cfg::MOURN_DURATION_TICKS;
+                    w.zoomie_target = -1;
+                    w.sleeping = false;
+                    w.stack_on = -1;
+                    w.idle_ticks_remaining = 0;
+                    w.anim_type = LG_ANIM_NONE;
+                    w.anim_remaining_ticks = 0;
+                    w.speed = Cfg::ROLE_PARAMS[w.role].speed;
+                    mourners++;
+
+                    JournalEntry jm = {};
+                    jm.tick = chamber.tick_num;
+                    jm.unix_time = g_tod.unix_time;
+                    jm.type = JEVT_MOURNING;
+                    jm.lilguy_id = w.id;
+                    jm.mourning.dead_id = id;
+                    journal.emit(jm);
+                    break;
+                }
+            }
+        }
+
         registry.mark_dead(id, g_tod.unix_time);
         registry.manifest().total_workers_died++;
         bonds.remove_owner(id);

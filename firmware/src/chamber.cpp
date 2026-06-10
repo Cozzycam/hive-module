@@ -227,6 +227,37 @@ void Chamber::_detect_proximity_interactions() {
                              || (a.state == STATE_TO_HOME && a.food_carried > 0);
                 bool b_on_job = (b.state == STATE_TO_FOOD)
                              || (b.state == STATE_TO_HOME && b.food_carried > 0);
+
+                // Trail courtesy: an outbound forager pauses and steps aside
+                // for a loaded carrier. Only the empty-handed one reacts —
+                // the carrier never breaks stride.
+                bool a_carrying = (a.state == STATE_TO_HOME && a.food_carried > 0);
+                bool b_carrying = (b.state == STATE_TO_HOME && b.food_carried > 0);
+                bool a_outbound = (a.state == STATE_TO_FOOD && a.food_carried <= 0);
+                bool b_outbound = (b.state == STATE_TO_FOOD && b.food_carried <= 0);
+                if ((a_carrying && b_outbound) || (b_carrying && a_outbound)) {
+                    auto& walker  = a_carrying ? b : a;
+                    auto& carrier = a_carrying ? a : b;
+                    if (walker.interaction_cooldown == 0
+                            && walker.anim_remaining_ticks == 0
+                            && walker.flair_ticks == 0
+                            && colony->food_pressure() <= Cfg::FLAIR_MAX_PRESSURE
+                            && g_rng.rand_float() < Cfg::COURTESY_YIELD_CHANCE) {
+                        float ddx = carrier.x - walker.x, ddy = carrier.y - walker.y;
+                        float d = sqrtf(ddx * ddx + ddy * ddy);
+                        if (d > 0.01f) {
+                            walker.facing_dx = ddx / d; walker.facing_dy = ddy / d;
+                            walker.last_dx = walker.facing_dx;
+                            walker.last_dy = walker.facing_dy;
+                        }
+                        walker.has_target_cell = false;
+                        walker.flair_kind = 3;  // courtesy hold (stand + watch)
+                        walker.flair_ticks = Cfg::COURTESY_YIELD_TICKS;
+                        walker.interaction_cooldown = Cfg::INTERACTION_COOLDOWN_TICKS;
+                    }
+                    return;
+                }
+
                 if (a_on_job || b_on_job) return;
 
                 // Cooldown gating
@@ -235,6 +266,9 @@ void Chamber::_detect_proximity_interactions() {
                 // Already animating or sleeping
                 if (a.anim_remaining_ticks > 0 || b.anim_remaining_ticks > 0) return;
                 if (a.sleeping || b.sleeping) return;
+
+                // Grief is private — no games or greetings around mourners
+                if (a.state == STATE_MOURNING || b.state == STATE_MOURNING) return;
 
                 // Zoomies: daytime only, both idle, not stacked, not already zooming
                 if (g_tod.phase == PHASE_DAY
@@ -260,6 +294,9 @@ void Chamber::_detect_proximity_interactions() {
                     b.has_target = false;
                     b.has_target_cell = false;
                     b.idle_ticks_remaining = 0;
+
+                    Serial.printf("[zoomies] %s chases %s (%d ticks)\r\n",
+                                  b.name, a.name, duration);
 
                     // Try to recruit a third nearby idle lil guy
                     if (g_rng.rand_float() < Cfg::ZOOMIE_THIRD_CHANCE) {
@@ -323,7 +360,10 @@ void Chamber::_detect_proximity_interactions() {
                 float greet_chance = Cfg::PROXIMITY_GREETING_CHANCE
                                    * (0.5f + greet_social);
                 if (g_rng.rand_float() < greet_chance) {
-                    if (!in_stack[ai] && !in_stack[bi] && g_rng.rand_float() < 0.5f) {
+                    // Elders always get the grooming branch — respected, not climbed on
+                    bool elder_present = a.is_elder() || b.is_elder();
+                    if (!in_stack[ai] && !in_stack[bi]
+                            && (elder_present || g_rng.rand_float() < 0.5f)) {
                         // Mutual grooming: both lean toward each other (non-stacked only)
                         a.anim_type = LG_ANIM_GROOMING;
                         b.anim_type = LG_ANIM_GROOMING;

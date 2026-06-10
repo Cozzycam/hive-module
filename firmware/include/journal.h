@@ -26,6 +26,7 @@ enum JournalType : uint8_t {
     JEVT_CHALLENGE_START,
     JEVT_CHALLENGE_END,
     JEVT_TRAIT_EARNED,
+    JEVT_MOURNING,
     JEVT_COUNT
 };
 
@@ -51,6 +52,7 @@ struct JournalEntry {
         struct { uint32_t target_id; } bond;  // formed or broken
         struct { uint8_t challenge_type; float severity; } challenge;
         struct { uint32_t trait_bit; } trait;
+        struct { uint32_t dead_id; } mourning;  // lilguy_id grieves for dead_id
     };
 };
 

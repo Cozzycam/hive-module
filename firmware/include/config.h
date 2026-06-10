@@ -19,12 +19,13 @@ enum AntState : uint8_t {
     STATE_IDLE = 0, STATE_TEND_QUEEN = 1, STATE_TEND_BROOD = 2,
     STATE_TO_FOOD = 3, STATE_TO_HOME = 4, STATE_CANNIBALIZE = 5,
     STATE_ZOOMIES = 6,
-    STATE_EATING = 7
+    STATE_EATING = 7,
+    STATE_MOURNING = 8   // bonded partner died — pay respects at the husk
 };
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 79;
+constexpr uint32_t FW_VERSION = 88;
 
 namespace Cfg {
 
@@ -158,10 +159,41 @@ constexpr float IDLE_HUDDLE_WEIGHT         = 0.25f;  // drift toward nearest idl
 // reface weight = 1 - hold - drift = 0.15
 constexpr int   IDLE_MICROSTATE_MIN_TICKS  = 16;    // ~2s
 constexpr int   IDLE_MICROSTATE_MAX_TICKS  = 80;    // ~10s
-constexpr int   COLONY_MIN_ACTIVE_FOR_IDLE = 10;    // founding-phase suppression
+constexpr int   COLONY_MIN_ACTIVE_FOR_IDLE = 2;     // idle kicks in once 2+ workers exist
 constexpr float IDLE_BUDGET_DAY            = 0.70f;
 constexpr float IDLE_BUDGET_TWILIGHT       = 0.85f;
 constexpr float IDLE_BUDGET_NIGHT          = 0.95f;
+
+// ---- Forage flair (cosmetic character — never overrides trail logic) ----
+// All flair is gated off above FLAIR_MAX_PRESSURE so a stressed colony
+// forages all-business. Casts/ceremony only fire during blind exploration
+// or at the pile — trail following and trail laying stay untouched.
+constexpr float FLAIR_MAX_PRESSURE        = 0.5f;
+constexpr float CAST_CHANCE               = 0.05f;  // per blind-explore decision
+constexpr int   CAST_MAX_PER_TRIP         = 3;
+constexpr int   CAST_DURATION_TICKS       = 9;      // ~1s scanning pause
+constexpr int   CEREMONY_LINGER_MAX_TICKS = 8;      // picky extra inspect (x food_preference)
+constexpr float TRAIL_DEFECT_BASE         = 0.03f;  // everyone occasionally leaves the trail
+constexpr float TRAIL_DEFECT_PERS         = 0.22f;  // + exploration scale (3%-25% total)
+constexpr float CARRY_WADDLE_AMP_PX       = 1.8f;   // render-only: never alters the cell path
+constexpr float CARRY_WADDLE_FREQ         = 1.6f;   // wobble cycles per cell walked
+constexpr float FORAGE_TEMPO_SPEED_MIN    = 0.85f;  // low work_tempo amble (outbound only)
+constexpr float FORAGE_TEMPO_SPEED_SPAN   = 0.30f;  // up to 1.15x march
+constexpr float OVERLOAD_TOPPLE_CHANCE    = 0.04f;  // comic fumble at pickup
+constexpr float COURTESY_YIELD_CHANCE     = 0.35f;  // outbound steps aside for a carrier
+constexpr int   COURTESY_YIELD_TICKS      = 6;      // ~0.75s pause watching them pass
+constexpr int   WAGGLE_DANCE_TICKS        = 16;     // ~2s post-delivery dance
+// Waggle recruitment: fresh deliveries (food_delivery_signal 200→0 over ~25s)
+// temporarily widen the forager cap — a productive pile swells the swarm,
+// and the swarm dissolves naturally once deliveries stop refreshing it.
+constexpr float RECRUIT_SIGNAL_FRACTION   = 0.50f;  // extra forager fraction at full signal
+
+// ---- Mourning & elders ----
+constexpr float MOURN_MIN_BOND        = 0.25f;  // bond strength to grieve
+constexpr int   MOURN_MAX_PARTNERS    = 3;      // closest bonds only
+constexpr int   MOURN_DURATION_TICKS  = 240;    // ~30s vigil at the husk
+constexpr int   ELDER_HUDDLE_PULL     = 4;      // idlers prefer huddling near elders
+                                                // (distance bias, cells)
 
 // ---- Zoomies (daytime chase behavior) ----
 constexpr float ZOOMIE_CHANCE              = 0.03f;  // per proximity pair per tick

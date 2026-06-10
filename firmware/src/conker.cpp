@@ -49,6 +49,10 @@ void Conker::init(int8_t px, int8_t py, Role c, bool pioneer) {
     sleep_cooldown_ms = 0;
     zoomie_target = -1;
     zoomie_ticks = 0;
+    flair_kind = 0;
+    flair_ticks = 0;
+    flair_casts_used = 0;
+    flair_ceremony_done = false;
     tint_seed = static_cast<uint8_t>(g_rng.rand_int(1, 255));
     arrival_face = -1;
     arrival_ms = 0;
@@ -186,6 +190,13 @@ void Conker::tick(Chamber& ch, float dt) {
     }
 
     speed = base_speed;
+
+    // Forage tempo: personality flavours outbound travel speed only —
+    // return trips stay uniform so trail timing/strength is unaffected
+    if (state == STATE_TO_FOOD) {
+        speed *= Cfg::FORAGE_TEMPO_SPEED_MIN
+               + Cfg::FORAGE_TEMPO_SPEED_SPAN * personality[PERS_WORK_TEMPO];
+    }
 
     // Starvation penalty (80-100: linearly reduce to 30%)
     if (hunger > Cfg::HUNGER_SLOWDOWN) {
@@ -336,6 +347,7 @@ void Conker::tick(Chamber& ch, float dt) {
             case STATE_TO_HOME:     _do_to_home(ch);     break;
             case STATE_EATING:      _do_eating(ch);      break;
             case STATE_ZOOMIES:     _do_zoomies(ch);     break;
+            case STATE_MOURNING:    _do_mourning(ch);    break;
             default:                _do_idle(ch);        break;
         }
     }
@@ -427,6 +439,10 @@ void Conker::_pick_task(Chamber& ch) {
     idle_ticks_remaining = 0;
     zoomie_target = -1;
     zoomie_ticks = 0;
+    flair_kind = 0;
+    flair_ticks = 0;
+    flair_casts_used = 0;
+    flair_ceremony_done = false;
     int16_t was_stacked = stack_on;
     bool was_sleeping = sleeping;
     stack_on = -1;   // assume unstack; restore if we stay idle
@@ -578,12 +594,7 @@ void Conker::_pick_task(Chamber& ch) {
     }
 
     // Forager cap — count current foragers vs desired fraction
-    float forage_frac = Cfg::BASE_FORAGER_FRACTION
-        + (1.0f - Cfg::BASE_FORAGER_FRACTION)
-          * (pressure / Cfg::FAMINE_SLOWDOWN_PRESSURE);
-    if (forage_frac > 1.0f) forage_frac = 1.0f;
-    int max_foragers = static_cast<int>(col->population * forage_frac + 0.5f);
-    if (max_foragers < 1) max_foragers = 1;
+    int max_foragers = _max_foragers(ch);
 
     if (col->gatherer_count < max_foragers) {
         // Go gather
@@ -635,14 +646,7 @@ void Conker::_pick_task(Chamber& ch) {
 void Conker::_do_to_food(Chamber& ch) {
     // Periodic forager re-evaluation — recall excess scouts
     if (steps_walked > 0 && steps_walked % 32 == 0 && food_carried == 0) {
-        float pressure = ch.colony->food_pressure();
-        float forage_frac = Cfg::BASE_FORAGER_FRACTION
-            + (1.0f - Cfg::BASE_FORAGER_FRACTION)
-              * (pressure / Cfg::FAMINE_SLOWDOWN_PRESSURE);
-        if (forage_frac > 1.0f) forage_frac = 1.0f;
-        int max_foragers = static_cast<int>(ch.colony->population * forage_frac + 0.5f);
-        if (max_foragers < 1) max_foragers = 1;
-        if (ch.colony->gatherer_count > max_foragers) {
+        if (ch.colony->gatherer_count > _max_foragers(ch)) {
             state = STATE_TO_HOME;
             has_target = false;
             has_target_cell = false;
@@ -664,9 +668,63 @@ void Conker::_do_to_food(Chamber& ch) {
         return;
     }
 
+    // Flair hold: search-cast scanning or pile-inspect linger.
+    // Pure pause — state stays TO_FOOD, recall/patience above still apply.
+    if (flair_ticks > 0) {
+        flair_ticks--;
+        if (flair_kind == 1 && (flair_ticks % 3) == 0) {
+            // Scan: alternate 90-degree refaces, like casting for a scent
+            float fdx = facing_dx, fdy = facing_dy;
+            if (((flair_ticks / 3) & 1) == 0) { facing_dx = -fdy; facing_dy = fdx; }
+            else                              { facing_dx = fdy;  facing_dy = -fdx; }
+            last_dx = facing_dx; last_dy = facing_dy;
+        }
+        if (flair_ticks == 0) {
+            if (flair_kind == 1
+                    && g_rng.rand_float() < personality[PERS_EXPLORATION]) {
+                // Explorers commit to a fresh heading after scanning
+                int d = g_rng.rand_int(0, 3);
+                const float cdx[4] = {1.0f, -1.0f, 0.0f, 0.0f};
+                const float cdy[4] = {0.0f, 0.0f, 1.0f, -1.0f};
+                facing_dx = cdx[d]; facing_dy = cdy[d];
+                last_dx = facing_dx; last_dy = facing_dy;
+            }
+            flair_kind = 0;
+        }
+        return;
+    }
+
     // Adjacent food?
     int8_t px, py;
     if (_food_pile_adjacent(ch, px, py)) {
+        // Pickup ceremony: inspect the pile before hefting (once per trip)
+        if (!flair_ceremony_done && _flair_allowed(ch)) {
+            flair_ceremony_done = true;
+            anim_type = LG_ANIM_GROOMING;
+            anim_remaining_ticks = Cfg::GREETING_DURATION_TICKS;
+            float bdx = (px + 0.5f) - x, bdy = (py + 0.5f) - y;
+            if (fabsf(bdx) >= fabsf(bdy)) {
+                anim_lean_dx = (bdx > 0) ? 1 : -1; anim_lean_dy = 0;
+            } else {
+                anim_lean_dx = 0; anim_lean_dy = (bdy > 0) ? 1 : -1;
+            }
+            // Picky conkers linger over the choice a moment longer
+            int linger = static_cast<int>(personality[PERS_FOOD_PREFERENCE]
+                                          * Cfg::CEREMONY_LINGER_MAX_TICKS);
+            if (linger > 0) {
+                flair_kind = 2;
+                flair_ticks = static_cast<uint8_t>(linger);
+            }
+            return;
+        }
+        // Overload fumble: rare comic topple from biting off too much
+        if (_flair_allowed(ch)
+                && g_rng.rand_float() < Cfg::OVERLOAD_TOPPLE_CHANCE) {
+            anim_type = LG_ANIM_TOPPLE;
+            anim_remaining_ticks = Cfg::STACK_TOPPLE_TICKS + Cfg::STACK_FALL_TICKS;
+            topple_depth = 1;  // ground-level wobble + tip-over scatter
+            return;
+        }
         float taken = ch.take_food(px, py, carry_amount);
         if (taken > 0) {
             food_carried = taken;
@@ -692,10 +750,10 @@ void Conker::_do_to_food(Chamber& ch) {
             int mcx = cell_x(), mcy = cell_y();
             _set_target_cell(mcx + dx, mcy + dy, ch);
         } else {
-            _explore_or_wander(ch);
+            _explore_with_flair(ch);
         }
     } else {
-        _explore_or_wander(ch);
+        _explore_with_flair(ch);
     }
 
     // Stall counter
@@ -731,10 +789,14 @@ void Conker::_do_to_home(Chamber& ch) {
             has_target = false;
             has_target_cell = false;
             steps_walked = 0;
-            {
-                // Foraging wear: add extra ageing for long trips
-                uint32_t wear_ms = static_cast<uint32_t>(g_rng.rand_float() * 0.2f * Cfg::SECS_PER_DAY * 1000.0f);
-                lived_ms += wear_ms;
+            if (_flair_allowed(ch)) {
+                // Waggle dance: advertise the find. The recruitment itself
+                // rides food_delivery_signal via _max_foragers — this is
+                // the visible celebration.
+                idle_ticks_remaining = Cfg::WAGGLE_DANCE_TICKS;
+                idle_repoll_tick = Cfg::IDLE_REPOLL_INTERVAL;
+                idle_microstate = 4;
+                idle_micro_ticks = Cfg::WAGGLE_DANCE_TICKS;
             }
             facing_dx = -facing_dx;
             facing_dy = -facing_dy;
@@ -896,6 +958,16 @@ void Conker::_do_idle(Chamber& ch) {
 
     // True rest: drift and huddle need new target cells
     if (idle_ticks_remaining > 0) {
+        if (idle_microstate == 4) {
+            // Waggle dance: rapid alternating refaces in place
+            if ((idle_ticks_remaining & 1) == 0) {
+                float fdx = facing_dx, fdy = facing_dy;
+                if (idle_ticks_remaining & 2) { facing_dx = -fdy; facing_dy = fdx; }
+                else                          { facing_dx = fdy;  facing_dy = -fdx; }
+                last_dx = facing_dx; last_dy = facing_dy;
+            }
+            return;
+        }
         if (idle_microstate == 1) {
             // Drift — queen bias only at dusk/night
             int cx = cell_x(), cy = cell_y();
@@ -920,13 +992,15 @@ void Conker::_do_idle(Chamber& ch) {
             int tx = cx, ty = cy;
             bool target_is_queen = false;
 
-            // Find nearest idle worker
+            // Find nearest idle worker — elders pull harder, so idle circles
+            // form around the old ones (story time)
             for (int i = 0; i < ch.conker_count; i++) {
                 auto& other = ch.conkers[i];
                 if (&other == this || !other.alive) continue;
                 if (other.state != STATE_IDLE) continue;
                 int ox = other.cell_x(), oy = other.cell_y();
                 int d = abs(ox - cx) + abs(oy - cy);
+                if (other.is_elder()) d -= Cfg::ELDER_HUDDLE_PULL;
                 if (d > 0 && d < best_dist) {
                     best_dist = d;
                     tx = ox; ty = oy;
@@ -1066,6 +1140,40 @@ void Conker::_do_zoomies(Chamber& ch) {
 //  Idle/rest
 // ================================================================
 
+void Conker::_do_mourning(Chamber& ch) {
+    // zoomie_ticks is repurposed as the vigil timer (states are exclusive)
+    zoomie_ticks--;
+    if (zoomie_ticks <= 0) {
+        state = STATE_IDLE;
+        has_target = false;
+        has_target_cell = false;
+        idle_ticks_remaining = g_rng.rand_int(Cfg::IDLE_REST_MIN_TICKS,
+                                               Cfg::IDLE_REST_MAX_TICKS);
+        idle_repoll_tick = Cfg::IDLE_REPOLL_INTERVAL;
+        _pick_idle_microstate(ch);
+        return;
+    }
+
+    // Walk to the husk
+    int cx = cell_x(), cy = cell_y();
+    if (abs(target_x - cx) + abs(target_y - cy) > 1) {
+        _step_toward_cell(target_x, target_y, ch);
+        return;
+    }
+
+    // At the husk — stand vigil, occasionally bowing toward it
+    if (anim_type == LG_ANIM_NONE && g_rng.rand_float() < 0.03f) {
+        anim_type = LG_ANIM_GROOMING;
+        anim_remaining_ticks = Cfg::GREETING_DURATION_TICKS;
+        float bdx = (target_x + 0.5f) - x, bdy = (target_y + 0.5f) - y;
+        if (fabsf(bdx) >= fabsf(bdy)) {
+            anim_lean_dx = (bdx >= 0) ? 1 : -1; anim_lean_dy = 0;
+        } else {
+            anim_lean_dx = 0; anim_lean_dy = (bdy >= 0) ? 1 : -1;
+        }
+    }
+}
+
 void Conker::_tick_idle(Chamber& ch) {
     idle_ticks_remaining--;
     idle_micro_ticks--;
@@ -1150,7 +1258,8 @@ float Conker::_colony_idle_budget(Chamber& ch) {
 bool Conker::_target_still_valid(Chamber& ch) {
     if (state == STATE_IDLE || state == STATE_TO_FOOD
             || state == STATE_TO_HOME || state == STATE_CANNIBALIZE
-            || state == STATE_ZOOMIES || state == STATE_EATING)
+            || state == STATE_ZOOMIES || state == STATE_EATING
+            || state == STATE_MOURNING)
         return true;
     if (!has_target) return false;
     if (state == STATE_TEND_QUEEN) {
@@ -1205,8 +1314,11 @@ bool Conker::_sample_markers(Chamber& ch, bool use_food, int8_t& out_dx, int8_t&
 
     if (best_val <= 0) return false;
 
-    // exploration bias: chance to ignore gradient and pick random direction
-    float explore_chance = personality[PERS_EXPLORATION] * 0.25f;  // 0-25%
+    // Trail defection: chance to ignore the gradient and wander instead.
+    // Base chance applies to everyone — strays shortcut bends in the trail
+    // (their straighter return lays a stronger line) and find new piles.
+    float explore_chance = Cfg::TRAIL_DEFECT_BASE
+                         + personality[PERS_EXPLORATION] * Cfg::TRAIL_DEFECT_PERS;
     if (explore_chance > 0 && g_rng.rand_float() < explore_chance) return false;
 
     if (best_count == 1) {
@@ -1258,12 +1370,23 @@ void Conker::_persistent_forward_step(Chamber& ch) {
         fx = 0; fy = (facing_dy > 0) ? 1 : -1;
     }
 
+    // Personality gait while foraging outbound: sticky conkers march
+    // straight (stronger return trails), explorers weave wide arcs.
+    float fwd = 0.70f, rev = 0.06f;
+    if (state == STATE_TO_FOOD) {
+        float stick = personality[PERS_ROUTE_STICKINESS];
+        float expl  = personality[PERS_EXPLORATION];
+        fwd = 0.55f + 0.30f * stick - 0.10f * expl;   // 0.45 to 0.85
+        rev = 0.03f + 0.06f * (1.0f - stick);         // 0.03 to 0.09
+    }
+    float turn = (1.0f - fwd - rev) * 0.5f;
+
     float r = g_rng.rand_float();
     int dx, dy;
-    if (r < 0.70f)       { dx = fx;  dy = fy; }
-    else if (r < 0.82f)  { dx = -fy; dy = fx; }   // left
-    else if (r < 0.94f)  { dx = fy;  dy = -fx; }  // right
-    else                 { dx = -fx; dy = -fy; }  // reverse
+    if (r < fwd)                  { dx = fx;  dy = fy; }
+    else if (r < fwd + turn)      { dx = -fy; dy = fx; }   // left
+    else if (r < fwd + 2 * turn)  { dx = fy;  dy = -fx; }  // right
+    else                          { dx = -fx; dy = -fy; }  // reverse
 
     int cx = cell_x(), cy = cell_y();
     if (!ch.in_bounds(cx + dx, cy + dy)) {
@@ -1275,6 +1398,39 @@ void Conker::_persistent_forward_step(Chamber& ch) {
         }
     }
     _set_target_cell(cx + dx, cy + dy, ch);
+}
+
+bool Conker::_flair_allowed(Chamber& ch) {
+    // Stressed colony = all business
+    return ch.colony->food_pressure() <= Cfg::FLAIR_MAX_PRESSURE;
+}
+
+int Conker::_max_foragers(Chamber& ch) {
+    float pressure = ch.colony->food_pressure();
+    float frac = Cfg::BASE_FORAGER_FRACTION
+        + (1.0f - Cfg::BASE_FORAGER_FRACTION)
+          * (pressure / Cfg::FAMINE_SLOWDOWN_PRESSURE);
+    // Waggle recruitment: a fresh delivery advertises a productive source.
+    // The boost rides food_delivery_signal, so sustained deliveries hold the
+    // swarm open and it dissolves as the signal decays. Recruits navigate by
+    // the laid trail gradient — nothing is steered directly.
+    frac += Cfg::RECRUIT_SIGNAL_FRACTION * (ch.food_delivery_signal / 200.0f);
+    if (frac > 1.0f) frac = 1.0f;
+    int mf = static_cast<int>(ch.colony->population * frac + 0.5f);
+    return (mf < 1) ? 1 : mf;
+}
+
+void Conker::_explore_with_flair(Chamber& ch) {
+    // Only reached when truly blind: no food sensed, no trail gradient.
+    // Occasionally stop and cast about before wandering on.
+    if (flair_casts_used < Cfg::CAST_MAX_PER_TRIP && _flair_allowed(ch)
+            && g_rng.rand_float() < Cfg::CAST_CHANCE) {
+        flair_casts_used++;
+        flair_kind = 1;
+        flair_ticks = Cfg::CAST_DURATION_TICKS;
+        return;
+    }
+    _explore_or_wander(ch);
 }
 
 void Conker::_explore_or_wander(Chamber& ch) {

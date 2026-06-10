@@ -194,6 +194,11 @@ static void print_status() {
 static char serial_buf[64];
 static int  serial_len = 0;
 
+// Debug fast-forward: while nonzero, founder brood timers are clamped so
+// eggs hatch immediately, until the local chamber reaches this many workers.
+// Uses the natural lay→hatch path (identity, names, journal all real).
+static uint32_t g_ff_target_workers = 0;
+
 static void process_serial_line(const char* line) {
     // Multi-word commands
     if (strncmp(line, "role queen", 10) == 0) {
@@ -316,6 +321,10 @@ static void process_serial_line(const char* line) {
         sim.coordinator.challenge_start(ctype, severity, sim.tick_count);
     } else if (strcmp(line, "challenge end") == 0) {
         sim.coordinator.challenge_end(sim.tick_count);
+    } else if (strncmp(line, "ff ", 3) == 0) {
+        g_ff_target_workers = atoi(line + 3);
+        Serial.printf("[ff] fast-forwarding founder hatches until %lu workers\r\n",
+                      (unsigned long)g_ff_target_workers);
     } else if (strcmp(line, "wifi status") == 0) {
         tod_wifi_status();
     } else if (strcmp(line, "wifi reconnect") == 0) {
@@ -583,6 +592,23 @@ void loop() {
     topology_poll();
     if (sim.coordinator.is_queen())
         weather_tick();
+
+    // Debug fast-forward: hatch founder brood instantly until target reached
+    if (g_ff_target_workers > 0) {
+        auto& ch = sim.coordinator.chamber;
+        if (ch.conker_count >= (int)g_ff_target_workers) {
+            Serial.printf("[ff] target reached: %d workers\r\n", ch.conker_count);
+            g_ff_target_workers = 0;
+        } else {
+            for (int i = 0; i < ch.brood_count; i++) {
+                auto& b = ch.brood[i];
+                if (b.alive() && b.total_duration_ms > 3) {
+                    b.total_duration_ms = 3;
+                    b.stage_start_ms = millis() - 10;
+                }
+            }
+        }
+    }
 
     // Satellite: check for OTA cascade from queen
     if (!sim.coordinator.is_queen()) {

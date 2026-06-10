@@ -79,6 +79,7 @@ extern uint32_t g_handoffs_dropped;
 
 // Remote population per face (updated by TOPO_POP_SYNC messages)
 static volatile uint16_t _remote_pop[FACE_COUNT] = {0, 0, 0, 0};
+static volatile uint16_t _remote_gatherers[FACE_COUNT] = {0, 0, 0, 0};
 
 // Gather sync (volatile, polled by coordinator)
 static volatile bool _gather_pending = false;
@@ -206,6 +207,7 @@ static void _disconnect_face(Face f, const char* reason) {
     _neighbours[f].present = false;
     _neighbours[f].module_id = 0;
     _remote_pop[f] = 0;
+    _remote_gatherers[f] = 0;
     memset(&_boundary_phero[f], 0, sizeof(BoundaryPheroData));
 
     Serial.printf("[topo] face %s disconnected (%s)\r\n", FACE_NAMES[f], reason);
@@ -279,12 +281,16 @@ static void _on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int l
             g_weather.valid         = true;
         }
         _state_sync_last_ms = millis();
-    } else if (msg_type == TOPO_POP_SYNC && len >= (int)sizeof(PopSyncMessage)) {
+    } else if (msg_type == TOPO_POP_SYNC
+               && len >= (int)offsetof(PopSyncMessage, gatherers)) {
         // Population sync — store latest per sender
         const PopSyncMessage* ps = reinterpret_cast<const PopSyncMessage*>(data);
         for (int f = 0; f < FACE_COUNT; f++) {
             if (_faces[f].link == LINK_CONNECTED && _faces[f].neighbour_id == ps->sender_id) {
                 _remote_pop[f] = ps->population;
+                // Gatherers field (added later — check length for backwards compat)
+                _remote_gatherers[f] = (len >= (int)sizeof(PopSyncMessage))
+                                     ? ps->gatherers : 0;
                 break;
             }
         }
@@ -582,8 +588,14 @@ void topology_init(TopologyCallback cb) {
         WiFi.mode(WIFI_STA);
         esp_wifi_disconnect();  // Clear any stored AP from failed NTP at boot
         delay(10);
-        _current_channel = 1;
-        _set_channel_verified(1);
+        // Satellite: start on the channel learned from the boot-time NTP
+        // connect (the queen sits on the AP's channel). Falling back to 1
+        // strands HELLOs until the slow channel-scan rescue kicks in.
+        uint8_t boot_ch = tod_last_wifi_channel();
+        _current_channel = (boot_ch >= 1 && boot_ch <= 13) ? boot_ch : 1;
+        if (boot_ch)
+            Serial.printf("[topo] starting on last WiFi channel %d\r\n", _current_channel);
+        _set_channel_verified(_current_channel);
     }
 
     // Read MAC / derive ID
@@ -751,6 +763,10 @@ bool topology_has_gather(GatherSyncMessage* out) {
 
 uint16_t topology_remote_population(Face f) {
     return _remote_pop[f];
+}
+
+uint16_t topology_remote_gatherers(Face f) {
+    return _remote_gatherers[f];
 }
 
 const BoundaryPheroData& topology_boundary_phero(Face f) {

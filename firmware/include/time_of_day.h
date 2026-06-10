@@ -59,6 +59,10 @@ void tod_wifi_forget();
 void tod_wifi_status();
 void tod_wifi_reconnect();
 
+// Last successful AP channel (0 = never connected). Survives disconnect —
+// satellites use it to start ESP-NOW on the queen's channel after reboot.
+uint8_t tod_last_wifi_channel();
+
 // Get current WiFi credentials (for queen to share with satellites)
 void tod_wifi_get_creds(char* ssid, int ssid_len, char* pass, int pass_len);
 
