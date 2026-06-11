@@ -10,6 +10,7 @@
 #include <WiFiClientSecure.h>
 #include <Preferences.h>
 #include <mbedtls/md.h>
+#include <ArduinoJson.h>
 
 static constexpr uint32_t PUSH_INTERVAL_MS = 30000;  // 30s
 static constexpr int MAX_SECRET_LEN = 64;
@@ -96,6 +97,71 @@ static bool _post(const char* path, const char* body, int body_len) {
     return false;
 }
 
+// ---- HTTP GET -> JSON ----
+
+static bool _get_json(const char* path, JsonDocument& doc) {
+    char url[196];
+    snprintf(url, sizeof(url), "%s%s", _endpoint, path);
+
+    WiFiClient client;
+    client.setTimeout(10);
+
+    HTTPClient http;
+    http.begin(client, url);
+    http.setTimeout(10000);
+
+    int code = http.GET();
+    if (code < 200 || code >= 300) {
+        http.end();
+        return false;
+    }
+    DeserializationError err = deserializeJson(doc, http.getString());
+    http.end();
+    return !err;
+}
+
+// ---- Command queue (app -> queen via VPS) ----
+
+static void _poll_commands(Coordinator& coord) {
+    char path[96];
+    snprintf(path, sizeof(path), "/api/v1/colonies/%s/commands/pending",
+             coord.registry.manifest().colony_id);
+
+    JsonDocument doc;
+    if (!_get_json(path, doc)) return;
+
+    JsonArray results = doc["results"];
+    if (results.isNull() || results.size() == 0) return;
+
+    String acks = "{\"ids\":[";
+    bool first = true;
+    for (JsonObject cmd : results) {
+        const char* type = cmd["type"] | "";
+        long id = cmd["id"] | 0L;
+        if (id == 0) continue;
+
+        if (strcmp(type, "name_conker") == 0) {
+            uint32_t cid = cmd["payload"]["id"] | 0;
+            const char* name = cmd["payload"]["name"] | "";
+            coord.cmd_rename_conker(cid, name);
+        } else if (strcmp(type, "feed_colony") == 0) {
+            float amount = cmd["payload"]["amount"] | 0.0f;
+            coord.cmd_feed_colony(amount);
+        }
+        // Always ack — invalid commands must not clog the queue
+        if (!first) acks += ",";
+        acks += String(id);
+        first = false;
+    }
+    acks += "]}";
+
+    if (!first) {
+        snprintf(path, sizeof(path), "/api/v1/colonies/%s/commands/ack",
+                 coord.registry.manifest().colony_id);
+        _post(path, acks.c_str(), acks.length());
+    }
+}
+
 // ---- Public API ----
 
 void vps_push_init() {
@@ -153,6 +219,9 @@ void vps_push_tick(Coordinator& coord) {
     }
 
     free(buf);
+
+    // Poll + apply queued app commands (rename, care packages, ...)
+    _poll_commands(coord);
 }
 
 void vps_push_set_secret(const char* secret) {

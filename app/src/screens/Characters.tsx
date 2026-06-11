@@ -11,7 +11,7 @@ import { nameFromId } from '../data/plantNames';
 import { personalityPhrase, deriveRoleTag } from '../data/personality';
 import { HIVE, TOD_PALETTES } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
-import { fetchLilguyDetail, fetchLilguyEvents } from '../api/client';
+import { fetchLilguyDetail, fetchLilguyEvents, sendCommand } from '../api/client';
 import type { ColonyEvent, LilGuyDetail, Personality, Bond } from '../api/types';
 
 // Reconstruct basic character info from events
@@ -260,6 +260,22 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
   const personality = detail?.personality || char.personality;
   const bonds = detail?.bonds || char.bonds;
   const isDeceased = !!char.died_unix || !!detail?.died_unix;
+  const { colonyId } = useColony();
+  const [renaming, setRenaming] = useState(false);
+
+  const handleRename = useCallback(async () => {
+    if (!colonyId) return;
+    const input = window.prompt(`New name for ${char.name} (letters, max 15):`, char.name);
+    if (!input) return;
+    const trimmed = input.trim().slice(0, 15);
+    if (!trimmed || trimmed === char.name) return;
+    setRenaming(true);
+    const ok = await sendCommand(colonyId, 'name_conker', { id: char.id, name: trimmed });
+    setRenaming(false);
+    window.alert(ok
+      ? `Sent! ${char.name} will become "${trimmed}" within a minute.`
+      : 'Could not reach the colony server — try again later.');
+  }, [colonyId, char.id, char.name]);
 
   const ageText = useMemo(() => {
     // age_days from firmware is sim-running time only (pauses when module is off)
@@ -283,6 +299,20 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
       {/* Name + role */}
       <h1 style={{ fontSize: SIZES.xxl, fontWeight: 700, color: palette.text, margin: 0 }}>
         {char.name}
+        {!isDeceased && (
+          <button
+            onClick={handleRename}
+            disabled={renaming}
+            aria-label="Rename"
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: 16, color: HIVE.sand, marginLeft: 8,
+              opacity: renaming ? 0.4 : 1, verticalAlign: 'middle',
+            }}
+          >
+            {'✎'}
+          </button>
+        )}
       </h1>
       <div style={{ fontSize: SIZES.base, color: palette.dimText, marginBottom: 16 }}>
         {deriveRoleTag(personality, char.role, char.traits)}

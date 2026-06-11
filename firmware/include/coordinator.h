@@ -66,6 +66,10 @@ public:
     void challenge_start(uint8_t type, float severity, uint32_t tick_num);
     void challenge_end(uint32_t tick_num);
 
+    // Remote commands — queued by the companion app, applied via VPS poll
+    bool cmd_rename_conker(uint32_t id, const char* new_name);
+    bool cmd_feed_colony(float amount);
+
     // Journal — called from main.cpp with drained EventBus events
     void _journal_from_bus_events(const Event* events, int count, uint32_t tick_num);
 

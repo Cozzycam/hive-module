@@ -8,6 +8,7 @@ import { DigestCard } from '../components/DigestCard';
 import { TopologyMiniMap } from '../components/TopologyMiniMap';
 import { nameFromId } from '../data/plantNames';
 import { deriveRoleTag } from '../data/personality';
+import { sendCommand } from '../api/client';
 import { HIVE } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 import type { ColonyEvent } from '../api/types';
@@ -17,7 +18,7 @@ interface HomeProps {
 }
 
 export function Home({ onNavigate }: HomeProps) {
-  const { snapshot, events, source, lastFetchMs } = useColony();
+  const { snapshot, events, source, lastFetchMs, colonyId } = useColony();
   const { pins, isPinned, togglePin } = usePins();
   const tod = useTOD(true);
 
@@ -76,6 +77,7 @@ export function Home({ onNavigate }: HomeProps) {
           Right Now
         </div>
         <RightNowContent population={population} food={food} tod={tod} />
+        <CarePackageButton colonyId={colonyId} tod={tod} />
       </Card>
 
       {/* Topology mini-map */}
@@ -203,6 +205,55 @@ function RightNowContent({ population, food, tod }: {
         />
       </div>
     </div>
+  );
+}
+
+// Care package: drops a food pile in the queen's chamber via the command
+// queue. One per 6 hours — a gift, not a faucet.
+const CARE_PKG_KEY = 'hive_last_care_pkg_ms';
+const CARE_PKG_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+
+function CarePackageButton({ colonyId, tod }: {
+  colonyId: string | null;
+  tod: { text: string; dimText: string };
+}) {
+  const [state, setState] = useState<'ready' | 'sending' | 'sent' | 'cooldown'>(() => {
+    const last = Number(localStorage.getItem(CARE_PKG_KEY) || 0);
+    return Date.now() - last < CARE_PKG_COOLDOWN_MS ? 'cooldown' : 'ready';
+  });
+
+  const handleSend = async () => {
+    if (!colonyId || state !== 'ready') return;
+    setState('sending');
+    const ok = await sendCommand(colonyId, 'feed_colony', { amount: 25 });
+    if (ok) {
+      localStorage.setItem(CARE_PKG_KEY, String(Date.now()));
+      setState('sent');
+    } else {
+      setState('ready');
+    }
+  };
+
+  const label = state === 'sending' ? 'Sending…'
+    : state === 'sent' ? 'Package on its way \u{1F381}'
+    : state === 'cooldown' ? 'Care package sent recently'
+    : 'Send a care package \u{1F381}';
+
+  return (
+    <button
+      onClick={handleSend}
+      disabled={state !== 'ready'}
+      style={{
+        marginTop: 12, width: '100%', padding: '8px 0',
+        background: 'none', border: `1px solid ${HIVE.sand}`,
+        borderRadius: 16, fontSize: SIZES.sm,
+        color: state === 'ready' ? tod.text : tod.dimText,
+        cursor: state === 'ready' ? 'pointer' : 'default',
+        opacity: state === 'cooldown' ? 0.6 : 1,
+      }}
+    >
+      {label}
+    </button>
   );
 }
 

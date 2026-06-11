@@ -1193,6 +1193,59 @@ void Coordinator::_persist_process_hatches() {
     }
 }
 
+// ================================================================
+//  Remote commands (companion app -> VPS queue -> queen)
+// ================================================================
+
+bool Coordinator::cmd_rename_conker(uint32_t id, const char* new_name) {
+    if (!new_name || !new_name[0]) return false;
+
+    // Sanitize: printable ASCII only, cap to record size
+    char clean[16] = {};
+    int j = 0;
+    for (int i = 0; new_name[i] && j < 15; i++) {
+        char ch = new_name[i];
+        if (ch >= 32 && ch < 127) clean[j++] = ch;
+    }
+    if (j == 0) return false;
+
+    IdentityRecord* rec = registry.get(id);
+    if (!rec) return false;
+
+    strlcpy(rec->name, clean, sizeof(rec->name));
+    rec->dirty = true;
+
+    // Live conker in this chamber too (satellite copies pick it up on handoff)
+    for (int i = 0; i < chamber.conker_count; i++) {
+        if (chamber.conkers[i].id == id) {
+            strlcpy(chamber.conkers[i].name, clean, sizeof(chamber.conkers[i].name));
+            break;
+        }
+    }
+    Serial.printf("[cmd] conker %lu renamed to '%s'\r\n", (unsigned long)id, clean);
+    return true;
+}
+
+bool Coordinator::cmd_feed_colony(float amount) {
+    if (amount <= 0.0f) return false;
+    if (amount > 50.0f) amount = 50.0f;
+
+    // A gift from above: drop a visible pile near the chamber centre —
+    // foragers will discover it and lay trails like any other find
+    int cx = Cfg::GRID_WIDTH / 2 + g_rng.rand_int(-5, 5);
+    int cy = Cfg::GRID_HEIGHT / 2 + g_rng.rand_int(-4, 4);
+    chamber.add_food(cx, cy, amount);
+    Serial.printf("[cmd] care package: %.0fu at (%d,%d)\r\n", amount, cx, cy);
+
+    JournalEntry je = {};
+    je.tick = chamber.tick_num;
+    je.unix_time = g_tod.unix_time;
+    je.type = JEVT_FOOD_TAP;
+    je.food_tap = {static_cast<int8_t>(cx), static_cast<int8_t>(cy), amount};
+    journal.emit(je);
+    return true;
+}
+
 void Coordinator::_persist_process_deaths() {
     for (int d = 0; d < chamber.death_count; d++) {
         uint32_t id = chamber.deaths[d].id;

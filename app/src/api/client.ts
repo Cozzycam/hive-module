@@ -226,6 +226,34 @@ export async function fetchColonies(): Promise<ColoniesListResponse | null> {
   );
 }
 
+// Queue a command for the queen (applied on her next VPS poll, ~30s)
+export async function sendCommand(
+  colonyId: string,
+  type: 'name_conker' | 'feed_colony',
+  payload: Record<string, unknown>,
+): Promise<boolean> {
+  try {
+    const res = await fetchWithTimeout2(
+      `${VPS_BASE}/api/v1/colonies/${colonyId}/commands`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type, payload }) },
+      VPS_TIMEOUT,
+    );
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function fetchWithTimeout2(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function fetchHealth(): Promise<HealthResponse | null> {
   return tryFetchJson<HealthResponse>(
     `${VPS_BASE}/api/v1/health`,

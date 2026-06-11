@@ -45,6 +45,15 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_events_colony_lilguy ON events(colony_id, lilguy, unix);
+
+  CREATE TABLE IF NOT EXISTS commands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    colony_id TEXT NOT NULL,
+    type TEXT NOT NULL,
+    payload TEXT,
+    created_at INTEGER DEFAULT (unixepoch()),
+    acked_at INTEGER DEFAULT 0
+  );
 `);
 
 // Dedup index: remove duplicates first, then create unique index
@@ -87,7 +96,23 @@ const stmts = {
     SELECT raw FROM events WHERE colony_id = ? AND lilguy = ? AND unix >= ? ORDER BY unix, tick LIMIT ?
   `),
   listColonies: db.prepare(`SELECT colony_id, last_snapshot_unix FROM colonies`),
+  insertCommand: db.prepare(`
+    INSERT INTO commands (colony_id, type, payload) VALUES (?, ?, ?)
+  `),
+  pendingCommands: db.prepare(`
+    SELECT id, type, payload FROM commands
+    WHERE colony_id = ? AND acked_at = 0 ORDER BY id LIMIT 16
+  `),
+  pendingCount: db.prepare(`
+    SELECT COUNT(*) AS n FROM commands WHERE colony_id = ? AND acked_at = 0
+  `),
+  ackCommand: db.prepare(`
+    UPDATE commands SET acked_at = unixepoch() WHERE colony_id = ? AND id = ?
+  `),
 };
+
+// Command types the app may enqueue (queen applies them on her next poll)
+const COMMAND_TYPES = new Set(['name_conker', 'feed_colony']);
 
 // ---- HMAC verification ----
 function verifyHmac(body, signature) {
@@ -187,6 +212,48 @@ app.get('/api/v1/colonies/:colony_id/lilguys/:id/events', (req, res) => {
   const rows = stmts.getLilguyEvents.all(req.params.colony_id, parseInt(req.params.id), since, limit);
   const results = rows.map(r => JSON.parse(r.raw));
   res.json({ schema: 1, results });
+});
+
+// ---- Command queue (app -> queen) ----
+
+// POST /api/v1/colonies/:colony_id/commands  (from app — no HMAC, validated + capped)
+app.post('/api/v1/colonies/:colony_id/commands', (req, res) => {
+  const { colony_id } = req.params;
+  let parsed;
+  try { parsed = JSON.parse(req.body.toString()); } catch { return res.status(400).json({ error: 'invalid json' }); }
+
+  if (!COMMAND_TYPES.has(parsed.type)) {
+    return res.status(400).json({ error: 'unknown command type' });
+  }
+  const payload = JSON.stringify(parsed.payload || {});
+  if (payload.length > 256) {
+    return res.status(400).json({ error: 'payload too large' });
+  }
+  const pending = stmts.pendingCount.get(colony_id).n;
+  if (pending >= 32) {
+    return res.status(429).json({ error: 'too many pending commands' });
+  }
+
+  const info = stmts.insertCommand.run(colony_id, parsed.type, payload);
+  res.json({ status: 'queued', id: info.lastInsertRowid });
+});
+
+// GET /api/v1/colonies/:colony_id/commands/pending  (queen polls)
+app.get('/api/v1/colonies/:colony_id/commands/pending', (req, res) => {
+  const rows = stmts.pendingCommands.all(req.params.colony_id);
+  const results = rows.map(r => ({ id: r.id, type: r.type, payload: JSON.parse(r.payload || '{}') }));
+  res.json({ schema: 1, results });
+});
+
+// POST /api/v1/colonies/:colony_id/commands/ack  (queen, HMAC) body: {ids:[...]}
+app.post('/api/v1/colonies/:colony_id/commands/ack', authMiddleware, (req, res) => {
+  let parsed;
+  try { parsed = JSON.parse(req.body.toString()); } catch { return res.status(400).json({ error: 'invalid json' }); }
+  const ids = Array.isArray(parsed.ids) ? parsed.ids : [];
+  for (const id of ids) {
+    stmts.ackCommand.run(req.params.colony_id, id);
+  }
+  res.json({ status: 'ok', acked: ids.length });
 });
 
 // GET /api/v1/health
