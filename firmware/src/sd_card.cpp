@@ -7,6 +7,27 @@
 #include <Wire.h>
 #include <SD_MMC.h>
 
+void sd_remove_recursive(const char* path, int depth) {
+    if (depth > 6) return;  // safety rail
+    File dir = SD_MMC.open(path);
+    if (!dir) return;
+    if (!dir.isDirectory()) {
+        dir.close();
+        SD_MMC.remove(path);
+        return;
+    }
+    File e;
+    while ((e = dir.openNextFile())) {
+        String p = String(e.path());
+        bool is_dir = e.isDirectory();
+        e.close();
+        if (is_dir) sd_remove_recursive(p.c_str(), depth + 1);
+        else SD_MMC.remove(p);
+    }
+    dir.close();
+    SD_MMC.rmdir(path);
+}
+
 static SdState  _state              = SD_NOT_MOUNTED;
 static uint8_t  _consecutive_fails  = 0;
 static uint32_t _error_enter_ms     = 0;

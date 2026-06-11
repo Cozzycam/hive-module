@@ -23,6 +23,9 @@ bool sd_card_init();
 // Current mount state.
 SdState sd_card_state();
 
+// Recursively delete a path (files + nested dirs, capped depth).
+void sd_remove_recursive(const char* path, int depth = 0);
+
 // Total / used size in bytes (0 if not mounted).
 uint64_t sd_card_total_bytes();
 uint64_t sd_card_used_bytes();

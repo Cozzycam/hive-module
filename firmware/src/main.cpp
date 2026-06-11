@@ -234,30 +234,7 @@ static void process_serial_line(const char* line) {
             p.begin("wifi", false); p.clear(); p.end();
         }
         if (sd_card_state() == SD_OK) {
-            File dir = SD_MMC.open("/colony");
-            if (dir && dir.isDirectory()) {
-                // Two levels deep is enough: /colony/<dir>/<files>
-                File e;
-                while ((e = dir.openNextFile())) {
-                    String path = String(e.path());
-                    if (e.isDirectory()) {
-                        File sub = SD_MMC.open(path);
-                        File f2;
-                        while ((f2 = sub.openNextFile())) {
-                            String p2 = String(f2.path());
-                            f2.close();
-                            SD_MMC.remove(p2);
-                        }
-                        sub.close();
-                        SD_MMC.rmdir(path);
-                    } else {
-                        e.close();
-                        SD_MMC.remove(path);
-                    }
-                }
-                dir.close();
-                SD_MMC.rmdir("/colony");
-            }
+            sd_remove_recursive("/colony");
         }
         Serial.println("Rebooting into setup wizard...");
         delay(200);

@@ -3,6 +3,7 @@
 #include "touch.h"
 #include "time_of_day.h"
 #include "coordinator.h"
+#include "sd_card.h"
 
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>
@@ -289,6 +290,13 @@ SetupChoice setup_wizard_run(Arduino_Canvas* gfx) {
     gfx->fillScreen(COL_BG);
     _text_centered(gfx, 140, 3, COL_AMBER, "preparing the nest...");
     gfx->flush();
+
+    // A new founding always starts from clean ground — clears any colony
+    // data a previous life of this module (or a reused SD card) left behind
+    if (sd_card_state() == SD_OK) {
+        sd_remove_recursive("/colony");
+        Serial.println("[wizard] cleared stale colony data from SD");
+    }
     return SETUP_FOUNDED;
 }
 
