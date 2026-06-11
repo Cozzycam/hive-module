@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 95;
+constexpr uint32_t FW_VERSION = 97;
 
 namespace Cfg {
 
@@ -239,6 +239,10 @@ constexpr int   PARADE_MAX_FOLLOWERS   = 4;
 constexpr int   PARADE_RECRUIT_RADIUS  = 4;      // cells, manhattan
 constexpr float PIROUETTE_CHANCE       = 0.12f;  // idle microstate roll at full surplus
 constexpr int   PIROUETTE_TICKS        = 12;     // ~1.5s twirl
+constexpr float JOY_SPRINT_CHANCE      = 0.003f; // per idle tick at full surplus
+constexpr float ZOOMIE_JOIN_CHANCE     = 0.5f;   // bystander swept into a passing game
+constexpr int   MAX_CONCURRENT_PLAY    = 2;      // solo launches wait their turn —
+                                                 // keeps a big colony from stampeding
 
 // ---- Metabolic scaling (3/4-power law) ----
 constexpr float METABOLIC_SCALE_FLOOR = 0.7f;

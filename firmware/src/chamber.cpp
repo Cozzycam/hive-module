@@ -279,6 +279,38 @@ void Chamber::_detect_proximity_interactions() {
                 // Grief is private — no games or greetings around mourners
                 if (a.state == STATE_MOURNING || b.state == STATE_MOURNING) return;
 
+                // A passing game sweeps bystanders in: an idler may join a
+                // runner's sprint or a parade as it goes by
+                {
+                    bool a_playing = (a.state == STATE_ZOOMIES && a.zoomie_target >= -1);
+                    bool b_playing = (b.state == STATE_ZOOMIES && b.zoomie_target >= -1);
+                    if (a_playing != b_playing && g_tod.phase == PHASE_DAY) {
+                        auto& runner = a_playing ? a : b;
+                        auto& joiner = a_playing ? b : a;
+                        int runner_idx = a_playing ? ai : bi;
+                        int joiner_idx = a_playing ? bi : ai;
+                        if (joiner.state == STATE_IDLE && !joiner.sleeping
+                                && !in_stack[joiner_idx]
+                                && joiner.zoomie_ticks <= 0
+                                && runner.zoomie_ticks > 8
+                                && g_rng.rand_float() < Cfg::ZOOMIE_JOIN_CHANCE) {
+                            joiner.state = STATE_ZOOMIES;
+                            joiner.zoomie_target = runner_idx;
+                            joiner.zoomie_style = runner.zoomie_style;
+                            joiner.zoomie_ticks = runner.zoomie_ticks;
+                            joiner.speed = Cfg::ROLE_PARAMS[joiner.role].speed
+                                * (runner.zoomie_style == 1 ? Cfg::PARADE_SPEED_MULT
+                                                            : Cfg::ZOOMIE_SPEED_MULT);
+                            joiner.has_target = false;
+                            joiner.has_target_cell = false;
+                            joiner.idle_ticks_remaining = 0;
+                            Serial.printf("[zoomies] %s joins %s's game\r\n",
+                                          joiner.name, runner.name);
+                            return;
+                        }
+                    }
+                }
+
                 // Zoomies & parades: daytime only, both idle, not stacked,
                 // not already zooming. A deep pantry makes play more likely
                 // (the hands freed from foraging) and sometimes turns the

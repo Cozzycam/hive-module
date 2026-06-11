@@ -1239,6 +1239,36 @@ void Conker::_tick_idle(Chamber& ch) {
         }
     }
 
+    // Joy sprint: a well-fed daytime idler sometimes just takes off — pure
+    // high spirits, no partner needed. Bystanders may get swept into the
+    // game via the proximity join. The curious ones launch most often.
+    if (g_tod.phase == PHASE_DAY && !sleeping && stack_on < 0
+            && anim_type == LG_ANIM_NONE && interaction_cooldown == 0) {
+        float surplus = ch.colony->play_surplus();
+        if (surplus > 0.0f
+                && g_rng.rand_float() < Cfg::JOY_SPRINT_CHANCE * surplus
+                                        * (0.5f + personality[PERS_EXPLORATION])) {
+            // Don't pile on: if a game is already running, watch instead
+            int playing = 0;
+            for (int i = 0; i < ch.conker_count; i++) {
+                if (ch.conkers[i].alive && ch.conkers[i].state == STATE_ZOOMIES)
+                    playing++;
+            }
+            if (playing >= Cfg::MAX_CONCURRENT_PLAY) return;
+            state = STATE_ZOOMIES;
+            zoomie_target = -1;  // runner
+            zoomie_style = 0;
+            zoomie_ticks = g_rng.rand_int(Cfg::ZOOMIE_MIN_TICKS,
+                                          Cfg::ZOOMIE_MAX_TICKS
+                                          + static_cast<int>(surplus * Cfg::ZOOMIE_SURPLUS_TICKS));
+            has_target = false;
+            has_target_cell = false;
+            idle_ticks_remaining = 0;
+            Serial.printf("[zoomies] %s takes off, just because\r\n", name);
+            return;
+        }
+    }
+
     // Periodic repoll for work
     idle_repoll_tick--;
     if (idle_repoll_tick <= 0) {
