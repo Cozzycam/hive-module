@@ -1509,12 +1509,16 @@ void Renderer::_draw_fireflies(const Chamber& ch, float lerp_t) {
         float pulse = sinf(f.glow_phase * 0.02454f);  // phase 0-255 ≈ one cycle
         if (pulse <= 0.15f) continue;
 
-        _gfx->drawPixel(px, py, _rgb565(255, 244, 160));
+        // Fixed warm bioluminescent yellow-green — deliberately NOT from the
+        // chamber palette, which is night-shifted toward blue after dusk
+        uint16_t core = _rgb565(235, 255, 150);
+        uint16_t halo = _rgb565(150, 165, 50);
+        _gfx->drawPixel(px, py, core);
         if (pulse > 0.6f) {
-            _gfx->drawPixel(px - 1, py, _pal_glow_amber);
-            _gfx->drawPixel(px + 1, py, _pal_glow_amber);
-            _gfx->drawPixel(px, py - 1, _pal_glow_amber);
-            _gfx->drawPixel(px, py + 1, _pal_glow_amber);
+            _gfx->drawPixel(px - 1, py, halo);
+            _gfx->drawPixel(px + 1, py, halo);
+            _gfx->drawPixel(px, py - 1, halo);
+            _gfx->drawPixel(px, py + 1, halo);
         }
         _mark_dirty(px - 2, py - 2, 5, 5);
     }

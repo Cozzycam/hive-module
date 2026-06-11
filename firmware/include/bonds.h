@@ -11,6 +11,9 @@ struct BondEntry {
     uint32_t owner;
     uint32_t target;
     float    strength;
+    // True once strength has crossed FORM_THRESHOLD — only formed bonds
+    // announce bond_broken (passing acquaintances fade silently)
+    bool     formed = false;
 };
 
 class BondStore {

@@ -156,8 +156,15 @@ function DiaryEntry({ event, palette, rosterNames }: {
 }
 
 function formatEvent(ev: ColonyEvent, rosterNames: Map<number, string>): { icon: string; description: string } {
-  const name = ev.lilguy ? (rosterNames.get(ev.lilguy) || nameFromId(ev.lilguy)) : 'Colony';
   const data = ev.data as Record<string, unknown>;
+  // Name priority: embedded in the event (survives death) > live roster > wordlist fallback
+  const embedded = (ev as unknown as { name?: string }).name;
+  const name = ev.lilguy
+    ? (embedded || rosterNames.get(ev.lilguy) || nameFromId(ev.lilguy))
+    : 'Colony';
+  const targetName = (id: unknown): string =>
+    (data.target_name as string)
+    || (typeof id === 'number' ? (rosterNames.get(id) || nameFromId(id)) : 'another');
 
   switch (ev.type) {
     case 'hatch':
@@ -178,12 +185,12 @@ function formatEvent(ev: ColonyEvent, rosterNames: Map<number, string>): { icon:
     case 'bond_formed':
       return {
         icon: '\u{1F91D}',
-        description: `${name} formed a bond with ${data.target_id ? nameFromId(data.target_id as number) : 'another'}.`,
+        description: `${name} formed a bond with ${targetName(data.target_id)}.`,
       };
     case 'bond_broken':
       return {
         icon: '\u{1F494}',
-        description: `${name}'s bond with ${data.target_id ? nameFromId(data.target_id as number) : 'another'} faded.`,
+        description: `${name}'s bond with ${targetName(data.target_id)} faded.`,
       };
     case 'milestone':
       return {
@@ -213,7 +220,12 @@ function formatEvent(ev: ColonyEvent, rosterNames: Map<number, string>): { icon:
     case 'tended_by_assigned':
       return {
         icon: '\u{1F9B7}',
-        description: `${name} was assigned a caretaker${data.carer_id ? `: ${nameFromId(data.carer_id as number)}` : ''}.`,
+        description: `${name} was assigned a caretaker${data.carer_id ? `: ${rosterNames.get(data.carer_id as number) || nameFromId(data.carer_id as number)}` : ''}.`,
+      };
+    case 'mourning' as EventType:
+      return {
+        icon: '\u{1F56F}\u{FE0F}',
+        description: `${name} stood vigil for a fallen friend.`,
       };
     case 'food_group' as EventType:
       return {

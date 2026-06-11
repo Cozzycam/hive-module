@@ -37,6 +37,8 @@ struct JournalEntry {
     uint32_t unix_time;
     uint32_t lilguy_id;   // 0 for colony-level events
     uint8_t  type;        // JournalType
+    char     who[16];     // lilguy's name at emit time ("" = unset) — events
+                          // outlive the roster, so names ride along
 
     union {
         struct { uint8_t role; bool is_pioneer; uint32_t from_brood_id; } hatch;
@@ -49,7 +51,7 @@ struct JournalEntry {
         struct { uint8_t kind; uint32_t value; } milestone;  // kind enum below
         struct { uint8_t kind; uint16_t module_id; } colony_event;  // kind enum below
         struct { uint32_t carer_id; } tended_by;
-        struct { uint32_t target_id; } bond;  // formed or broken
+        struct { uint32_t target_id; char target_name[16]; } bond;  // formed or broken
         struct { uint8_t challenge_type; float severity; } challenge;
         struct { uint32_t trait_bit; } trait;
         struct { uint32_t dead_id; } mourning;  // lilguy_id grieves for dead_id

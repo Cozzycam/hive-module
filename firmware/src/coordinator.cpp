@@ -1183,6 +1183,7 @@ void Coordinator::_persist_process_hatches() {
                 je.unix_time = g_tod.unix_time;
                 je.type = JEVT_HATCH;
                 je.lilguy_id = id;
+                strlcpy(je.who, chamber.conkers[i].name, sizeof(je.who));
                 je.hatch.role = chamber.conkers[i].role;
                 je.hatch.is_pioneer = chamber.conkers[i].is_founder;
                 je.hatch.from_brood_id = id;
@@ -1292,6 +1293,7 @@ void Coordinator::_persist_process_deaths() {
                     jm.unix_time = g_tod.unix_time;
                     jm.type = JEVT_MOURNING;
                     jm.lilguy_id = w.id;
+                    strlcpy(jm.who, w.name, sizeof(jm.who));
                     jm.mourning.dead_id = id;
                     journal.emit(jm);
                     break;
@@ -1303,12 +1305,16 @@ void Coordinator::_persist_process_deaths() {
         registry.manifest().total_workers_died++;
         bonds.remove_owner(id);
 
-        // Journal: death event
+        // Journal: death event (name rides along — the roster forgets the dead)
         JournalEntry je = {};
         je.tick = chamber.tick_num;
         je.unix_time = g_tod.unix_time;
         je.type = JEVT_DEATH;
         je.lilguy_id = id;
+        {
+            IdentityRecord* rec = registry.get(id);
+            if (rec) strlcpy(je.who, rec->name, sizeof(je.who));
+        }
         je.death.cause = cause;
         journal.emit(je);
     }
@@ -1564,6 +1570,10 @@ void Coordinator::_bond_tick(uint32_t tick_num) {
             je.type = JEVT_BOND_BROKEN;
             je.lilguy_id = broken_owners[i];
             je.bond.target_id = broken_targets[i];
+            IdentityRecord* ro = registry.get(broken_owners[i]);
+            if (ro) strlcpy(je.who, ro->name, sizeof(je.who));
+            IdentityRecord* rt = registry.get(broken_targets[i]);
+            if (rt) strlcpy(je.bond.target_name, rt->name, sizeof(je.bond.target_name));
             journal.emit(je);
         }
     }
@@ -1615,7 +1625,9 @@ void Coordinator::_bond_detect_proximity(uint32_t tick_num) {
                     je.unix_time = g_tod.unix_time;
                     je.type = JEVT_BOND_FORMED;
                     je.lilguy_id = a.id;
+                    strlcpy(je.who, a.name, sizeof(je.who));
                     je.bond.target_id = b.id;
+                    strlcpy(je.bond.target_name, b.name, sizeof(je.bond.target_name));
                     journal.emit(je);
                 }
                 if (formed_ba) {
@@ -1624,7 +1636,9 @@ void Coordinator::_bond_detect_proximity(uint32_t tick_num) {
                     je.unix_time = g_tod.unix_time;
                     je.type = JEVT_BOND_FORMED;
                     je.lilguy_id = b.id;
+                    strlcpy(je.who, b.name, sizeof(je.who));
                     je.bond.target_id = a.id;
+                    strlcpy(je.bond.target_name, a.name, sizeof(je.bond.target_name));
                     journal.emit(je);
                 }
             }
@@ -1645,6 +1659,7 @@ void Coordinator::_bond_persist() {
         b["o"] = pool[i].owner;
         b["t"] = pool[i].target;
         b["s"] = pool[i].strength;
+        b["f"] = pool[i].formed;
     }
 
     size_t buf_size = 128 + bonds.count() * 32;
@@ -1679,10 +1694,13 @@ void Coordinator::_bond_load() {
     static BondEntry entries[BondStore::POOL_CAP];
     for (size_t i = 0; i < arr.size() && n < BondStore::POOL_CAP; i++) {
         JsonObject b = arr[i];
+        float strength = b["s"] | 0.0f;
         entries[n++] = {
             b["o"] | (uint32_t)0,
             b["t"] | (uint32_t)0,
-            b["s"] | 0.0f
+            strength,
+            // Older files lack "f" — heal by treating strong bonds as formed
+            b["f"] | (strength >= BondStore::FORM_THRESHOLD)
         };
     }
     bonds.load(entries, n);

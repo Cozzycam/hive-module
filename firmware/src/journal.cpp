@@ -52,6 +52,7 @@ void EventJournal::_serialize_entry(const JournalEntry& e, char* buf, size_t buf
     doc["unix"] = e.unix_time;
     doc["type"] = JEVT_NAMES[e.type];
     doc["lilguy"] = e.lilguy_id;
+    if (e.who[0]) doc["name"] = e.who;
 
     JsonObject data = doc["data"].to<JsonObject>();
 
@@ -100,6 +101,7 @@ void EventJournal::_serialize_entry(const JournalEntry& e, char* buf, size_t buf
     case JEVT_BOND_FORMED:
     case JEVT_BOND_BROKEN:
         data["target_id"] = e.bond.target_id;
+        if (e.bond.target_name[0]) data["target_name"] = e.bond.target_name;
         break;
     case JEVT_CHALLENGE_START:
     case JEVT_CHALLENGE_END:

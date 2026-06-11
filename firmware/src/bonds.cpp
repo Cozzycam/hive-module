@@ -48,7 +48,9 @@ bool BondStore::increment(uint32_t owner, uint32_t target, float amount) {
         float prev = _pool[idx].strength;
         _pool[idx].strength += amount;
         if (_pool[idx].strength > 1.0f) _pool[idx].strength = 1.0f;
-        return (prev < FORM_THRESHOLD && _pool[idx].strength >= FORM_THRESHOLD);
+        bool crossed = (prev < FORM_THRESHOLD && _pool[idx].strength >= FORM_THRESHOLD);
+        if (crossed) _pool[idx].formed = true;
+        return crossed;
     }
 
     // New bond — check caps
@@ -59,7 +61,7 @@ bool BondStore::increment(uint32_t owner, uint32_t target, float amount) {
         else return false;
     }
 
-    _pool[_count++] = {owner, target, amount};
+    _pool[_count++] = {owner, target, amount, amount >= FORM_THRESHOLD};
     return (amount >= FORM_THRESHOLD);
 }
 
@@ -69,6 +71,7 @@ void BondStore::set(uint32_t owner, uint32_t target, float strength) {
     int idx = _find(owner, target);
     if (idx >= 0) {
         _pool[idx].strength = strength;
+        if (strength >= FORM_THRESHOLD) _pool[idx].formed = true;
         return;
     }
 
@@ -78,7 +81,7 @@ void BondStore::set(uint32_t owner, uint32_t target, float strength) {
         if (w >= 0) _remove_at(w);
         else return;
     }
-    _pool[_count++] = {owner, target, strength};
+    _pool[_count++] = {owner, target, strength, strength >= FORM_THRESHOLD};
 }
 
 void BondStore::decay(uint32_t* broken_owners, uint32_t* broken_targets,
@@ -87,7 +90,9 @@ void BondStore::decay(uint32_t* broken_owners, uint32_t* broken_targets,
     for (int i = _count - 1; i >= 0; i--) {
         _pool[i].strength *= DECAY_FACTOR;
         if (_pool[i].strength < BREAK_THRESHOLD) {
-            if (broken_count < max_broken) {
+            // Only announce breaks for bonds that actually formed —
+            // sub-threshold flings fade without a diary entry
+            if (_pool[i].formed && broken_count < max_broken) {
                 broken_owners[broken_count] = _pool[i].owner;
                 broken_targets[broken_count] = _pool[i].target;
                 broken_count++;

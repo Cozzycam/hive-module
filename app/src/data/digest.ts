@@ -60,12 +60,14 @@ export function computeDigest(
 
   for (const ev of within) {
     const data = ev.data as Record<string, unknown>;
+    // Prefer the name embedded in the event (survives roster turnover)
+    const evName = ((ev as unknown as { name?: string }).name) || nameFor(ev.lilguy);
     switch (ev.type) {
       case 'hatch':
-        births.push(nameFor(ev.lilguy));
+        births.push(evName);
         break;
       case 'death':
-        deaths.push({ name: nameFor(ev.lilguy), cause: data.cause as string | undefined });
+        deaths.push({ name: evName, cause: data.cause as string | undefined });
         break;
       case 'food_delivered':
         foodDeliveries++;
@@ -74,12 +76,13 @@ export function computeDigest(
         break;
       case 'bond_formed':
         newBonds.push({
-          a: nameFor(ev.lilguy),
-          b: data.target_id ? nameFor(data.target_id as number) : 'another',
+          a: evName,
+          b: (data.target_name as string)
+            || (data.target_id ? nameFor(data.target_id as number) : 'another'),
         });
         break;
       case 'trait_earned':
-        traitsEarned.push({ name: nameFor(ev.lilguy), trait: String(data.trait || 'unknown') });
+        traitsEarned.push({ name: evName, trait: String(data.trait || 'unknown') });
         break;
       case 'challenge_start':
         challenges.push(`${String(data.type).replace(/_/g, ' ')} struck`);
