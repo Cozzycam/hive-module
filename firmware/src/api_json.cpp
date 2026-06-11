@@ -3,6 +3,7 @@
 #include "coordinator.h"
 #include "time_of_day.h"
 #include "topology.h"
+#include "renderer.h"
 #include "names.h"
 #include "world_condition.h"
 
@@ -166,6 +167,12 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
         queen_mod["id"] = id_str;
         queen_mod["role"] = "queen";
         queen_mod["online"] = true;
+        uint32_t qt = renderer_get_floor_tint();
+        if (qt) {
+            char tint_str[8];
+            snprintf(tint_str, sizeof(tint_str), "#%06lX", (unsigned long)qt);
+            queen_mod["tint"] = tint_str;
+        }
         JsonObject faces = queen_mod["faces"].to<JsonObject>();
         for (int f = 0; f < FACE_COUNT; f++) {
             const Neighbour& nb = topology_neighbour(static_cast<Face>(f));
@@ -188,6 +195,12 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
             // Actual role echoed via pop sync; fall back until first sync arrives
             uint8_t rr = topology_remote_role(static_cast<Face>(f));
             sat["role"] = rr ? module_role_str(rr) : "satellite";
+            uint32_t st = topology_remote_tint(static_cast<Face>(f));
+            if (st) {
+                char tint_str[8];
+                snprintf(tint_str, sizeof(tint_str), "#%06lX", (unsigned long)st);
+                sat["tint"] = tint_str;
+            }
             sat["online"] = true;
             JsonObject faces = sat["faces"].to<JsonObject>();
             const char* face_names[] = {"north", "south", "west", "east"};

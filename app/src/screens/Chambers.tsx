@@ -20,6 +20,18 @@ const ROLE_META: Record<ModuleRole, { label: string; icon: string; blurb: string
 
 const ASSIGNABLE_ROLES: ModuleRole[] = ['satellite', 'garden', 'food_store', 'heart_tree'];
 
+// Ground tints — hue presets the firmware scales the sand palette toward.
+// null colour = reset to the default sand.
+const TINTS: { name: string; color: string | null }[] = [
+  { name: 'Sand', color: null },
+  { name: 'Clay', color: '#C4744A' },
+  { name: 'Moss', color: '#7AA05A' },
+  { name: 'Honey', color: '#D9A441' },
+  { name: 'Slate', color: '#7A8A99' },
+  { name: 'Lavender', color: '#A98AC4' },
+  { name: 'Rose', color: '#C47A8A' },
+];
+
 function moduleTitle(m: Module): string {
   const meta = ROLE_META[m.role] ?? ROLE_META.satellite;
   return m.role === 'queen' ? meta.label : `${meta.label} ${m.id}`;
@@ -123,6 +135,7 @@ function ModuleDetail({ module, allModules, onBack, palette }: {
   const faceEntries = Object.entries(module.faces).filter(([, v]) => v);
   const [queuedRole, setQueuedRole] = useState<ModuleRole | null>(null);
   const [sendFailed, setSendFailed] = useState(false);
+  const [queuedTint, setQueuedTint] = useState<string | null | undefined>(undefined);
 
   const assignRole = async (role: ModuleRole) => {
     if (role === module.role || queuedRole) return;
@@ -133,6 +146,19 @@ function ModuleDetail({ module, allModules, onBack, palette }: {
     if (ok) setQueuedRole(role);
     else setSendFailed(true);
   };
+
+  const assignTint = async (color: string | null) => {
+    const colonyId = getStoredColonyId();
+    if (!colonyId) return;
+    const ok = await sendCommand(colonyId, 'set_floor_tint', {
+      module: module.id, color: color ?? '',
+    });
+    if (ok) setQueuedTint(color);
+  };
+
+  const currentTint = queuedTint !== undefined
+    ? queuedTint
+    : (module.tint ? module.tint.toUpperCase() : null);
 
   return (
     <div style={{ background: palette.bg, minHeight: '100%', padding: '0 16px 100px' }}>
@@ -188,6 +214,42 @@ function ModuleDetail({ module, allModules, onBack, palette }: {
           </div>
         </Card>
       )}
+
+      {/* Ground tint — any module, applied on the device within ~30s */}
+      <Card style={{ background: palette.cardBg }}>
+        <div style={{ fontSize: SIZES.xs, fontWeight: 600, color: palette.dimText, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+          Ground Tint
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+          {TINTS.map(t => {
+            const selected = (t.color === null && !currentTint)
+              || (t.color !== null && currentTint === t.color.toUpperCase());
+            return (
+              <button
+                key={t.name}
+                onClick={() => assignTint(t.color)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'center' }}
+                aria-label={t.name}
+              >
+                <div style={{
+                  width: 38, height: 38, borderRadius: '50%',
+                  background: t.color ?? '#E8D4A8',
+                  border: selected ? `3px solid ${HIVE.accent}` : `2px solid ${HIVE.sand}`,
+                  boxSizing: 'border-box',
+                }} />
+                <div style={{ fontSize: SIZES.xs, color: selected ? HIVE.accent : palette.dimText, marginTop: 4 }}>
+                  {t.name}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        {queuedTint !== undefined && (
+          <div style={{ fontSize: SIZES.sm, color: palette.dimText, marginTop: 10 }}>
+            Tint queued — the ground changes within ~30s.
+          </div>
+        )}
+      </Card>
 
       {/* Face connections */}
       <Card style={{ background: palette.cardBg }}>

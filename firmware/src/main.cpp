@@ -213,6 +213,17 @@ static void process_serial_line(const char* line) {
         } else {
             Serial.println("Unknown role (queen|satellite|garden|food_store|heart_tree)");
         }
+    } else if (strncmp(line, "tint ", 5) == 0) {
+        // tint <r> <g> <b>  |  tint off
+        if (strcmp(line + 5, "off") == 0) {
+            renderer_set_floor_tint(0, 0, 0, true);
+        } else {
+            int r = 0, g = 0, b = 0;
+            if (sscanf(line + 5, "%d %d %d", &r, &g, &b) == 3)
+                renderer_set_floor_tint((uint8_t)r, (uint8_t)g, (uint8_t)b, true);
+            else
+                Serial.println("Usage: tint <r> <g> <b> | tint off");
+        }
     } else if (strcmp(line, "factory") == 0) {
         // Factory reset: clear role + WiFi creds (keeps VPS provisioning),
         // wipe colony data on SD, reboot into the setup wizard.
@@ -612,6 +623,7 @@ void setup() {
     sim.init();
     topology_init(topo_callback);  // after WiFi/NTP, before renderer
     renderer.init(gfx, panel);
+    renderer_load_floor_tint();  // user's ground colour, both roles
 
     hud_battery_init();  // AXP2101 probe — works on both queen and satellite
 

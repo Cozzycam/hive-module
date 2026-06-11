@@ -19,6 +19,7 @@ enum TopoMsgType : uint8_t {
     TOPO_ANNOUNCE   = 0x20, // queen announces chamber assignment to satellite
     TOPO_WIFI_CREDS = 0x22, // queen → satellite: WiFi credentials for solo mode
     TOPO_SET_ROLE   = 0x23, // queen → satellite: assign module role (from app)
+    TOPO_SET_TINT   = 0x24, // queen → satellite: floor tint (from app)
     TOPO_DEATH_SYNC   = 0x15,  // satellite → queen: worker died on satellite
     TOPO_GATHER_SYNC  = 0x16,  // broadcast: finger held, conkers gather
     TOPO_OTA_ANNOUNCE = 0x30, // queen → satellites: "new firmware, connect to WiFi"
@@ -83,6 +84,8 @@ struct __attribute__((packed)) PopSyncMessage {
     uint16_t gatherers;
     // Module role echo (added v94 — receiver checks length for backwards compat)
     uint8_t  role;       // ModuleRole
+    // Floor tint echo (added v100 — length-gated like role)
+    uint8_t  tint_r, tint_g, tint_b;
 };
 
 // Chamber announcement (queen → satellite on connect)
@@ -101,6 +104,14 @@ struct __attribute__((packed)) SetRoleMessage {
     uint16_t sender_id;
     uint16_t target_id;  // module that should adopt the role
     uint8_t  role;       // ModuleRole
+};
+
+// Floor tint assignment (queen → satellite, relayed from app command)
+struct __attribute__((packed)) SetTintMessage {
+    uint8_t  msg_type;   // TOPO_SET_TINT
+    uint16_t sender_id;
+    uint16_t target_id;  // module that should adopt the tint
+    uint8_t  r, g, b;    // 0,0,0 = reset to default
 };
 
 // WiFi credentials (queen → satellite on connect, for solo mode)
@@ -197,9 +208,13 @@ bool topology_has_gather(GatherSyncMessage* out);  // returns true + copies, cle
 uint16_t topology_remote_population(Face f);
 uint16_t topology_remote_gatherers(Face f);
 uint8_t  topology_remote_role(Face f);  // 0 = unknown/not yet synced
+uint32_t topology_remote_tint(Face f);  // 0xRRGGBB, 0 = none/unknown
 
 // Role assignment — satellite reads this
 bool topology_has_set_role(SetRoleMessage* out);  // returns true + copies once, then clears
+
+// Tint assignment — satellite reads this
+bool topology_has_set_tint(SetTintMessage* out);  // returns true + copies once, then clears
 
 // Boundary pheromone data from neighbour (coordinator applies to local grid)
 const BoundaryPheroData& topology_boundary_phero(Face f);

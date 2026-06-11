@@ -14,6 +14,13 @@
 #include "chamber.h"
 #include "events.h"
 
+// ---- Floor tint (user-set ground colour) ----
+// Free functions: state lives beside the palette in renderer.cpp.
+// (0,0,0) = no tint. persist=true writes NVS ("hive"/"tint").
+void     renderer_set_floor_tint(uint8_t r, uint8_t g, uint8_t b, bool persist);
+void     renderer_load_floor_tint();          // call once at boot
+uint32_t renderer_get_floor_tint();           // 0xRRGGBB, 0 = none
+
 // Compile-time flags
 #ifndef BOOT_SPLASH_ENABLED
 #define BOOT_SPLASH_ENABLED 1

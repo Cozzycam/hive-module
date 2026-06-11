@@ -1,6 +1,7 @@
 /* Coordinator — orchestrates chambers and colony-wide state. */
 #include "coordinator.h"
 #include "topology.h"
+#include "renderer.h"
 #include "transport.h"
 #include "time_of_day.h"
 #include "weather.h"
@@ -221,6 +222,12 @@ void Coordinator::_broadcast_population() {
     msg.population = chamber.conker_count;
     msg.gatherers  = colony.gatherer_count;  // local count (satellites don't aggregate)
     msg.role       = static_cast<uint8_t>(role);
+    {
+        uint32_t tint = renderer_get_floor_tint();
+        msg.tint_r = (tint >> 16) & 0xFF;
+        msg.tint_g = (tint >> 8) & 0xFF;
+        msg.tint_b = tint & 0xFF;
+    }
 
     for (int f = 0; f < FACE_COUNT; f++) {
         if (chamber.entries[f] >= 0) {
@@ -490,6 +497,13 @@ void Coordinator::_sync_topology_to_chamber() {
                 Serial.printf("[coord] role assigned by queen: %s\r\n",
                               module_role_str(srm.role));
             }
+        }
+
+        // Floor tint from queen (relayed app command)
+        SetTintMessage stm;
+        if (topology_has_set_tint(&stm)) {
+            if (stm.target_id == topology_my_id())
+                renderer_set_floor_tint(stm.r, stm.g, stm.b, true);
         }
     }
 #endif
@@ -1317,6 +1331,32 @@ bool Coordinator::cmd_set_module_role(uint16_t target_id, uint8_t new_role) {
         }
     }
     Serial.printf("[cmd] set_role: module 0x%04X not connected\r\n", target_id);
+#endif
+    return false;
+}
+
+bool Coordinator::cmd_set_floor_tint(uint16_t target_id, uint8_t r, uint8_t g, uint8_t b) {
+#ifdef ARDUINO
+    if (target_id == topology_my_id()) {
+        renderer_set_floor_tint(r, g, b, true);
+        return true;
+    }
+    for (int f = 0; f < FACE_COUNT; f++) {
+        const Neighbour& nb = topology_neighbour(static_cast<Face>(f));
+        if (nb.present && nb.module_id == target_id) {
+            SetTintMessage msg;
+            msg.msg_type  = TOPO_SET_TINT;
+            msg.sender_id = topology_my_id();
+            msg.target_id = target_id;
+            msg.r = r; msg.g = g; msg.b = b;
+            bool ok = topology_send_to_face(static_cast<Face>(f),
+                                            (const uint8_t*)&msg, sizeof(msg));
+            Serial.printf("[cmd] set_tint: 0x%04X -> #%02X%02X%02X (%s)\r\n",
+                          target_id, r, g, b, ok ? "sent" : "send failed");
+            return ok;
+        }
+    }
+    Serial.printf("[cmd] set_tint: module 0x%04X not connected\r\n", target_id);
 #endif
     return false;
 }

@@ -17,6 +17,7 @@
 #include "weather.h"
 #include "rng.h"
 #include <pgmspace.h>
+#include <Preferences.h>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -80,6 +81,68 @@ static inline uint8_t _lerp8(uint8_t a, uint8_t b, float t) {
     return (uint8_t)(a + (int)(((int)b - (int)a) * t));
 }
 
+// ---- Floor tint (user-set ground colour, per module) ----
+// Brightness-neutral hue scaling applied after day/night interpolation,
+// so the tinted floor still lives through the full lighting cycle.
+static bool  _tint_active = false;
+static float _tint_sr = 1.0f, _tint_sg = 1.0f, _tint_sb = 1.0f;
+static uint8_t _tint_r = 0, _tint_g = 0, _tint_b = 0;
+static volatile bool _tint_changed = false;
+
+static inline uint8_t _tint_ch(uint8_t c, float s, float strength) {
+    float v = c * (1.0f + (s - 1.0f) * strength);
+    return v > 255.0f ? 255 : (uint8_t)v;
+}
+
+static void _apply_floor_tint() {
+    if (!_tint_active) return;
+    _cpal.floor1_r = _tint_ch(_cpal.floor1_r, _tint_sr, 0.85f);
+    _cpal.floor1_g = _tint_ch(_cpal.floor1_g, _tint_sg, 0.85f);
+    _cpal.floor1_b = _tint_ch(_cpal.floor1_b, _tint_sb, 0.85f);
+    _cpal.floor2_r = _tint_ch(_cpal.floor2_r, _tint_sr, 0.85f);
+    _cpal.floor2_g = _tint_ch(_cpal.floor2_g, _tint_sg, 0.85f);
+    _cpal.floor2_b = _tint_ch(_cpal.floor2_b, _tint_sb, 0.85f);
+    _cpal.grain_r  = _tint_ch(_cpal.grain_r,  _tint_sr, 0.60f);
+    _cpal.grain_g  = _tint_ch(_cpal.grain_g,  _tint_sg, 0.60f);
+    _cpal.grain_b  = _tint_ch(_cpal.grain_b,  _tint_sb, 0.60f);
+    _cpal.outer_r  = _tint_ch(_cpal.outer_r,  _tint_sr, 0.40f);
+    _cpal.outer_g  = _tint_ch(_cpal.outer_g,  _tint_sg, 0.40f);
+    _cpal.outer_b  = _tint_ch(_cpal.outer_b,  _tint_sb, 0.40f);
+}
+
+void renderer_set_floor_tint(uint8_t r, uint8_t g, uint8_t b, bool persist) {
+    _tint_r = r; _tint_g = g; _tint_b = b;
+    _tint_active = (r | g | b) != 0;
+    if (_tint_active) {
+        float luma = 0.299f * r + 0.587f * g + 0.114f * b;
+        if (luma < 1.0f) luma = 1.0f;
+        _tint_sr = r / luma; _tint_sg = g / luma; _tint_sb = b / luma;
+    } else {
+        _tint_sr = _tint_sg = _tint_sb = 1.0f;
+    }
+    _tint_changed = true;
+    if (persist) {
+        Preferences prefs;
+        prefs.begin("hive", false);
+        prefs.putUInt("tint", ((uint32_t)r << 16) | ((uint32_t)g << 8) | b);
+        prefs.end();
+    }
+    Serial.printf("[renderer] floor tint %s (%d,%d,%d)\r\n",
+                  _tint_active ? "set" : "off", r, g, b);
+}
+
+void renderer_load_floor_tint() {
+    Preferences prefs;
+    prefs.begin("hive", true);
+    uint32_t v = prefs.getUInt("tint", 0);
+    prefs.end();
+    if (v) renderer_set_floor_tint((v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF, false);
+}
+
+uint32_t renderer_get_floor_tint() {
+    return ((uint32_t)_tint_r << 16) | ((uint32_t)_tint_g << 8) | _tint_b;
+}
+
 static void _interpolate_chamber_palette() {
     float nf = g_tod.night_factor;
 
@@ -89,9 +152,11 @@ static void _interpolate_chamber_palette() {
 
     if (nf < 0.05f) {
         _cpal = CPAL_DAY;
+        _apply_floor_tint();
         return;
     } else if (nf > 0.85f) {
         _cpal = CPAL_NIGHT;
+        _apply_floor_tint();
         return;
     } else if (nf < 0.4f) {
         from = &CPAL_DAY; to = &CPAL_DUSK;
@@ -117,6 +182,7 @@ static void _interpolate_chamber_palette() {
     _cpal.amb_g    = _lerp8(from->amb_g,    to->amb_g,    t);
     _cpal.amb_b    = _lerp8(from->amb_b,    to->amb_b,    t);
     _cpal.amb_a    = _lerp8(from->amb_a,    to->amb_a,    t);
+    _apply_floor_tint();
 }
 
 static inline uint16_t _rgb565(uint8_t r, uint8_t g, uint8_t b) {
@@ -450,6 +516,13 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
 
     _update_night_palette();
     _interpolate_chamber_palette();
+
+    // Tint changed (app command or serial) — rebuild everything once
+    if (_tint_changed) {
+        _tint_changed = false;
+        _floor_cache_valid = false;
+        _needs_full_redraw = true;
+    }
 
 #if RENDERER_PROFILE
     unsigned long floor_start = millis();

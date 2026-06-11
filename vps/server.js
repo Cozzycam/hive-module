@@ -133,7 +133,7 @@ const stmts = {
 };
 
 // Command types the app may enqueue (queen applies them on her next poll)
-const COMMAND_TYPES = new Set(['name_conker', 'feed_colony', 'set_module_role']);
+const COMMAND_TYPES = new Set(['name_conker', 'feed_colony', 'set_module_role', 'set_floor_tint']);
 
 // ---- HMAC verification ----
 function verifyHmac(body, signature) {

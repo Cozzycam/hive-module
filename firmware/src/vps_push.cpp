@@ -198,6 +198,15 @@ static void _poll_commands(Coordinator& coord) {
             int r = module_role_from_str(role);
             if (target != 0 && r >= 0)
                 coord.cmd_set_module_role(target, (uint8_t)r);
+        } else if (strcmp(type, "set_floor_tint") == 0) {
+            const char* mod   = cmd["payload"]["module"] | "";
+            const char* color = cmd["payload"]["color"] | "";  // "#rrggbb" or "" = reset
+            uint16_t target = (uint16_t)strtol(mod, nullptr, 16);
+            uint32_t rgb = 0;
+            if (color[0] == '#') rgb = (uint32_t)strtol(color + 1, nullptr, 16);
+            if (target != 0)
+                coord.cmd_set_floor_tint(target, (rgb >> 16) & 0xFF,
+                                         (rgb >> 8) & 0xFF, rgb & 0xFF);
         }
         // Always ack — invalid commands must not clog the queue
         if (!first) acks += ",";

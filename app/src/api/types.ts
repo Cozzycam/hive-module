@@ -67,6 +67,7 @@ export interface Module {
   id: string;
   role: ModuleRole;
   online: boolean;
+  tint?: string;   // '#RRGGBB' ground tint, absent = default sand
   faces: {
     north?: string | null;
     south?: string | null;
