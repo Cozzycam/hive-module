@@ -3,6 +3,8 @@
 export interface ColonySnapshot {
   schema: number;
   colony_id: string;
+  queen_name?: string;   // assigned at founding (fw v98+)
+  fw_version?: number;   // module firmware version (fw v98+)
   founded_unix: number;
   now_unix: number;
   world: World;

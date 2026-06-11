@@ -80,6 +80,8 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
     JsonDocument doc;
     doc["schema"] = 1;
     doc["colony_id"] = coord.registry.manifest().colony_id;
+    doc["queen_name"] = coord.registry.manifest().queen_name;
+    doc["fw_version"] = FW_VERSION;
     doc["founded_unix"] = coord.registry.manifest().founded_unix;
     doc["now_unix"] = g_tod.unix_time;
 

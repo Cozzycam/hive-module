@@ -39,6 +39,7 @@
 #include "api_json.h"
 #include "http_server.h"
 #include "vps_push.h"
+#include "setup_wizard.h"
 #include <SD_MMC.h>
 #include <Preferences.h>
 
@@ -48,6 +49,7 @@ static const char* EVT_NAMES[] = {
     "food_delivered", "food_tapped", "pile_discovered",
     "queen_laid_egg", "young_hatched", "young_died",
     "conker_died", "handoff_incoming", "handoff_outgoing",
+    "parade_started",
 };
 
 // -- TCA9554 I/O expander --------------------------------------------
@@ -211,6 +213,44 @@ static void process_serial_line(const char* line) {
         } else {
             Serial.println("Unknown role (queen|satellite|garden|food_store|heart_tree)");
         }
+    } else if (strcmp(line, "factory") == 0) {
+        // Factory reset: clear role + WiFi creds (keeps VPS provisioning),
+        // wipe colony data on SD, reboot into the setup wizard.
+        Serial.println("Factory reset: clearing role, WiFi, colony data...");
+        {
+            Preferences p;
+            p.begin("hive", false); p.clear(); p.end();
+            p.begin("wifi", false); p.clear(); p.end();
+        }
+        if (sd_card_state() == SD_OK) {
+            File dir = SD_MMC.open("/colony");
+            if (dir && dir.isDirectory()) {
+                // Two levels deep is enough: /colony/<dir>/<files>
+                File e;
+                while ((e = dir.openNextFile())) {
+                    String path = String(e.path());
+                    if (e.isDirectory()) {
+                        File sub = SD_MMC.open(path);
+                        File f2;
+                        while ((f2 = sub.openNextFile())) {
+                            String p2 = String(f2.path());
+                            f2.close();
+                            SD_MMC.remove(p2);
+                        }
+                        sub.close();
+                        SD_MMC.rmdir(path);
+                    } else {
+                        e.close();
+                        SD_MMC.remove(path);
+                    }
+                }
+                dir.close();
+                SD_MMC.rmdir("/colony");
+            }
+        }
+        Serial.println("Rebooting into setup wizard...");
+        delay(200);
+        ESP.restart();
     } else if (strcmp(line, "ota") == 0) {
         enter_ota_mode();
     } else if (strcmp(line, "push") == 0) {
@@ -548,6 +588,14 @@ void setup() {
 
     touch_init();
 
+    // Factory-fresh module (no role in NVS): blocking setup wizard.
+    // Found path provisions WiFi (captive portal) and writes role=queen,
+    // so everything after this reads the right config.
+    SetupChoice wizard_choice = SETUP_NONE;
+    if (setup_wizard_required()) {
+        wizard_choice = setup_wizard_run(gfx);
+    }
+
     // Queen: keep WiFi connected for HTTP server + ESP-NOW channel coexistence
     // Must be set before time_of_day_init() which does the first NTP sync
     // Role isn't known yet (sim not init), so read it from NVS directly
@@ -570,6 +618,11 @@ void setup() {
     bool queen = sim.coordinator.is_queen();
     if (queen) {
         hud_init();
+        if (wizard_choice == SETUP_FOUNDED) {
+            setup_wizard_ceremony(gfx,
+                sim.coordinator.registry.manifest().colony_id,
+                sim.coordinator.registry.manifest().queen_name);
+        }
         renderer.start_boot_splash();
         http_server_start(&sim.coordinator);
         vps_push_init();

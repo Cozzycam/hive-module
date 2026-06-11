@@ -47,9 +47,10 @@ export function Home({ onNavigate }: HomeProps) {
       }}>
         <div>
           <h1 style={{ fontSize: SIZES.xl, fontWeight: 700, color: tod.text, margin: 0 }}>
-            The Colony
+            {snapshot.colony_id || 'The Colony'}
           </h1>
           <div style={{ fontSize: SIZES.sm, color: tod.dimText, marginTop: 2 }}>
+            {snapshot.queen_name ? <>Queen {snapshot.queen_name} &middot; </> : null}
             {seasonLabel} &middot; {weatherLabel} &middot; {world.tod.phase}
           </div>
         </div>

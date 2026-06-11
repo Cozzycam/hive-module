@@ -7,19 +7,21 @@ import { Home } from './screens/Home';
 import { Characters } from './screens/Characters';
 import { Chambers } from './screens/Chambers';
 import { Diary } from './screens/Diary';
+import { Feedback } from './screens/Feedback';
 import { Empty } from './screens/Empty';
 import { Settings } from './screens/Settings';
 import { HIVE } from './theme/palette';
 import { SIZES } from './theme/fonts';
 import type { ColonyEvent, DataSource } from './api/types';
 
-type Tab = 'home' | 'characters' | 'chambers' | 'diary';
+type Tab = 'home' | 'characters' | 'chambers' | 'diary' | 'feedback';
 
 const TAB_LABELS: Record<Tab, string> = {
   home: 'Home',
   characters: 'Characters',
   chambers: 'Chambers',
   diary: 'Diary',
+  feedback: 'Feedback',
 };
 
 // Auth stub — always passes
@@ -186,6 +188,7 @@ export function App() {
                     )}
                     {tab === 'chambers' && <Chambers />}
                     {tab === 'diary' && <Diary />}
+                    {tab === 'feedback' && <Feedback />}
                   </>
                 )}
               </div>

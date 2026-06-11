@@ -254,6 +254,28 @@ async function fetchWithTimeout2(url: string, init: RequestInit, timeoutMs: numb
   }
 }
 
+// Send user feedback to the VPS inbox (relayed to the developers)
+export async function sendFeedback(
+  colonyId: string | null,
+  text: string,
+  context: Record<string, unknown>,
+): Promise<boolean> {
+  try {
+    const res = await fetchWithTimeout2(
+      `${VPS_BASE}/api/v1/feedback`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ colony_id: colonyId || '', text, context }),
+      },
+      VPS_TIMEOUT,
+    );
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function fetchHealth(): Promise<HealthResponse | null> {
   return tryFetchJson<HealthResponse>(
     `${VPS_BASE}/api/v1/health`,

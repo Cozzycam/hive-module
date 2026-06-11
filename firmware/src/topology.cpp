@@ -315,8 +315,18 @@ static void _on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int l
             _ds_count++;
         }
     } else if (msg_type == TOPO_GATHER_SYNC && len >= (int)sizeof(GatherSyncMessage)) {
-        memcpy(&_gather_msg, data, sizeof(GatherSyncMessage));
-        _gather_pending = true;
+        // Only honour gathers from a face-connected neighbour — with multiple
+        // colonies on one LAN/channel, a stranger's broadcast must not move
+        // our conkers
+        const GatherSyncMessage* gs = reinterpret_cast<const GatherSyncMessage*>(data);
+        for (int f = 0; f < FACE_COUNT; f++) {
+            if (_faces[f].link == LINK_CONNECTED
+                    && _faces[f].neighbour_id == gs->sender_id) {
+                memcpy(&_gather_msg, data, sizeof(GatherSyncMessage));
+                _gather_pending = true;
+                break;
+            }
+        }
     } else if (msg_type == TOPO_OTA_ANNOUNCE && len >= (int)sizeof(OtaAnnounceMessage)) {
         const OtaAnnounceMessage* oa = reinterpret_cast<const OtaAnnounceMessage*>(data);
         _ota_announce_version = oa->fw_version;

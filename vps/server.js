@@ -54,6 +54,15 @@ db.exec(`
     created_at INTEGER DEFAULT (unixepoch()),
     acked_at INTEGER DEFAULT 0
   );
+
+  CREATE TABLE IF NOT EXISTS feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    colony_id TEXT,
+    body TEXT NOT NULL,
+    context TEXT,
+    created_at INTEGER DEFAULT (unixepoch()),
+    read_at INTEGER DEFAULT 0
+  );
 `);
 
 // Dedup index: remove duplicates first, then create unique index
@@ -108,6 +117,12 @@ const stmts = {
   `),
   ackCommand: db.prepare(`
     UPDATE commands SET acked_at = unixepoch() WHERE colony_id = ? AND id = ?
+  `),
+  insertFeedback: db.prepare(`
+    INSERT INTO feedback (colony_id, body, context) VALUES (?, ?, ?)
+  `),
+  feedbackToday: db.prepare(`
+    SELECT COUNT(*) AS n FROM feedback WHERE created_at > unixepoch() - 86400
   `),
 };
 
@@ -254,6 +269,22 @@ app.post('/api/v1/colonies/:colony_id/commands/ack', authMiddleware, (req, res) 
     stmts.ackCommand.run(req.params.colony_id, id);
   }
   res.json({ status: 'ok', acked: ids.length });
+});
+
+// POST /api/v1/feedback  (from app — no HMAC; length-capped + daily rate cap)
+// body: { colony_id, text, context: { fw_version, app_version, ... } }
+app.post('/api/v1/feedback', (req, res) => {
+  let parsed;
+  try { parsed = JSON.parse(req.body.toString()); } catch { return res.status(400).json({ error: 'invalid json' }); }
+  const text = String(parsed.text || '').trim();
+  if (!text) return res.status(400).json({ error: 'empty feedback' });
+  if (text.length > 2000) return res.status(400).json({ error: 'too long (2000 max)' });
+  if (stmts.feedbackToday.get().n >= 50) {
+    return res.status(429).json({ error: 'feedback inbox full for today' });
+  }
+  const context = JSON.stringify(parsed.context || {}).slice(0, 512);
+  const info = stmts.insertFeedback.run(String(parsed.colony_id || ''), text, context);
+  res.json({ status: 'thanks', id: info.lastInsertRowid });
 });
 
 // GET /api/v1/health

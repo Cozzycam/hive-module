@@ -130,6 +130,7 @@ bool ConkerRegistry::_load_manifest() {
     }
 
     strlcpy(_manifest.colony_id, doc["colony_id"] | "", sizeof(_manifest.colony_id));
+    strlcpy(_manifest.queen_name, doc["queen_name"] | "", sizeof(_manifest.queen_name));
     _manifest.schema         = doc["schema"] | 1;
     _manifest.founded_unix   = doc["founded_unix"] | 0;
     _manifest.next_lilguy_id = doc["next_lilguy_id"] | 1;
@@ -173,6 +174,7 @@ bool ConkerRegistry::_save_manifest() {
     JsonDocument doc;
     doc["schema"]         = _manifest.schema;
     doc["colony_id"]      = _manifest.colony_id;
+    doc["queen_name"]     = _manifest.queen_name;
     doc["founded_unix"]   = _manifest.founded_unix;
     doc["next_lilguy_id"] = _manifest.next_lilguy_id;
     doc["last_tick"]      = _manifest.last_tick;

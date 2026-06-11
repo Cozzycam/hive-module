@@ -1442,6 +1442,8 @@ void Coordinator::_persist_migrate_live_colony() {
     ColonyManifest& m = registry.manifest();
     m.schema = 1;
     registry.generate_colony_id();
+    name_random(m.queen_name, sizeof(m.queen_name));
+    Serial.printf("[persist] the queen is named %s\r\n", m.queen_name);
 
     // Read founding time from HUD's NVS if available
     Preferences prefs;
@@ -1527,6 +1529,13 @@ void Coordinator::_persist_restore_from_disk() {
     Serial.println("[persist] restoring colony from disk (Case C)...");
 
     ColonyManifest& m = registry.manifest();
+
+    // Migration: colonies founded before v98 have an unnamed queen
+    if (m.queen_name[0] == '\0') {
+        name_random(m.queen_name, sizeof(m.queen_name));
+        registry.flush_manifest();
+        Serial.printf("[persist] queen named retroactively: %s\r\n", m.queen_name);
+    }
 
     // Restore colony state
     colony.food_store = m.food_store;
