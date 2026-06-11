@@ -116,3 +116,30 @@ void Sim::handle_touch() {
     je.food_tap = {static_cast<int8_t>(cx), static_cast<int8_t>(cy), Cfg::TAP_FEED_AMOUNT};
     coordinator.journal.emit(je);
 }
+
+void Sim::handle_swipe(const TouchEvent* pts, int count) {
+    // A whisper, not a command: lay weak food scent along the stroke.
+    // Foragers follow it with the same logic as any trail — if it leads
+    // to food their returns ratify it; if not, it decays as a rumour.
+    Chamber& ch = coordinator.chamber;
+    int last_cx = -1, last_cy = -1;
+
+    for (int i = 1; i < count; i++) {
+        float x0 = pts[i - 1].x / static_cast<float>(Cfg::CELL_SIZE);
+        float y0 = pts[i - 1].y / static_cast<float>(Cfg::CELL_SIZE);
+        float x1 = pts[i].x / static_cast<float>(Cfg::CELL_SIZE);
+        float y1 = pts[i].y / static_cast<float>(Cfg::CELL_SIZE);
+
+        int steps = static_cast<int>(fmaxf(fabsf(x1 - x0), fabsf(y1 - y0))) + 1;
+        for (int s = 0; s <= steps; s++) {
+            float t = static_cast<float>(s) / steps;
+            int cx = static_cast<int>(x0 + (x1 - x0) * t);
+            int cy = static_cast<int>(y0 + (y1 - y0) * t);
+            if (!ch.in_bounds(cx, cy)) continue;
+            if (cx == last_cx && cy == last_cy) continue;
+            ch.pheromones.deposit_food(cx, cy, Cfg::FINGER_SCENT_INTENSITY);
+            ch.add_scent_mark(cx, cy);
+            last_cx = cx; last_cy = cy;
+        }
+    }
+}

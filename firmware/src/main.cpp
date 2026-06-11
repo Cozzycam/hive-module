@@ -624,6 +624,13 @@ void loop() {
         handle_serial();
         sim.handle_touch();
 
+        // Swipe detection — finger scent trail
+        {
+            TouchEvent swipe_pts[24];
+            int swipe_n = touch_swipe(swipe_pts, 24);
+            if (swipe_n >= 2) sim.handle_swipe(swipe_pts, swipe_n);
+        }
+
         // Hold detection — conkers gather to finger
         TouchEvent hold_ev;
         bool local_hold = touch_holding(&hold_ev);

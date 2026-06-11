@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 92;
+constexpr uint32_t FW_VERSION = 93;
 
 namespace Cfg {
 
@@ -187,6 +187,15 @@ constexpr int   WAGGLE_DANCE_TICKS        = 16;     // ~2s post-delivery dance
 // temporarily widen the forager cap — a productive pile swells the swarm,
 // and the swarm dissolves naturally once deliveries stop refreshing it.
 constexpr float RECRUIT_SIGNAL_FRACTION   = 0.50f;  // extra forager fraction at full signal
+
+// ---- Finger scent trails (swipe the glass to whisper a suggestion) ----
+// Deposited into the real food-pheromone layer so foragers follow it with
+// the existing trail logic. Deliberately weaker than a real trail (10.0):
+// if it leads to food the colony's own return trips ratify it into a road;
+// if it leads nowhere it decays as a false rumour.
+constexpr float FINGER_SCENT_INTENSITY = 4.0f;
+constexpr int   SCENT_MARK_TTL         = 20;   // shimmer ticks (~2.5s)
+constexpr int   MAX_SCENT_MARKS        = 48;
 
 // ---- Fireflies (night ambience + chase bait) ----
 constexpr int   MAX_FIREFLIES             = 5;

@@ -15,6 +15,7 @@ void Chamber::init(ColonyState* col, bool with_queen) {
     cannibalism_cooldown = 0;
     husk_count = 0;
     for (int i = 0; i < Cfg::MAX_FIREFLIES; i++) fireflies[i] = Firefly{};
+    for (int i = 0; i < Cfg::MAX_SCENT_MARKS; i++) scent_marks[i] = {0, 0, 0};
     home_face = -1;
     has_queen = with_queen;
     event_bus = nullptr;
@@ -114,6 +115,10 @@ void Chamber::tick(float dt) {
 
     // Night ambience
     _tick_fireflies();
+
+    // Finger scent shimmer fade
+    for (int i = 0; i < Cfg::MAX_SCENT_MARKS; i++)
+        if (scent_marks[i].ttl > 0) scent_marks[i].ttl--;
 
     // Shuffle workers (Fisher-Yates), fixing stack_on and zoomie_target references
     for (int i = conker_count - 1; i > 0; i--) {
@@ -737,6 +742,18 @@ void Chamber::_tick_fireflies() {
 
         f.glow_phase += 3;  // wraps — ~10s blink cycle at 8tps
     }
+}
+
+void Chamber::add_scent_mark(int cx, int cy) {
+    // Reuse an expired slot, else the dimmest one
+    int slot = 0;
+    uint8_t min_ttl = 255;
+    for (int i = 0; i < Cfg::MAX_SCENT_MARKS; i++) {
+        if (scent_marks[i].ttl == 0) { slot = i; break; }
+        if (scent_marks[i].ttl < min_ttl) { min_ttl = scent_marks[i].ttl; slot = i; }
+    }
+    scent_marks[slot] = {static_cast<int8_t>(cx), static_cast<int8_t>(cy),
+                         static_cast<uint8_t>(Cfg::SCENT_MARK_TTL)};
 }
 
 int Chamber::nearest_firefly(int cx, int cy, int radius) const {

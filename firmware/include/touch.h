@@ -27,5 +27,12 @@ void touch_init();
 bool touch_poll(TouchEvent* out);
 
 /* Returns true if a finger is currently held down (>300ms).
- * Fills *out with the current rotated display coordinates. */
+ * Fills *out with the current rotated display coordinates.
+ * Suppressed while a swipe is in progress (drag that began moving
+ * before the hold threshold). */
 bool touch_holding(TouchEvent* out);
+
+/* Poll for a completed swipe — a drag that started moving within the
+ * hold threshold and has now lifted. Fills out with up to max sampled
+ * path points (rotated display coords). Returns point count, 0 if none. */
+int touch_swipe(TouchEvent* out, int max_points);

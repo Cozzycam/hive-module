@@ -508,6 +508,7 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
     _draw_tunnel_entrances(ch);
     if (debug_phero) { _draw_phero_overlay(ch); _flush_bounds.full = true; }
     _draw_anims();
+    _draw_scent_marks(ch);
     _draw_fireflies(ch, lerp_t);
     _draw_weather();
     // Weather particles cover the whole screen — force full flush when active
@@ -1489,6 +1490,21 @@ void Renderer::receive_events(const Event* events, int count, const Chamber& ch)
         default:
             break;
         }
+    }
+}
+
+void Renderer::_draw_scent_marks(const Chamber& ch) {
+    for (int i = 0; i < Cfg::MAX_SCENT_MARKS; i++) {
+        const Chamber::ScentMark& m = ch.scent_marks[i];
+        if (m.ttl == 0) continue;
+        int px = m.x * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
+        int py = m.y * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
+        // Fade: bright warm fleck early, dim late
+        uint16_t col = (m.ttl > Cfg::SCENT_MARK_TTL / 2)
+                     ? _rgb565(214, 188, 120)
+                     : _rgb565(150, 130, 90);
+        _gfx->fillRect(px - 1, py - 1, 2, 2, col);
+        _mark_dirty(px - 2, py - 2, 5, 5);
     }
 }
 

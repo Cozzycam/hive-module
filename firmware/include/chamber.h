@@ -58,6 +58,11 @@ public:
     int  nearest_firefly(int cx, int cy, int radius) const;
     void _tick_fireflies();
 
+    // Finger scent shimmer — visual echo of a swipe, fades over TTL
+    struct ScentMark { int8_t x, y; uint8_t ttl; };
+    ScentMark scent_marks[Cfg::MAX_SCENT_MARKS];
+    void add_scent_mark(int cx, int cy);
+
     int8_t  entries[FACE_COUNT];    // neighbor ID per face, -1 = none
     int8_t  home_face = -1;         // face toward queen chamber, -1 = is queen chamber
 

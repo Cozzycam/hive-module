@@ -42,6 +42,29 @@ static int16_t  _current_nx = 0; // latest native coords while held
 static int16_t  _current_ny = 0;
 static constexpr uint32_t HOLD_THRESHOLD_MS = 300;
 
+// Swipe capture: a drag that starts moving before the hold threshold.
+// Intent declared in the first 300ms — move early = swipe (scent trail),
+// dwell first = hold (gather). Points sampled in native coords.
+static constexpr int SWIPE_MAX_PTS    = 24;
+static constexpr int SWIPE_SAMPLE_PX  = 16;  // min native px between samples
+static bool    _swipe_mode = false;
+static bool    _swipe_ready = false;
+static int     _swipe_count = 0;
+static int16_t _swipe_nx[SWIPE_MAX_PTS];
+static int16_t _swipe_ny[SWIPE_MAX_PTS];
+
+static void _swipe_record(int16_t nx, int16_t ny) {
+    if (_swipe_count >= SWIPE_MAX_PTS) return;
+    if (_swipe_count > 0) {
+        int dx = nx - _swipe_nx[_swipe_count - 1];
+        int dy = ny - _swipe_ny[_swipe_count - 1];
+        if (dx * dx + dy * dy < SWIPE_SAMPLE_PX * SWIPE_SAMPLE_PX) return;
+    }
+    _swipe_nx[_swipe_count] = nx;
+    _swipe_ny[_swipe_count] = ny;
+    _swipe_count++;
+}
+
 // Read raw touch data. Returns true if a finger is currently down,
 // and fills native_x/native_y with portrait-orientation coords.
 static bool _read_touch(int16_t& native_x, int16_t& native_y) {
@@ -128,12 +151,23 @@ bool touch_poll(TouchEvent* out) {
         _current_nx = nx;
         _current_ny = ny;
         _was_touching = true;
+        _swipe_mode = false;
+        _swipe_count = 0;
+        _swipe_record(nx, ny);
         return false;
     }
 
     if (!touching && _was_touching) {
         // Finger just lifted
         _was_touching = false;
+
+        // Completed swipe? Hand it to touch_swipe()
+        if (_swipe_mode && _swipe_count >= 2) {
+            _swipe_ready = true;
+            _swipe_mode = false;
+            return false;
+        }
+        _swipe_mode = false;
 
         // If press was cancelled by drag, don't emit
         if (_press_x < 0) return false;
@@ -150,10 +184,17 @@ bool touch_poll(TouchEvent* out) {
         // Still touching — update current position
         _current_nx = nx;
         _current_ny = ny;
+        if (_swipe_mode) _swipe_record(nx, ny);
         // Check for drag to cancel tap
         int dx = nx - _press_x;
         int dy = ny - _press_y;
         if (dx * dx + dy * dy > TAP_THRESHOLD * TAP_THRESHOLD) {
+            // Early movement = swipe; movement after dwelling = gather drag
+            if (_press_x > -1000
+                    && millis() - _press_start_ms < HOLD_THRESHOLD_MS) {
+                _swipe_mode = true;
+                _swipe_record(nx, ny);
+            }
             _press_x = -1000;
             _press_y = -1000;
         }
@@ -163,8 +204,22 @@ bool touch_poll(TouchEvent* out) {
     return false;
 }
 
+int touch_swipe(TouchEvent* out, int max_points) {
+    if (!_swipe_ready) return 0;
+    _swipe_ready = false;
+    int n = (_swipe_count < max_points) ? _swipe_count : max_points;
+    for (int i = 0; i < n; i++) {
+        // Rotate native portrait -> landscape
+        out[i].x = _swipe_ny[i];
+        out[i].y = 319 - _swipe_nx[i];
+    }
+    _swipe_count = 0;
+    return n;
+}
+
 bool touch_holding(TouchEvent* out) {
     if (!_was_touching) return false;
+    if (_swipe_mode) return false;  // drawing, not gathering
     if (millis() - _press_start_ms < HOLD_THRESHOLD_MS) return false;
     // Rotate to landscape
     out->x = _current_ny;
