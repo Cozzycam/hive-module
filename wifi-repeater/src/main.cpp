@@ -16,13 +16,8 @@
 #include <ArduinoOTA.h>
 #include <Preferences.h>
 
-// ---- Upstream (your router) ----
-static const char* STA_SSID = "EE-52GKNR";
-static const char* STA_PASS = "F7QMktKEtvP6MqFH";
-
-// ---- Local AP (what the queen connects to) ----
-static const char* AP_SSID  = "HiveRelay";
-static const char* AP_PASS  = "hiverelay123";
+// WiFi credentials live in secrets.h (gitignored) — see secrets.h.example
+#include "secrets.h"
 
 static const int LED_PIN = 13;
 static bool napt_started = false;

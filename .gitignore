@@ -30,3 +30,7 @@ Thumbs.db
 
 # PlatformIO
 .pio/
+
+# WiFi credentials — never commit
+wifi-repeater/src/secrets.h
+
