@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 101;
+constexpr uint32_t FW_VERSION = 102;
 
 namespace Cfg {
 
@@ -138,7 +138,7 @@ constexpr float ARRIVAL_THRESHOLD       = 0.05f;
 // ---- Gathering ----
 constexpr int   SCOUT_PATIENCE_TICKS    = 3000;
 constexpr float FORAGE_DEBUG_PILE_SIZE  = 220.0f;
-constexpr float TAP_FEED_AMOUNT        = 200.0f;  // food placed by player tap
+constexpr float TAP_FEED_AMOUNT        = 2.0f;   // one tap = one conker-day
 constexpr int   FOOD_DEPOSIT_RADIUS     = 5;
 constexpr int   RETURN_HOME_TICKS       = 960;
 constexpr int   IDLE_RECONSIDER_MIN     = 40;
@@ -222,11 +222,18 @@ constexpr float ZOOMIE_SPEED_MULT          = 4.0f;   // speed multiplier vs norm
 constexpr int   ZOOMIE_MIN_TICKS           = 16;     // ~2s at 8 tps
 constexpr int   ZOOMIE_MAX_TICKS           = 24;     // ~3s at 8 tps
 
+// ---- Larder (food storage cap) ----
+// All food is player-given; the colony can only store so much. Excess
+// spoils, so feeding stays meaningful and stockpiles can't trivialise
+// months. A full larder = ~2 weeks of neglect tolerance.
+constexpr float LARDER_CAP_DAYS        = 14.0f;
+
 // ---- Surplus playtime ----
 // A deep pantry frees the colony to play: foraging winds down and play
 // behaviours scale up with play_surplus() (0 at MIN_DAYS of food, 1 at MAX).
-constexpr float PLAY_SURPLUS_MIN_DAYS  = 7.0f;
-constexpr float PLAY_SURPLUS_MAX_DAYS  = 28.0f;
+// Tuned to the larder cap: a full larder is a festival.
+constexpr float PLAY_SURPLUS_MIN_DAYS  = 4.0f;
+constexpr float PLAY_SURPLUS_MAX_DAYS  = 12.0f;
 constexpr float SURPLUS_FORAGE_DAMP    = 0.7f;   // max forager-fraction reduction
 constexpr float ZOOMIE_SURPLUS_BOOST   = 2.0f;   // extra zoomie chance at full surplus
 constexpr int   ZOOMIE_SURPLUS_TICKS   = 24;     // extra max duration at full surplus

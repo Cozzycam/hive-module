@@ -14,6 +14,22 @@ import { SIZES } from '../theme/fonts';
 import { fetchLilguyDetail, fetchLilguyEvents, sendCommand } from '../api/client';
 import type { ColonyEvent, LilGuyDetail, Personality, Bond } from '../api/types';
 
+// Trait names arrive as firmware identifiers — translate to human warmth
+// (Amber feedback: "make the traits be understandable")
+const TRAIT_INFO: Record<string, { label: string; desc: string }> = {
+  pioneer: { label: 'Pioneer', desc: 'First to step into an unexplored chamber.' },
+  elder: { label: 'Elder', desc: 'Has lived to a grand old age — the young ones huddle close.' },
+  bonded: { label: 'Bonded', desc: 'Has a true friend in the colony.' },
+  survived_heatwave: { label: 'Heatwave Survivor', desc: 'Came through a scorching spell.' },
+  survived_cold_snap: { label: 'Cold Snap Survivor', desc: 'Endured a bitter freeze.' },
+  survived_drought: { label: 'Drought Survivor', desc: 'Outlasted the hungry, dry days.' },
+  survived_storm: { label: 'Storm Survivor', desc: 'Weathered a great storm.' },
+};
+
+function traitLabel(t: string): string {
+  return TRAIT_INFO[t]?.label ?? t.replace(/_/g, ' ');
+}
+
 // Reconstruct basic character info from events
 interface CharacterInfo {
   id: number;
@@ -226,7 +242,7 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
             </div>
             <div style={{ fontSize: SIZES.sm, color: palette.dimText }}>
               {deriveRoleTag(c.personality, c.role, c.traits)}
-              {c.traits.length > 0 && ` \u00b7 ${c.traits.join(', ')}`}
+              {c.traits.length > 0 && ` \u00b7 ${c.traits.map(traitLabel).join(', ')}`}
             </div>
           </div>
           <button
@@ -349,11 +365,32 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
         <div style={{ display: 'flex', gap: 24 }}>
           {ageText && <MiniStat label="Age" value={ageText} palette={palette} />}
           <MiniStat label="Role" value={char.role} palette={palette} />
-          {char.traits.length > 0 && (
-            <MiniStat label="Traits" value={char.traits.join(', ')} palette={palette} />
-          )}
         </div>
       </Card>
+
+      {/* Traits — friendly names with what-they-mean */}
+      {char.traits.length > 0 && (
+        <Card style={{ background: palette.cardBg }}>
+          <div style={{ fontSize: SIZES.xs, fontWeight: 600, color: palette.dimText, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+            Traits
+          </div>
+          {char.traits.map(t => {
+            const info = TRAIT_INFO[t];
+            return (
+              <div key={t} style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: SIZES.sm, fontWeight: 600, color: palette.text }}>
+                  {'\u{1F3C5}'} {info?.label ?? t.replace(/_/g, ' ')}
+                </div>
+                {info && (
+                  <div style={{ fontSize: SIZES.sm, color: palette.dimText }}>
+                    {info.desc}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </Card>
+      )}
 
       {/* Personality petals */}
       {personality && (

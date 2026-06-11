@@ -1282,8 +1282,13 @@ bool Coordinator::cmd_rename_conker(uint32_t id, const char* new_name) {
 }
 
 bool Coordinator::cmd_feed_colony(float amount) {
-    if (amount <= 0.0f) return false;
-    if (amount > 50.0f) amount = 50.0f;
+    // A care package is a day's table for the whole colony — sized here,
+    // not by the client, so it scales with the family. (Client amount is
+    // ignored; kept in the signature for command compatibility.)
+    (void)amount;
+    amount = colony.daily_burn();
+    if (amount <= 0.0f) amount = Cfg::QUEEN_FOOD_PER_DAY;
+    if (amount > 100.0f) amount = 100.0f;  // sanity rail
 
     // A gift from above: drop a visible pile near the chamber centre —
     // foragers will discover it and lay trails like any other find
@@ -1835,6 +1840,14 @@ void Coordinator::_bond_load() {
 // ================================================================
 
 void Coordinator::_world_tick() {
+    // Larder cap: the colony can only store so much — excess spoils.
+    // Single chokepoint for every food source (taps, packages, restores).
+    float larder_cap = colony.daily_burn() * Cfg::LARDER_CAP_DAYS;
+    if (larder_cap > 0.0f) {
+        if (colony.food_store > larder_cap) colony.food_store = larder_cap;
+        if (colony.food_total > larder_cap) colony.food_total = larder_cap;
+    }
+
     world.tod = g_tod;
     world.day_of_year = g_tod.day_of_year;
 

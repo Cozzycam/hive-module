@@ -209,8 +209,9 @@ function RightNowContent({ population, food, tod }: {
   );
 }
 
-// Care package: drops a food pile in the queen's chamber via the command
-// queue. One per 6 hours — a gift, not a faucet.
+// Care package: a day's food for the whole colony (sized by the queen,
+// scales with the family), dropped near the chamber centre via the
+// command queue. One per 6 hours — a gift, not a faucet.
 const CARE_PKG_KEY = 'hive_last_care_pkg_ms';
 const CARE_PKG_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 
@@ -241,20 +242,25 @@ function CarePackageButton({ colonyId, tod }: {
     : 'Send a care package \u{1F381}';
 
   return (
-    <button
-      onClick={handleSend}
-      disabled={state !== 'ready'}
-      style={{
-        marginTop: 12, width: '100%', padding: '8px 0',
-        background: 'none', border: `1px solid ${HIVE.sand}`,
-        borderRadius: 16, fontSize: SIZES.sm,
-        color: state === 'ready' ? tod.text : tod.dimText,
-        cursor: state === 'ready' ? 'pointer' : 'default',
-        opacity: state === 'cooldown' ? 0.6 : 1,
-      }}
-    >
-      {label}
-    </button>
+    <>
+      <button
+        onClick={handleSend}
+        disabled={state !== 'ready'}
+        style={{
+          marginTop: 12, width: '100%', padding: '8px 0',
+          background: 'none', border: `1px solid ${HIVE.sand}`,
+          borderRadius: 16, fontSize: SIZES.sm,
+          color: state === 'ready' ? tod.text : tod.dimText,
+          cursor: state === 'ready' ? 'pointer' : 'default',
+          opacity: state === 'cooldown' ? 0.6 : 1,
+        }}
+      >
+        {label}
+      </button>
+      <div style={{ fontSize: SIZES.xs, color: tod.dimText, textAlign: 'center', marginTop: 4 }}>
+        a day's food for the whole colony
+      </div>
+    </>
   );
 }
 
