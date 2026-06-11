@@ -198,6 +198,13 @@ void Conker::tick(Chamber& ch, float dt) {
                + Cfg::FORAGE_TEMPO_SPEED_SPAN * personality[PERS_WORK_TEMPO];
     }
 
+    // Zoomies sprint multiplier (re-applied here because speed resets each
+    // tick). Firefly chases use a gentler night-dash.
+    if (state == STATE_ZOOMIES) {
+        speed *= (zoomie_target <= -2) ? Cfg::FIREFLY_CHASE_SPEED_MULT
+                                       : Cfg::ZOOMIE_SPEED_MULT;
+    }
+
     // Starvation penalty (80-100: linearly reduce to 30%)
     if (hunger > Cfg::HUNGER_SLOWDOWN) {
         float penalty = (hunger - Cfg::HUNGER_SLOWDOWN)
@@ -1099,6 +1106,10 @@ void Conker::_do_zoomies(Chamber& ch) {
             || !ch.conkers[zoomie_target].alive)) {
         done = true;
     }
+    if (!done && zoomie_target <= -2) {
+        int fi = -2 - zoomie_target;
+        if (fi >= Cfg::MAX_FIREFLIES || !ch.fireflies[fi].active) done = true;
+    }
 
     if (done) {
         state = STATE_IDLE;
@@ -1115,7 +1126,19 @@ void Conker::_do_zoomies(Chamber& ch) {
         return;
     }
 
-    if (zoomie_target < 0) {
+    if (zoomie_target <= -2) {
+        // Firefly chase — and the catch: a triumphant hop as it slips free
+        Firefly& f = ch.fireflies[-2 - zoomie_target];
+        float dx = f.x - x, dy = f.y - y;
+        if (dx * dx + dy * dy < 0.8f) {
+            f.active = false;          // it flits away into the dark
+            anim_type = LG_ANIM_NOTICE;
+            anim_remaining_ticks = 12;
+            zoomie_ticks = 1;          // wind down next tick
+            return;
+        }
+        _step_toward_cell(static_cast<int>(f.x), static_cast<int>(f.y), ch);
+    } else if (zoomie_target < 0) {
         // Runner: pick random waypoints and sprint to them
         int cx = cell_x(), cy = cell_y();
         if (!has_target || (cx == target_x && cy == target_y)) {
@@ -1184,6 +1207,22 @@ void Conker::_tick_idle(Chamber& ch) {
         has_target_cell = false;
         _pick_task(ch);
         return;
+    }
+
+    // A nearby glow is irresistible to a restless night idler
+    if (g_tod.night_factor >= Cfg::FIREFLY_NIGHT_FACTOR_MIN
+            && !sleeping && stack_on < 0 && anim_type == LG_ANIM_NONE
+            && g_rng.rand_float() < Cfg::FIREFLY_CHASE_CHANCE) {
+        int fi = ch.nearest_firefly(cell_x(), cell_y(), Cfg::FIREFLY_CHASE_RADIUS);
+        if (fi >= 0) {
+            state = STATE_ZOOMIES;
+            zoomie_target = -2 - fi;  // <= -2 encodes a firefly chase
+            zoomie_ticks = Cfg::FIREFLY_CHASE_MAX_TICKS;
+            has_target = false;
+            has_target_cell = false;
+            idle_ticks_remaining = 0;
+            return;
+        }
     }
 
     // Periodic repoll for work

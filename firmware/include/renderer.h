@@ -206,4 +206,7 @@ private:
 
     // Weather particle effects
     void _draw_weather();
+
+    // Night ambience: blinking firefly glows (sim-owned, lerped)
+    void _draw_fireflies(const Chamber& ch, float lerp_t);
 };

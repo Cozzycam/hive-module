@@ -20,6 +20,14 @@ struct Husk {
     float    scale_factor;
 };
 
+// Night ambience: drifting glow-bugs that conkers occasionally chase
+struct Firefly {
+    float   x = 0, y = 0, prev_x = 0, prev_y = 0;  // cell coords
+    float   vx = 0, vy = 0;
+    uint8_t glow_phase = 0;   // wraps; drives the blink pulse
+    bool    active = false;
+};
+
 class Chamber {
 public:
     ColonyState* colony;
@@ -44,6 +52,11 @@ public:
 
     Husk     husks[Cfg::MAX_HUSKS];
     int      husk_count = 0;
+
+    Firefly  fireflies[Cfg::MAX_FIREFLIES];
+    // Nearest active firefly within manhattan radius, -1 if none
+    int  nearest_firefly(int cx, int cy, int radius) const;
+    void _tick_fireflies();
 
     int8_t  entries[FACE_COUNT];    // neighbor ID per face, -1 = none
     int8_t  home_face = -1;         // face toward queen chamber, -1 = is queen chamber

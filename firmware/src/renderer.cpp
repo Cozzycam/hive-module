@@ -508,6 +508,7 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
     _draw_tunnel_entrances(ch);
     if (debug_phero) { _draw_phero_overlay(ch); _flush_bounds.full = true; }
     _draw_anims();
+    _draw_fireflies(ch, lerp_t);
     _draw_weather();
     // Weather particles cover the whole screen — force full flush when active
     if (g_weather.valid && g_weather.condition >= WX_DRIZZLE)
@@ -1488,6 +1489,34 @@ void Renderer::receive_events(const Event* events, int count, const Chamber& ch)
         default:
             break;
         }
+    }
+}
+
+void Renderer::_draw_fireflies(const Chamber& ch, float lerp_t) {
+    if (g_tod.night_factor < Cfg::FIREFLY_NIGHT_FACTOR_MIN) return;
+    float t = (lerp_t < 0.0f) ? 0.0f : ((lerp_t > 1.0f) ? 1.0f : lerp_t);
+
+    for (int i = 0; i < Cfg::MAX_FIREFLIES; i++) {
+        const Firefly& f = ch.fireflies[i];
+        if (!f.active) continue;
+
+        float fx = f.prev_x + (f.x - f.prev_x) * t;
+        float fy = f.prev_y + (f.y - f.prev_y) * t;
+        int px = static_cast<int>(fx * Cfg::CELL_SIZE);
+        int py = static_cast<int>(fy * Cfg::CELL_SIZE);
+
+        // Blink: soft pulse, dark half of the cycle = invisible
+        float pulse = sinf(f.glow_phase * 0.02454f);  // phase 0-255 ≈ one cycle
+        if (pulse <= 0.15f) continue;
+
+        _gfx->drawPixel(px, py, _rgb565(255, 244, 160));
+        if (pulse > 0.6f) {
+            _gfx->drawPixel(px - 1, py, _pal_glow_amber);
+            _gfx->drawPixel(px + 1, py, _pal_glow_amber);
+            _gfx->drawPixel(px, py - 1, _pal_glow_amber);
+            _gfx->drawPixel(px, py + 1, _pal_glow_amber);
+        }
+        _mark_dirty(px - 2, py - 2, 5, 5);
     }
 }
 

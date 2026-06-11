@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 89;
+constexpr uint32_t FW_VERSION = 90;
 
 namespace Cfg {
 
@@ -187,6 +187,17 @@ constexpr int   WAGGLE_DANCE_TICKS        = 16;     // ~2s post-delivery dance
 // temporarily widen the forager cap — a productive pile swells the swarm,
 // and the swarm dissolves naturally once deliveries stop refreshing it.
 constexpr float RECRUIT_SIGNAL_FRACTION   = 0.50f;  // extra forager fraction at full signal
+
+// ---- Fireflies (night ambience + chase bait) ----
+constexpr int   MAX_FIREFLIES             = 5;
+constexpr float FIREFLY_NIGHT_FACTOR_MIN  = 0.6f;   // dusk onward
+constexpr float FIREFLY_SPAWN_CHANCE      = 0.004f; // per empty slot per tick
+constexpr float FIREFLY_SPEED             = 0.06f;  // lazy drift, cells/tick
+constexpr float FIREFLY_FLEE_SPEED        = 0.22f;  // when a conker closes in
+constexpr float FIREFLY_CHASE_CHANCE      = 0.04f;  // per idle repoll at night
+constexpr int   FIREFLY_CHASE_RADIUS      = 8;      // cells, manhattan
+constexpr int   FIREFLY_CHASE_MAX_TICKS   = 64;     // ~8s before losing interest
+constexpr float FIREFLY_CHASE_SPEED_MULT  = 2.0f;   // night dash (vs zoomies 4x)
 
 // ---- Mourning & elders ----
 constexpr float MOURN_MIN_BOND        = 0.25f;  // bond strength to grieve

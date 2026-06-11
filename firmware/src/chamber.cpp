@@ -14,6 +14,7 @@ void Chamber::init(ColonyState* col, bool with_queen) {
     food_delivery_signal = 0;
     cannibalism_cooldown = 0;
     husk_count = 0;
+    for (int i = 0; i < Cfg::MAX_FIREFLIES; i++) fireflies[i] = Firefly{};
     home_face = -1;
     has_queen = with_queen;
     event_bus = nullptr;
@@ -110,6 +111,9 @@ void Chamber::tick(float dt) {
     // Cooldowns
     if (cannibalism_cooldown > 0) cannibalism_cooldown--;
     if (food_delivery_signal > 0) food_delivery_signal--;
+
+    // Night ambience
+    _tick_fireflies();
 
     // Shuffle workers (Fisher-Yates), fixing stack_on and zoomie_target references
     for (int i = conker_count - 1; i > 0; i--) {
@@ -667,6 +671,83 @@ void Chamber::add_brood_with_duration(int8_t px, int8_t py, uint32_t duration_ms
     if (brood_count >= Cfg::MAX_BROOD) return;
     brood[brood_count].init_with_duration(px, py, duration_ms);
     brood_count++;
+}
+
+// ---- Fireflies ----
+
+void Chamber::_tick_fireflies() {
+    bool night = g_tod.night_factor >= Cfg::FIREFLY_NIGHT_FACTOR_MIN;
+
+    for (int i = 0; i < Cfg::MAX_FIREFLIES; i++) {
+        Firefly& f = fireflies[i];
+
+        if (!f.active) {
+            if (night && g_rng.rand_float() < Cfg::FIREFLY_SPAWN_CHANCE) {
+                f.active = true;
+                f.x = f.prev_x = static_cast<float>(g_rng.rand_int(2, Cfg::GRID_WIDTH - 3));
+                f.y = f.prev_y = static_cast<float>(g_rng.rand_int(2, Cfg::GRID_HEIGHT - 3));
+                f.vx = f.vy = 0.0f;
+                f.glow_phase = static_cast<uint8_t>(g_rng.rand_int(0, 255));
+            }
+            continue;
+        }
+
+        // Daybreak — fireflies retire
+        if (!night) { f.active = false; continue; }
+
+        f.prev_x = f.x;
+        f.prev_y = f.y;
+
+        // Flee any conker that's too close; otherwise lazy drift
+        float fx = 0.0f, fy = 0.0f;
+        bool fleeing = false;
+        for (int c = 0; c < conker_count; c++) {
+            Conker& w = conkers[c];
+            if (!w.alive) continue;
+            float dx = f.x - w.x, dy = f.y - w.y;
+            float d2 = dx * dx + dy * dy;
+            if (d2 < 4.0f && d2 > 0.0001f) {  // within 2 cells
+                float d = sqrtf(d2);
+                fx += dx / d; fy += dy / d;
+                fleeing = true;
+            }
+        }
+        if (fleeing) {
+            float m = sqrtf(fx * fx + fy * fy);
+            if (m > 0.001f) {
+                f.vx = fx / m * Cfg::FIREFLY_FLEE_SPEED;
+                f.vy = fy / m * Cfg::FIREFLY_FLEE_SPEED;
+            }
+        } else {
+            f.vx += (g_rng.rand_float() - 0.5f) * 0.02f;
+            f.vy += (g_rng.rand_float() - 0.5f) * 0.02f;
+            float sp = sqrtf(f.vx * f.vx + f.vy * f.vy);
+            if (sp > Cfg::FIREFLY_SPEED) {
+                f.vx *= Cfg::FIREFLY_SPEED / sp;
+                f.vy *= Cfg::FIREFLY_SPEED / sp;
+            }
+        }
+
+        f.x += f.vx;
+        f.y += f.vy;
+        if (f.x < 1.0f) { f.x = 1.0f; f.vx = fabsf(f.vx); }
+        if (f.x > Cfg::GRID_WIDTH - 2.0f)  { f.x = Cfg::GRID_WIDTH - 2.0f;  f.vx = -fabsf(f.vx); }
+        if (f.y < 1.0f) { f.y = 1.0f; f.vy = fabsf(f.vy); }
+        if (f.y > Cfg::GRID_HEIGHT - 2.0f) { f.y = Cfg::GRID_HEIGHT - 2.0f; f.vy = -fabsf(f.vy); }
+
+        f.glow_phase += 3;  // wraps — ~10s blink cycle at 8tps
+    }
+}
+
+int Chamber::nearest_firefly(int cx, int cy, int radius) const {
+    int best = -1, best_d = radius + 1;
+    for (int i = 0; i < Cfg::MAX_FIREFLIES; i++) {
+        if (!fireflies[i].active) continue;
+        int d = abs(static_cast<int>(fireflies[i].x) - cx)
+              + abs(static_cast<int>(fireflies[i].y) - cy);
+        if (d < best_d) { best_d = d; best = i; }
+    }
+    return best;
 }
 
 void Chamber::add_husk(int8_t px, int8_t py, uint32_t conker_id, float scale, uint32_t died_unix) {
