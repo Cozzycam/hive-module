@@ -23,25 +23,15 @@ export function Empty({ onConnected }: EmptyProps) {
       padding: 32,
       textAlign: 'center',
     }}>
-      {/* Ambient illustration — queen alone */}
+      {/* Ambient illustration — a conker, as it appears on the modules */}
       <div style={{ marginBottom: 32 }}>
-        <svg width={120} height={120} viewBox="0 0 120 120">
-          {/* Simple floor texture */}
-          <rect x={10} y={80} width={100} height={30} rx={8} fill={HIVE.parchment} />
-          {/* Queen body */}
-          <ellipse cx={60} cy={72} rx={18} ry={14} fill={HIVE.soot} />
-          {/* Crown */}
-          <polygon points="50,58 55,50 60,56 65,50 70,58" fill={HIVE.accent} />
-          {/* Eyes */}
-          <circle cx={54} cy={68} r={2.5} fill={HIVE.white} />
-          <circle cx={66} cy={68} r={2.5} fill={HIVE.white} />
-          <circle cx={54} cy={68} r={1} fill={HIVE.ink} />
-          <circle cx={66} cy={68} r={1} fill={HIVE.ink} />
-          {/* Sprout in corner */}
-          <line x1={95} y1={85} x2={95} y2={70} stroke={HIVE.green} strokeWidth={1.5} />
-          <ellipse cx={92} cy={72} rx={4} ry={3} fill={HIVE.leafGreen} />
-          <ellipse cx={98} cy={70} rx={4} ry={3} fill={HIVE.leafGreen} />
-        </svg>
+        <img
+          src="/app/conker.png"
+          alt=""
+          width={96}
+          height={96}
+          style={{ imageRendering: 'pixelated', display: 'block' }}
+        />
       </div>
 
       <h1 style={{ fontSize: SIZES.xl, fontWeight: 700, color: HIVE.ink, margin: '0 0 12px' }}>
