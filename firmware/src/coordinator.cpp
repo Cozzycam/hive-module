@@ -27,13 +27,25 @@ extern uint32_t g_handoffs_out;
 extern uint32_t g_handoffs_in;
 extern uint32_t g_handoffs_dropped;
 
-static const char* role_str(ModuleRole r) {
+const char* module_role_str(uint8_t r) {
     switch (r) {
-        case MODULE_QUEEN:     return "queen";
-        case MODULE_SATELLITE: return "satellite";
-        default:               return "unconfigured";
+        case MODULE_QUEEN:      return "queen";
+        case MODULE_SATELLITE:  return "satellite";
+        case MODULE_GARDEN:     return "garden";
+        case MODULE_FOOD_STORE: return "food_store";
+        case MODULE_HEART_TREE: return "heart_tree";
+        default:                return "unconfigured";
     }
 }
+
+int module_role_from_str(const char* s) {
+    for (uint8_t r = MODULE_QUEEN; r < MODULE_ROLE_COUNT; r++) {
+        if (strcmp(s, module_role_str(r)) == 0) return r;
+    }
+    return -1;
+}
+
+static const char* role_str(ModuleRole r) { return module_role_str(r); }
 
 static const char* face_letter(int f) {
     static const char* F[] = {"N","S","W","E"};
@@ -208,6 +220,7 @@ void Coordinator::_broadcast_population() {
     msg.sender_id  = topology_my_id();
     msg.population = chamber.conker_count;
     msg.gatherers  = colony.gatherer_count;  // local count (satellites don't aggregate)
+    msg.role       = static_cast<uint8_t>(role);
 
     for (int f = 0; f < FACE_COUNT; f++) {
         if (chamber.entries[f] >= 0) {
@@ -462,6 +475,20 @@ void Coordinator::_sync_topology_to_chamber() {
                 tod_wifi_set_ssid(wcm.ssid);
                 tod_wifi_set_pass(wcm.pass);
                 Serial.printf("[coord] WiFi creds received from queen: '%s'\r\n", wcm.ssid);
+            }
+        }
+
+        // Role assignment from queen (relayed app command). No reboot —
+        // all assignable roles share satellite behaviour; the new role is
+        // echoed back via pop sync within ~5s.
+        SetRoleMessage srm;
+        if (topology_has_set_role(&srm)) {
+            if (srm.target_id == topology_my_id()
+                && srm.role > MODULE_QUEEN && srm.role < MODULE_ROLE_COUNT) {
+                role = static_cast<ModuleRole>(srm.role);
+                set_role_nvs(role);
+                Serial.printf("[coord] role assigned by queen: %s\r\n",
+                              module_role_str(srm.role));
             }
         }
     }
@@ -1245,6 +1272,40 @@ bool Coordinator::cmd_feed_colony(float amount) {
     je.food_tap = {static_cast<int8_t>(cx), static_cast<int8_t>(cy), amount};
     journal.emit(je);
     return true;
+}
+
+bool Coordinator::cmd_set_module_role(uint16_t target_id, uint8_t new_role) {
+    // Queen role is never assignable remotely — demoting the queen would
+    // orphan the colony. Queen<->satellite transitions stay on serial.
+    if (new_role <= MODULE_QUEEN || new_role >= MODULE_ROLE_COUNT) {
+        Serial.printf("[cmd] set_role: role %d not assignable\r\n", new_role);
+        return false;
+    }
+#ifdef ARDUINO
+    if (target_id == topology_my_id()) {
+        Serial.println("[cmd] set_role: refusing to re-role the queen");
+        return false;
+    }
+
+    for (int f = 0; f < FACE_COUNT; f++) {
+        const Neighbour& nb = topology_neighbour(static_cast<Face>(f));
+        if (nb.present && nb.module_id == target_id) {
+            SetRoleMessage msg;
+            msg.msg_type  = TOPO_SET_ROLE;
+            msg.sender_id = topology_my_id();
+            msg.target_id = target_id;
+            msg.role      = new_role;
+            bool ok = topology_send_to_face(static_cast<Face>(f),
+                                            (const uint8_t*)&msg, sizeof(msg));
+            Serial.printf("[cmd] set_role: 0x%04X -> %s (%s)\r\n",
+                          target_id, module_role_str(new_role),
+                          ok ? "sent" : "send failed");
+            return ok;
+        }
+    }
+    Serial.printf("[cmd] set_role: module 0x%04X not connected\r\n", target_id);
+#endif
+    return false;
 }
 
 void Coordinator::_persist_process_deaths() {

@@ -147,6 +147,13 @@ static void _poll_commands(Coordinator& coord) {
         } else if (strcmp(type, "feed_colony") == 0) {
             float amount = cmd["payload"]["amount"] | 0.0f;
             coord.cmd_feed_colony(amount);
+        } else if (strcmp(type, "set_module_role") == 0) {
+            const char* mod  = cmd["payload"]["module"] | "";
+            const char* role = cmd["payload"]["role"] | "";
+            uint16_t target = (uint16_t)strtol(mod, nullptr, 16);
+            int r = module_role_from_str(role);
+            if (target != 0 && r >= 0)
+                coord.cmd_set_module_role(target, (uint8_t)r);
         }
         // Always ack — invalid commands must not clog the queue
         if (!first) acks += ",";

@@ -201,16 +201,16 @@ static uint32_t g_ff_target_workers = 0;
 
 static void process_serial_line(const char* line) {
     // Multi-word commands
-    if (strncmp(line, "role queen", 10) == 0) {
-        Coordinator::set_role_nvs(MODULE_QUEEN);
-        Serial.println("Rebooting as queen...");
-        delay(100);
-        ESP.restart();
-    } else if (strncmp(line, "role satellite", 14) == 0) {
-        Coordinator::set_role_nvs(MODULE_SATELLITE);
-        Serial.println("Rebooting as satellite...");
-        delay(100);
-        ESP.restart();
+    if (strncmp(line, "role ", 5) == 0) {
+        int r = module_role_from_str(line + 5);
+        if (r >= MODULE_QUEEN) {
+            Coordinator::set_role_nvs(static_cast<ModuleRole>(r));
+            Serial.printf("Rebooting as %s...\r\n", line + 5);
+            delay(100);
+            ESP.restart();
+        } else {
+            Serial.println("Unknown role (queen|satellite|garden|food_store|heart_tree)");
+        }
     } else if (strcmp(line, "ota") == 0) {
         enter_ota_mode();
     } else if (strcmp(line, "push") == 0) {

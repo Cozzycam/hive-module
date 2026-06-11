@@ -229,7 +229,7 @@ export async function fetchColonies(): Promise<ColoniesListResponse | null> {
 // Queue a command for the queen (applied on her next VPS poll, ~30s)
 export async function sendCommand(
   colonyId: string,
-  type: 'name_conker' | 'feed_colony',
+  type: 'name_conker' | 'feed_colony' | 'set_module_role',
   payload: Record<string, unknown>,
 ): Promise<boolean> {
   try {

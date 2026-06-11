@@ -18,6 +18,7 @@ enum TopoMsgType : uint8_t {
     TOPO_STATE_SYNC = 0x13, // queen colony state broadcast (tod + stats)
     TOPO_ANNOUNCE   = 0x20, // queen announces chamber assignment to satellite
     TOPO_WIFI_CREDS = 0x22, // queen → satellite: WiFi credentials for solo mode
+    TOPO_SET_ROLE   = 0x23, // queen → satellite: assign module role (from app)
     TOPO_DEATH_SYNC   = 0x15,  // satellite → queen: worker died on satellite
     TOPO_GATHER_SYNC  = 0x16,  // broadcast: finger held, conkers gather
     TOPO_OTA_ANNOUNCE = 0x30, // queen → satellites: "new firmware, connect to WiFi"
@@ -80,6 +81,8 @@ struct __attribute__((packed)) PopSyncMessage {
     uint16_t population;
     // Gatherer count (added later — receiver checks length for backwards compat)
     uint16_t gatherers;
+    // Module role echo (added v94 — receiver checks length for backwards compat)
+    uint8_t  role;       // ModuleRole
 };
 
 // Chamber announcement (queen → satellite on connect)
@@ -90,6 +93,14 @@ struct __attribute__((packed)) AnnounceMessage {
     uint16_t your_id;        // satellite's module ID (echo back for confirmation)
     uint8_t  your_home_face; // face on satellite that points toward queen
     uint16_t boot_id;       // random ID generated at queen boot (changes on reboot)
+};
+
+// Role assignment (queen → satellite, relayed from app command)
+struct __attribute__((packed)) SetRoleMessage {
+    uint8_t  msg_type;   // TOPO_SET_ROLE
+    uint16_t sender_id;
+    uint16_t target_id;  // module that should adopt the role
+    uint8_t  role;       // ModuleRole
 };
 
 // WiFi credentials (queen → satellite on connect, for solo mode)
@@ -185,6 +196,10 @@ bool topology_has_gather(GatherSyncMessage* out);  // returns true + copies, cle
 // Remote population tracking (queen reads these)
 uint16_t topology_remote_population(Face f);
 uint16_t topology_remote_gatherers(Face f);
+uint8_t  topology_remote_role(Face f);  // 0 = unknown/not yet synced
+
+// Role assignment — satellite reads this
+bool topology_has_set_role(SetRoleMessage* out);  // returns true + copies once, then clears
 
 // Boundary pheromone data from neighbour (coordinator applies to local grid)
 const BoundaryPheroData& topology_boundary_phero(Face f);

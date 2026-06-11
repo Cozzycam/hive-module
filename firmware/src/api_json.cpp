@@ -183,7 +183,9 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
             char id_str[8];
             snprintf(id_str, sizeof(id_str), "%04X", nb.module_id);
             sat["id"] = id_str;
-            sat["role"] = "satellite";
+            // Actual role echoed via pop sync; fall back until first sync arrives
+            uint8_t rr = topology_remote_role(static_cast<Face>(f));
+            sat["role"] = rr ? module_role_str(rr) : "satellite";
             sat["online"] = true;
             JsonObject faces = sat["faces"].to<JsonObject>();
             const char* face_names[] = {"north", "south", "west", "east"};

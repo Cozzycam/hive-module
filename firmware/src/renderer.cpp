@@ -288,9 +288,6 @@ void Renderer::init(Arduino_Canvas* canvas, Arduino_TFT* output) {
     }
 #endif
 
-    // Sprout starts fresh each boot (grows via milestones during session)
-    _sprout_leaf_count = Cfg::MILESTONE_LEAF_BASE;
-    Serial.printf("[renderer] Sprout leaves: %d\r\n", _sprout_leaf_count);
 }
 
 void Renderer::_union_dirty_into_bounds(FlushBounds& bounds) {
@@ -494,9 +491,6 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
     unsigned long sprites_start = millis();
 #endif
 
-    // Sprout overlay (queen chamber only — per-frame, on top of floor, below entities)
-    if (ch.has_queen) _draw_sprout_overlay();
-
     // Layer 2: floor-level sprites (food, brood) — Y-sorted
     _build_floor_sprites(ch);
     _draw_sorted_sprites(_floor_sprites, _floor_sprite_count, ch);
@@ -514,9 +508,6 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
     // Weather particles cover the whole screen — force full flush when active
     if (g_weather.valid && g_weather.condition >= WX_DRIZZLE)
         _flush_bounds.full = true;
-
-    // Check for milestone leaf growth (queen chamber only)
-    if (ch.has_queen) _check_milestone(ch);
 
     _frame++;
 
@@ -738,174 +729,6 @@ void Renderer::_draw_edge_decor_direct() {
         _gfx->drawPixel(mx + 4, my + 1, moss_col);
     }
 
-    // Sprout is drawn per-frame as an overlay (not cached) — see _draw_sprout_overlay()
-}
-
-// ================================================================
-//  Sprout overlay (per-frame, sun-tracking, milestone leaves)
-// ================================================================
-
-static constexpr int SPROUT_X = SCREEN_W - 24;
-static constexpr int SPROUT_Y = SCREEN_H - 50;
-
-void Renderer::_draw_sprout_overlay() {
-    // Sun-tracking tilt: sinusoidal curve across day_progress
-    // day_progress 0.0=sunrise, 0.5=noon, 1.0=sunset
-    // Tilt west at sunrise (negative), upright at noon, east at sunset (positive)
-    // At night: droop slightly
-    float tilt;
-    if (g_tod.night_factor > 0.5f) {
-        // Night: gentle droop
-        tilt = -0.15f;
-    } else {
-        // Day: track sun with smooth sinusoidal curve
-        float sun = (g_tod.day_progress - 0.5f) * 2.0f;  // -1 to +1
-        // Smoothstep-ish: use sine for ease in/out
-        tilt = sinf(sun * 1.5708f) * 0.35f;  // ±0.35 rad (~20°)
-        // Blend toward droop as night approaches
-        tilt = tilt * (1.0f - g_tod.night_factor * 2.0f);
-    }
-
-    // Advance shimmer/grow animations
-    if (_leaf_grow_t >= 0.0f) {
-        _leaf_grow_t += 0.033f;  // ~0.5s at 30fps
-        if (_leaf_grow_t >= 1.0f) _leaf_grow_t = -1.0f;
-    }
-    if (_leaf_shimmer_t >= 0.0f) {
-        _leaf_shimmer_t += 0.016f;  // ~2s at 30fps
-        if (_leaf_shimmer_t >= 1.0f) _leaf_shimmer_t = -1.0f;
-    }
-
-    // Mark sprout region dirty (fixed position, ~40x60px area)
-    _mark_dirty(SPROUT_X - 20, SPROUT_Y - 10, 44, 60);
-    _draw_sprout_direct(SPROUT_X, SPROUT_Y, tilt, _sprout_leaf_count,
-                        _leaf_grow_t, _leaf_shimmer_t);
-}
-
-void Renderer::_draw_sprout_direct(int x, int y, float tilt_angle, int leaf_count,
-                                   float grow_t, float shimmer_t) {
-    uint8_t stem_r = _lerp8(60, 40, _nf);
-    uint8_t stem_g = _lerp8(130, 70, _nf);
-    uint8_t stem_b = _lerp8(50, 45, _nf);
-    uint16_t stem_col = _rgb565(stem_r, stem_g, stem_b);
-
-    uint8_t leaf_r = _lerp8(80, 50, _nf);
-    uint8_t leaf_g = _lerp8(160, 90, _nf);
-    uint8_t leaf_b = _lerp8(60, 55, _nf);
-    uint16_t leaf_col = _rgb565(leaf_r, leaf_g, leaf_b);
-    uint16_t leaf_dark = _rgb565(leaf_r * 3/4, leaf_g * 3/4, leaf_b * 3/4);
-    uint16_t leaf_lite = _rgb565(
-        (uint8_t)fminf(255, leaf_r * 1.2f),
-        (uint8_t)fminf(255, leaf_g * 1.15f),
-        leaf_b);
-
-    // Gold shimmer color
-    uint16_t gold = _rgb565(
-        _lerp8(leaf_r, 255, 0.6f),
-        _lerp8(leaf_g, 200, 0.5f),
-        _lerp8(leaf_b, 50, 0.3f));
-
-    int tilt_px = (int)(sinf(tilt_angle) * 5.0f);
-    int stem_h = 24;
-
-    // Stem
-    for (int dy = 0; dy < stem_h; dy++) {
-        int sx = x + (int)(tilt_px * (float)dy / stem_h);
-        _gfx->drawPixel(sx, y - dy, stem_col);
-        if (dy < 10) _gfx->drawPixel(sx + 1, y - dy, stem_col);
-        if (dy < 4)  _gfx->drawPixel(sx + 2, y - dy, stem_col);
-    }
-
-    // Leaves — dynamic spacing for higher counts
-    int spacing = (leaf_count <= 4) ? 7 : (leaf_count <= 6 ? 5 : 4);
-    int draw_count = (leaf_count > 7) ? 7 : leaf_count;
-
-    for (int lf = 0; lf < draw_count; lf++) {
-        int ly = y - 8 - lf * spacing;
-        int lx = x + (int)(tilt_px * (float)(y - ly) / stem_h);
-        bool right = (lf % 2 == 0);
-        int dir = right ? 1 : -1;
-
-        // If this is the newest leaf and it's growing, scale it
-        bool is_growing = (lf == draw_count - 1 && grow_t >= 0.0f);
-        float scale = is_growing ? (grow_t < 1.0f ? grow_t * grow_t * (3.0f - 2.0f * grow_t) : 1.0f) : 1.0f;
-
-        // Determine pixel color: gold shimmer sweep from base to tip
-        bool shimmer_active = (shimmer_t >= 0.0f && shimmer_t < 1.0f);
-        float shimmer_strength = 0.0f;
-        if (shimmer_active) {
-            // Shimmer sweeps from base (lf=0) to tip (lf=max) over the animation
-            float leaf_pos = (float)lf / fmaxf(1.0f, (float)(draw_count - 1));
-            float wave = sinf((shimmer_t * 2.0f - leaf_pos) * 3.14159f);
-            shimmer_strength = fmaxf(0.0f, wave) * (1.0f - shimmer_t * 0.5f);
-        }
-
-        uint16_t lc  = shimmer_strength > 0.01f ?
-            _rgb565(_lerp8(leaf_r, 255, shimmer_strength * 0.6f),
-                    _lerp8(leaf_g, 200, shimmer_strength * 0.5f),
-                    _lerp8(leaf_b, 50,  shimmer_strength * 0.3f)) : leaf_col;
-        uint16_t ld  = shimmer_strength > 0.01f ? lc : leaf_dark;
-        uint16_t ll  = shimmer_strength > 0.01f ? gold : leaf_lite;
-
-        if (scale < 0.2f) continue;  // too small to draw
-
-        // Leaf body
-        _gfx->drawPixel(lx + dir * 1, ly - 1, lc);
-        _gfx->drawPixel(lx + dir * 2, ly - 1, lc);
-        if (scale > 0.5f) _gfx->drawPixel(lx + dir * 3, ly - 1, ll);
-        _gfx->drawPixel(lx + dir * 1, ly,     lc);
-        _gfx->drawPixel(lx + dir * 2, ly,     ld);  // vein
-        _gfx->drawPixel(lx + dir * 3, ly,     lc);
-        if (scale > 0.5f) {
-            _gfx->drawPixel(lx + dir * 4, ly, lc);
-            _gfx->drawPixel(lx + dir * 5, ly, ld);
-        }
-        _gfx->drawPixel(lx + dir * 1, ly + 1, lc);
-        _gfx->drawPixel(lx + dir * 2, ly + 1, lc);
-        if (scale > 0.5f) {
-            _gfx->drawPixel(lx + dir * 3, ly + 1, ld);
-            _gfx->drawPixel(lx + dir * 4, ly + 1, ld);
-        }
-    }
-
-    // Tip bud
-    int tip_x = x + tilt_px;
-    int tip_y = y - stem_h;
-    _gfx->drawPixel(tip_x,     tip_y,     leaf_col);
-    _gfx->drawPixel(tip_x,     tip_y - 1, leaf_col);
-    _gfx->drawPixel(tip_x + 1, tip_y,     leaf_lite);
-    _gfx->drawPixel(tip_x - 1, tip_y,     leaf_lite);
-    _gfx->drawPixel(tip_x,     tip_y - 2, leaf_lite);
-}
-
-// ================================================================
-//  Milestone leaf check
-// ================================================================
-
-void Renderer::_check_milestone(const Chamber& ch) {
-    uint16_t born = ch.colony->total_workers_born;
-    if (born <= _last_milestone_born) return;
-    _last_milestone_born = born;
-
-    int target = Cfg::MILESTONE_LEAF_BASE + born / Cfg::MILESTONE_LEAF_INTERVAL;
-    if (target > Cfg::MILESTONE_LEAF_CAP) target = Cfg::MILESTONE_LEAF_CAP;
-
-    if (target > _sprout_leaf_count) {
-        _sprout_leaf_count = target;
-        _leaf_grow_t = 0.0f;
-        _leaf_shimmer_t = 0.0f;
-
-        Serial.printf("[milestone] New leaf! leaves=%d (workers born=%d)\r\n",
-                      _sprout_leaf_count, born);
-    }
-}
-
-void Renderer::reset_sprout() {
-    _sprout_leaf_count = Cfg::MILESTONE_LEAF_BASE;
-    _last_milestone_born = 0;
-    _leaf_grow_t = -1.0f;
-    _leaf_shimmer_t = -1.0f;
-    Serial.println("[renderer] Sprout reset to base");
 }
 
 // ================================================================
@@ -947,7 +770,6 @@ bool Renderer::_tick_boot_splash(const Chamber& ch) {
         _gfx->fillScreen(outer);
         _draw_floor_uncached();
 #endif
-        if (ch.has_queen) _draw_sprout_overlay();
         if (ch.has_queen) _draw_queen(ch);
 
         // Dim entire framebuffer to create smooth fade-in

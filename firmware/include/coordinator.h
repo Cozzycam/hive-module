@@ -14,8 +14,19 @@
 enum ModuleRole : uint8_t {
     MODULE_UNCONFIGURED = 0,
     MODULE_QUEEN        = 1,
-    MODULE_SATELLITE    = 2,
+    MODULE_SATELLITE    = 2,   // plain extension chamber
+    // Specialised roles (v94+) — all behave as satellites until their
+    // behaviours are built; assignable from the app via set_module_role.
+    MODULE_GARDEN       = 3,
+    MODULE_FOOD_STORE   = 4,
+    MODULE_HEART_TREE   = 5,
+
+    MODULE_ROLE_COUNT,
 };
+
+// Role name helpers (shared by serial commands, app commands, API JSON)
+const char* module_role_str(uint8_t r);
+int         module_role_from_str(const char* s);  // -1 if unknown
 
 // Topology graph entry — one per known module
 struct TopoGraphEntry {
@@ -69,6 +80,7 @@ public:
     // Remote commands — queued by the companion app, applied via VPS poll
     bool cmd_rename_conker(uint32_t id, const char* new_name);
     bool cmd_feed_colony(float amount);
+    bool cmd_set_module_role(uint16_t target_id, uint8_t new_role);
 
     // Journal — called from main.cpp with drained EventBus events
     void _journal_from_bus_events(const Event* events, int count, uint32_t tick_num);

@@ -57,9 +57,13 @@ export interface Food {
   days_remaining: number;
 }
 
+// Module roles — every module runs identical firmware; the role is just
+// assigned data. Non-queen roles are assignable from the app.
+export type ModuleRole = 'queen' | 'satellite' | 'garden' | 'food_store' | 'heart_tree';
+
 export interface Module {
   id: string;
-  role: 'queen' | 'satellite';
+  role: ModuleRole;
   online: boolean;
   faces: {
     north?: string | null;

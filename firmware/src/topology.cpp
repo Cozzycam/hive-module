@@ -80,6 +80,11 @@ extern uint32_t g_handoffs_dropped;
 // Remote population per face (updated by TOPO_POP_SYNC messages)
 static volatile uint16_t _remote_pop[FACE_COUNT] = {0, 0, 0, 0};
 static volatile uint16_t _remote_gatherers[FACE_COUNT] = {0, 0, 0, 0};
+static volatile uint8_t  _remote_role[FACE_COUNT] = {0, 0, 0, 0};
+
+// Role assignment (single-shot, set by ISR, read by main loop)
+static volatile bool _set_role_pending = false;
+static SetRoleMessage _set_role_msg;
 
 // Gather sync (volatile, polled by coordinator)
 static volatile bool _gather_pending = false;
@@ -208,6 +213,7 @@ static void _disconnect_face(Face f, const char* reason) {
     _neighbours[f].module_id = 0;
     _remote_pop[f] = 0;
     _remote_gatherers[f] = 0;
+    _remote_role[f] = 0;
     memset(&_boundary_phero[f], 0, sizeof(BoundaryPheroData));
 
     Serial.printf("[topo] face %s disconnected (%s)\r\n", FACE_NAMES[f], reason);
@@ -266,6 +272,9 @@ static void _on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int l
     } else if (msg_type == TOPO_WIFI_CREDS && len >= (int)sizeof(WifiCredsMessage)) {
         memcpy(&_wifi_creds_msg, data, sizeof(WifiCredsMessage));
         _wifi_creds_pending = true;
+    } else if (msg_type == TOPO_SET_ROLE && len >= (int)sizeof(SetRoleMessage)) {
+        memcpy(&_set_role_msg, data, sizeof(SetRoleMessage));
+        _set_role_pending = true;
     } else if (msg_type == TOPO_STATE_SYNC && len >= 15) {
         // Queen state broadcast — update g_tod + weather on satellite
         const StateSyncMessage* ss = reinterpret_cast<const StateSyncMessage*>(data);
@@ -288,9 +297,11 @@ static void _on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int l
         for (int f = 0; f < FACE_COUNT; f++) {
             if (_faces[f].link == LINK_CONNECTED && _faces[f].neighbour_id == ps->sender_id) {
                 _remote_pop[f] = ps->population;
-                // Gatherers field (added later — check length for backwards compat)
-                _remote_gatherers[f] = (len >= (int)sizeof(PopSyncMessage))
+                // Gatherers + role fields (added later — check length for backwards compat)
+                _remote_gatherers[f] = (len >= (int)offsetof(PopSyncMessage, role))
                                      ? ps->gatherers : 0;
+                _remote_role[f] = (len >= (int)sizeof(PopSyncMessage))
+                                ? ps->role : 0;
                 break;
             }
         }
@@ -767,6 +778,17 @@ uint16_t topology_remote_population(Face f) {
 
 uint16_t topology_remote_gatherers(Face f) {
     return _remote_gatherers[f];
+}
+
+uint8_t topology_remote_role(Face f) {
+    return _remote_role[f];
+}
+
+bool topology_has_set_role(SetRoleMessage* out) {
+    if (!_set_role_pending) return false;
+    memcpy(out, (const void*)&_set_role_msg, sizeof(SetRoleMessage));
+    _set_role_pending = false;
+    return true;
 }
 
 const BoundaryPheroData& topology_boundary_phero(Face f) {

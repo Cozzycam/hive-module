@@ -6,9 +6,6 @@
  * Floor rendering: warm textured chamber with radial gradient,
  * grain specks, and edge-decor objects. Three palette states
  * (day/dusk/night) driven by g_tod.night_factor.
- *
- * Sprout is rendered per-frame as an overlay (not cached) so it
- * can animate: sun-tracking tilt, milestone leaf growth + shimmer.
  */
 #pragma once
 
@@ -99,9 +96,6 @@ public:
     void start_boot_splash();
     bool is_splash_active() const { return _boot_splash_active; }
 
-    // Reset sprout to base state (call on colony reset)
-    void reset_sprout();
-
 private:
     Arduino_Canvas* _gfx = nullptr;
     Arduino_TFT* _output = nullptr;  // Direct access to display for windowed flush
@@ -133,12 +127,6 @@ private:
     static constexpr int NUM_GRAIN = 30;
     GrainSpeck _grain[NUM_GRAIN];
 
-    // Sprout state
-    int   _sprout_leaf_count = 3;
-    uint16_t _last_milestone_born = 0;
-    float _leaf_grow_t = -1.0f;     // -1 = idle, 0..1 = new leaf growing
-    float _leaf_shimmer_t = -1.0f;  // -1 = idle, 0..1 = gold shimmer
-
     // Boot splash state
     bool _boot_splash_active = false;
     unsigned long _boot_splash_start_ms = 0;
@@ -161,14 +149,6 @@ private:
     // Floor rendering — uncached fallback
     void _draw_floor_uncached();
     void _draw_edge_decor_direct();
-
-    // Sprout (per-frame overlay, not cached)
-    void _draw_sprout_overlay();
-    void _draw_sprout_direct(int x, int y, float tilt_angle, int leaf_count,
-                             float grow_t, float shimmer_t);
-
-    // Milestone check
-    void _check_milestone(const Chamber& ch);
 
     // Boot splash
     bool _tick_boot_splash(const Chamber& ch);

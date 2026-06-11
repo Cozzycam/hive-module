@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 93;
+constexpr uint32_t FW_VERSION = 94;
 
 namespace Cfg {
 
@@ -298,10 +298,5 @@ constexpr int   INTERACTION_COOLDOWN_TICKS = 40;    // ~5s at 8 tps
 constexpr int MAX_CONKERS  = 200;
 constexpr int MAX_BROOD      = 100;
 constexpr int MAX_FOOD_PILES = 64;
-
-// ---- Milestone leaves (sprout) ----
-constexpr int MILESTONE_LEAF_INTERVAL = 100;  // workers born per new leaf
-constexpr int MILESTONE_LEAF_BASE     = 3;    // starting leaf count
-constexpr int MILESTONE_LEAF_CAP      = 7;    // max leaves
 
 } // namespace Cfg
