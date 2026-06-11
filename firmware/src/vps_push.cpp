@@ -11,14 +11,19 @@
 #include <Preferences.h>
 #include <mbedtls/md.h>
 #include <ArduinoJson.h>
+#include <esp_random.h>
 
 static constexpr uint32_t PUSH_INTERVAL_MS = 30000;  // 30s
-static constexpr int MAX_SECRET_LEN = 64;
+static constexpr int MAX_SECRET_LEN = 80;
 static constexpr int MAX_URL_LEN = 128;
+
+// Default endpoint — not a secret; any module enrolls itself on first push
+static const char* DEFAULT_ENDPOINT = "http://hive.campbell.fish";
 
 static char _secret[MAX_SECRET_LEN] = {};
 static char _endpoint[MAX_URL_LEN] = {};
 static bool _configured = false;
+static bool _enrolled = false;  // VPS has adopted our secret (TOFU done)
 static uint32_t _last_push_ms = 0;
 static uint32_t _last_pushed_unix = 0;  // cursor: events after this have been pushed
 static uint32_t _push_ok_count = 0;
@@ -50,13 +55,38 @@ static void _load_config() {
     prefs.getString("secret", _secret, MAX_SECRET_LEN);
     prefs.getString("endpoint", _endpoint, MAX_URL_LEN);
     _last_pushed_unix = prefs.getULong("cursor", 0);
+    _enrolled = prefs.getBool("enrolled", false);
     prefs.end();
 
-    _configured = (_secret[0] != '\0' && _endpoint[0] != '\0');
-    if (_configured)
-        Serial.printf("[vps] configured — endpoint: %s\r\n", _endpoint);
-    else
-        Serial.println("[vps] not configured (use 'vps secret <key>' and 'vps endpoint <url>')");
+    // Self-provision: a fresh module mints its own secret and uses the
+    // default endpoint — the VPS adopts the secret on first contact (TOFU).
+    // Survives factory reset ("vps" namespace is deliberately kept).
+    bool changed = false;
+    if (_secret[0] == '\0') {
+        for (int i = 0; i < 16; i++) {
+            uint32_t r = esp_random();
+            snprintf(_secret + i * 4, 5, "%04x", (unsigned)(r & 0xFFFF));
+        }
+        _enrolled = false;
+        changed = true;
+        Serial.println("[vps] minted device secret (will enroll on first push)");
+    }
+    if (_endpoint[0] == '\0') {
+        strlcpy(_endpoint, DEFAULT_ENDPOINT, MAX_URL_LEN);
+        changed = true;
+    }
+    if (changed) {
+        Preferences wp;
+        wp.begin("vps", false);
+        wp.putString("secret", _secret);
+        wp.putString("endpoint", _endpoint);
+        wp.putBool("enrolled", _enrolled);
+        wp.end();
+    }
+
+    _configured = true;
+    Serial.printf("[vps] configured — endpoint: %s%s\r\n", _endpoint,
+                  _enrolled ? "" : " (not yet enrolled)");
 }
 
 static void _save_cursor() {
@@ -83,12 +113,26 @@ static bool _post(const char* path, const char* body, int body_len) {
     http.begin(client, url);
     http.addHeader("Content-Type", "application/json");
     http.addHeader("X-HMAC-SHA256", hmac);
+    // Until the VPS has adopted our secret, offer it for first-contact
+    // enrollment. Dropped from all requests once enrolled.
+    if (!_enrolled) http.addHeader("X-Enroll-Secret", _secret);
     http.setTimeout(10000);
 
     int code = http.POST((uint8_t*)body, body_len);
     http.end();
 
-    if (code >= 200 && code < 300) { _push_ok_count++; return true; }
+    if (code >= 200 && code < 300) {
+        _push_ok_count++;
+        if (!_enrolled) {
+            _enrolled = true;
+            Preferences prefs;
+            prefs.begin("vps", false);
+            prefs.putBool("enrolled", true);
+            prefs.end();
+            Serial.println("[vps] enrolled with VPS");
+        }
+        return true;
+    }
     _push_fail_count++;
     if (code > 0)
         Serial.printf("[vps] POST %s — HTTP %d\r\n", path, code);
@@ -233,9 +277,11 @@ void vps_push_tick(Coordinator& coord) {
 
 void vps_push_set_secret(const char* secret) {
     strlcpy(_secret, secret, MAX_SECRET_LEN);
+    _enrolled = false;  // re-offer the new secret on next push
     Preferences prefs;
     prefs.begin("vps", false);
     prefs.putString("secret", _secret);
+    prefs.putBool("enrolled", false);
     prefs.end();
     _configured = (_secret[0] != '\0' && _endpoint[0] != '\0');
     Serial.println("[vps] secret updated");
@@ -256,6 +302,7 @@ void vps_push_status() {
     Serial.printf("  configured: %s\r\n", _configured ? "yes" : "no");
     Serial.printf("  endpoint:   %s\r\n", _endpoint[0] ? _endpoint : "(not set)");
     Serial.printf("  secret:     %s\r\n", _secret[0] ? "(set)" : "(not set)");
+    Serial.printf("  enrolled:   %s\r\n", _enrolled ? "yes" : "no");
     Serial.printf("  wifi:       %s\r\n", WiFi.isConnected() ? "connected" : "disconnected");
     uint32_t ago = (millis() - _last_push_ms) / 1000;
     Serial.printf("  last push:  %lus ago\r\n", ago);

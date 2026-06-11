@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Hive Colony VPS Server
  * Receives snapshots + events from the queen via HTTPS POST.
  * Serves the same API shape back to the companion app.
@@ -53,6 +53,12 @@ db.exec(`
     payload TEXT,
     created_at INTEGER DEFAULT (unixepoch()),
     acked_at INTEGER DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS colony_secrets (
+    colony_id TEXT PRIMARY KEY,
+    secret TEXT NOT NULL,
+    enrolled_at INTEGER DEFAULT (unixepoch())
   );
 
   CREATE TABLE IF NOT EXISTS feedback (
@@ -154,10 +160,43 @@ function authMiddleware(req, res, next) {
   next();
 }
 
+function verifyWith(secret, body, signature) {
+  const expected = crypto.createHmac('sha256', secret).update(body).digest('hex');
+  try {
+    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature || ''));
+  } catch { return false; }
+}
+
+// Per-colony auth with self-enrollment (TOFU).
+// Order: per-colony secret → legacy global secret → first-contact enrollment
+// (unknown colony + X-Enroll-Secret header that signs the body correctly).
+function colonyAuth(req, res, next) {
+  const cid = req.params.colony_id;
+  const sig = req.headers['x-hmac-sha256'];
+  const body = req.body;
+
+  const sec = db.prepare(`SELECT secret FROM colony_secrets WHERE colony_id = ?`).get(cid);
+  if (sec && sig && verifyWith(sec.secret, body, sig)) return next();
+
+  if (!HMAC_SECRET || (sig && verifyHmac(body, sig))) return next();  // legacy global
+
+  const enroll = req.headers['x-enroll-secret'];
+  const known = db.prepare(`SELECT 1 FROM colonies WHERE colony_id = ?`).get(cid);
+  if (!sec && !known && typeof enroll === 'string'
+      && enroll.length >= 32 && enroll.length <= 128
+      && sig && verifyWith(enroll, body, sig)) {
+    db.prepare(`INSERT INTO colony_secrets (colony_id, secret) VALUES (?, ?)`).run(cid, enroll);
+    console.log(`colony enrolled (TOFU): ${cid}`);
+    return next();
+  }
+
+  return res.status(401).json({ error: 'invalid signature' });
+}
+
 // ---- Queen push endpoints ----
 
 // POST /api/v1/colonies/:colony_id/snapshot
-app.post('/api/v1/colonies/:colony_id/snapshot', authMiddleware, (req, res) => {
+app.post('/api/v1/colonies/:colony_id/snapshot', colonyAuth, (req, res) => {
   const { colony_id } = req.params;
   const body = req.body.toString();
   let parsed;
@@ -168,7 +207,7 @@ app.post('/api/v1/colonies/:colony_id/snapshot', authMiddleware, (req, res) => {
 });
 
 // POST /api/v1/colonies/:colony_id/events
-app.post('/api/v1/colonies/:colony_id/events', authMiddleware, (req, res) => {
+app.post('/api/v1/colonies/:colony_id/events', colonyAuth, (req, res) => {
   const { colony_id } = req.params;
   const body = req.body.toString();
   let parsed;
@@ -261,7 +300,7 @@ app.get('/api/v1/colonies/:colony_id/commands/pending', (req, res) => {
 });
 
 // POST /api/v1/colonies/:colony_id/commands/ack  (queen, HMAC) body: {ids:[...]}
-app.post('/api/v1/colonies/:colony_id/commands/ack', authMiddleware, (req, res) => {
+app.post('/api/v1/colonies/:colony_id/commands/ack', colonyAuth, (req, res) => {
   let parsed;
   try { parsed = JSON.parse(req.body.toString()); } catch { return res.status(400).json({ error: 'invalid json' }); }
   const ids = Array.isArray(parsed.ids) ? parsed.ids : [];
