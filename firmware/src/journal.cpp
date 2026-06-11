@@ -14,7 +14,7 @@ static const char* JEVT_NAMES[] = {
     "food_discovered", "food_delivered", "chamber_crossing",
     "milestone", "colony_event", "tended_by_assigned",
     "bond_formed", "bond_broken", "challenge_start",
-    "challenge_end", "trait_earned", "mourning"
+    "challenge_end", "trait_earned", "mourning", "play"
 };
 
 static const char* CHALLENGE_NAMES[] = {
@@ -121,6 +121,10 @@ void EventJournal::_serialize_entry(const JournalEntry& e, char* buf, size_t buf
     }
     case JEVT_MOURNING:
         data["dead_id"] = e.mourning.dead_id;
+        break;
+    case JEVT_PLAY:
+        data["kind"] = e.play.kind == 0 ? "parade" : "play";
+        data["participants"] = e.play.participants;
         break;
     }
 

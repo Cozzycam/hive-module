@@ -38,6 +38,7 @@ export interface Digest {
   traitsEarned: { name: string; trait: string }[];
   challenges: string[];                   // descriptions
   milestones: string[];
+  parades: { leader: string; joined: number }[];
   isEmpty: boolean;
 }
 
@@ -54,6 +55,7 @@ export function computeDigest(
   const traitsEarned: { name: string; trait: string }[] = [];
   const challenges: string[] = [];
   const milestones: string[] = [];
+  const parades: { leader: string; joined: number }[] = [];
   let foodDeliveries = 0;
   let foodTotal = 0;
   const foragerTrips = new Map<number, number>();
@@ -93,6 +95,9 @@ export function computeDigest(
       case 'milestone':
         milestones.push(`${String(data.kind).replace(/_/g, ' ')} (${data.value})`);
         break;
+      case 'play':
+        parades.push({ leader: evName, joined: Math.max(0, ((data.participants as number) || 2) - 1) });
+        break;
       default:
         break;
     }
@@ -109,13 +114,13 @@ export function computeDigest(
   const isEmpty = births.length === 0 && deaths.length === 0
     && foodDeliveries === 0 && newBonds.length === 0
     && traitsEarned.length === 0 && challenges.length === 0
-    && milestones.length === 0;
+    && milestones.length === 0 && parades.length === 0;
 
   return {
     sinceUnix,
     awayHours: awaySecs / 3600,
     births, deaths, foodDeliveries, foodTotal, topForager,
-    newBonds, traitsEarned, challenges, milestones, isEmpty,
+    newBonds, traitsEarned, challenges, milestones, parades, isEmpty,
   };
 }
 
@@ -159,6 +164,13 @@ export function digestLines(d: Digest): { icon: string; text: string }[] {
   }
   if (d.newBonds.length > 3) {
     lines.push({ icon: '\u{1F91D}', text: `…and ${d.newBonds.length - 3} more new friendships.` });
+  }
+
+  if (d.parades.length === 1) {
+    const p = d.parades[0];
+    lines.push({ icon: '\u{1F389}', text: `${p.leader} led a parade — ${p.joined} joined in.` });
+  } else if (d.parades.length > 1) {
+    lines.push({ icon: '\u{1F389}', text: `${d.parades.length} parades wound through the chamber. Spirits are high.` });
   }
 
   for (const t of d.traitsEarned) {

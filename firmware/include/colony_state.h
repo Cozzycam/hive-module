@@ -18,6 +18,7 @@ struct ColonyState {
 
     float daily_burn() const;
     float food_pressure() const;
+    float play_surplus() const;   // 0..1 — deep pantry frees time for play
     float target_gatherer_fraction() const;
     void  update_recovery_boost();
 };

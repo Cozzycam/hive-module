@@ -199,9 +199,10 @@ void Conker::tick(Chamber& ch, float dt) {
     }
 
     // Zoomies sprint multiplier (re-applied here because speed resets each
-    // tick). Firefly chases use a gentler night-dash.
+    // tick). Firefly chases use a gentler night-dash; parades a gentle trot.
     if (state == STATE_ZOOMIES) {
         speed *= (zoomie_target <= -2) ? Cfg::FIREFLY_CHASE_SPEED_MULT
+               : (zoomie_style == 1)   ? Cfg::PARADE_SPEED_MULT
                                        : Cfg::ZOOMIE_SPEED_MULT;
     }
 
@@ -446,6 +447,7 @@ void Conker::_pick_task(Chamber& ch) {
     idle_ticks_remaining = 0;
     zoomie_target = -1;
     zoomie_ticks = 0;
+    zoomie_style = 0;
     flair_kind = 0;
     flair_ticks = 0;
     flair_casts_used = 0;
@@ -975,6 +977,16 @@ void Conker::_do_idle(Chamber& ch) {
             }
             return;
         }
+        if (idle_microstate == 5) {
+            // Pirouette: steady twirl in place, spin direction by identity
+            if ((idle_micro_ticks & 1) == 0) {
+                float fdx = facing_dx, fdy = facing_dy;
+                if (id & 1) { facing_dx = -fdy; facing_dy = fdx;  }
+                else        { facing_dx = fdy;  facing_dy = -fdx; }
+                last_dx = facing_dx; last_dy = facing_dy;
+            }
+            return;
+        }
         if (idle_microstate == 1) {
             // Drift — queen bias only at dusk/night
             int cx = cell_x(), cy = cell_y();
@@ -1099,11 +1111,12 @@ void Conker::_do_cannibalize(Chamber& ch) {
 void Conker::_do_zoomies(Chamber& ch) {
     zoomie_ticks--;
 
-    // End conditions: timer expired, chaser's target invalid
+    // End conditions: timer expired, chaser's target invalid or stopped playing
     bool done = (zoomie_ticks <= 0);
     if (!done && zoomie_target >= 0
         && (zoomie_target >= ch.conker_count
-            || !ch.conkers[zoomie_target].alive)) {
+            || !ch.conkers[zoomie_target].alive
+            || ch.conkers[zoomie_target].state != STATE_ZOOMIES)) {
         done = true;
     }
     if (!done && zoomie_target <= -2) {
@@ -1118,6 +1131,7 @@ void Conker::_do_zoomies(Chamber& ch) {
         speed = Cfg::ROLE_PARAMS[role].speed;
         zoomie_target = -1;
         zoomie_ticks = 0;
+        zoomie_style = 0;
         interaction_cooldown = Cfg::INTERACTION_COOLDOWN_TICKS;
         idle_ticks_remaining = g_rng.rand_int(Cfg::IDLE_REST_MIN_TICKS,
                                                Cfg::IDLE_REST_MAX_TICKS);
@@ -1255,6 +1269,18 @@ void Conker::_tick_idle(Chamber& ch) {
 
 void Conker::_pick_idle_microstate(Chamber& ch) {
     has_target_cell = false;
+
+    // Pirouette: a well-fed daytime idler sometimes just... twirls.
+    // The curious ones most of all.
+    float surplus = ch.colony->play_surplus();
+    if (surplus > 0.0f && g_tod.phase == PHASE_DAY && !sleeping
+            && g_rng.rand_float() < Cfg::PIROUETTE_CHANCE * surplus
+                                    * (0.5f + personality[PERS_EXPLORATION])) {
+        idle_microstate = 5;
+        speed = Cfg::ROLE_PARAMS[role].speed;
+        idle_micro_ticks = Cfg::PIROUETTE_TICKS;
+        return;
+    }
 
     float r = g_rng.rand_float();
     if (r < Cfg::IDLE_HOLD_WEIGHT) {
@@ -1446,14 +1472,19 @@ bool Conker::_flair_allowed(Chamber& ch) {
 
 int Conker::_max_foragers(Chamber& ch) {
     float pressure = ch.colony->food_pressure();
+    float surplus  = ch.colony->play_surplus();
     float frac = Cfg::BASE_FORAGER_FRACTION
         + (1.0f - Cfg::BASE_FORAGER_FRACTION)
           * (pressure / Cfg::FAMINE_SLOWDOWN_PRESSURE);
+    // A deep pantry winds the commute down — the freed hands go play
+    frac *= 1.0f - Cfg::SURPLUS_FORAGE_DAMP * surplus;
     // Waggle recruitment: a fresh delivery advertises a productive source.
     // The boost rides food_delivery_signal, so sustained deliveries hold the
     // swarm open and it dissolves as the signal decays. Recruits navigate by
-    // the laid trail gradient — nothing is steered directly.
-    frac += Cfg::RECRUIT_SIGNAL_FRACTION * (ch.food_delivery_signal / 200.0f);
+    // the laid trail gradient — nothing is steered directly. When the pantry
+    // is full the advert falls on deaf ears (breaks the forage feedback loop).
+    frac += Cfg::RECRUIT_SIGNAL_FRACTION * (ch.food_delivery_signal / 200.0f)
+          * (1.0f - surplus);
     if (frac > 1.0f) frac = 1.0f;
     int mf = static_cast<int>(ch.colony->population * frac + 0.5f);
     return (mf < 1) ? 1 : mf;

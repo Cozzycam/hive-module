@@ -140,7 +140,8 @@ export type EventType =
   | 'food_tap' | 'food_discovered' | 'food_delivered'
   | 'chamber_crossing' | 'milestone' | 'colony_event'
   | 'tended_by_assigned' | 'bond_formed' | 'bond_broken'
-  | 'challenge_start' | 'challenge_end' | 'trait_earned';
+  | 'challenge_start' | 'challenge_end' | 'trait_earned'
+  | 'mourning' | 'play';
 
 export interface ColonyEvent {
   tick: number;

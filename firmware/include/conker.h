@@ -108,9 +108,10 @@ struct Conker {
     uint32_t sleep_until_ms       = 0;   // wake time (millis)
     uint32_t sleep_cooldown_ms    = 0;   // can't sleep again until this time
 
-    // Zoomies (daytime chase)
+    // Zoomies (daytime chase) and parades (follow-the-leader)
     int16_t  zoomie_target        = -1;  // index of conker being chased
     int16_t  zoomie_ticks         = 0;   // countdown to end
+    uint8_t  zoomie_style         = 0;   // 0=chase (sprint), 1=parade (trot)
 
     // Forage flair (cosmetic; reset on every task pick)
     uint8_t  flair_kind           = 0;   // 0=none, 1=search cast, 2=pile inspect linger

@@ -12,7 +12,7 @@ const EVENT_CATEGORIES: { label: string; types: EventType[] }[] = [
   { label: 'Births', types: ['hatch'] },
   { label: 'Deaths', types: ['death'] },
   { label: 'Milestones', types: ['milestone', 'colony_event'] },
-  { label: 'Social', types: ['bond_formed', 'bond_broken', 'tended_by_assigned'] },
+  { label: 'Social', types: ['bond_formed', 'bond_broken', 'tended_by_assigned', 'play'] },
   { label: 'Challenges', types: ['challenge_start', 'challenge_end'] },
   { label: 'Traits', types: ['trait_earned', 'role_change'] },
 ];
@@ -226,6 +226,11 @@ function formatEvent(ev: ColonyEvent, rosterNames: Map<number, string>): { icon:
       return {
         icon: '\u{1F56F}\u{FE0F}',
         description: `${name} stood vigil for a fallen friend.`,
+      };
+    case 'play' as EventType:
+      return {
+        icon: '\u{1F389}',
+        description: `${name} led a parade — ${Math.max(0, ((data.participants as number) || 2) - 1)} joined in.`,
       };
     case 'food_group' as EventType:
       return {

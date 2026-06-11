@@ -1043,6 +1043,19 @@ void Coordinator::_journal_from_bus_events(const Event* events, int count,
             // Not currently emitted with enough data — skip for now
             break;
 
+        case EVT_PARADE_STARTED: {
+            int li = ev.parade.leader_idx;
+            if (li < chamber.conker_count && chamber.conkers[li].alive) {
+                je.type = JEVT_PLAY;
+                je.lilguy_id = chamber.conkers[li].id;
+                strlcpy(je.who, chamber.conkers[li].name, sizeof(je.who));
+                je.play.kind = 0;  // parade
+                je.play.participants = ev.parade.participants;
+                journal.emit(je);
+            }
+            break;
+        }
+
         default:
             // Other events handled directly (hatch, death, crossing, food_tap)
             break;

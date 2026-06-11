@@ -7,6 +7,17 @@ float ColonyState::daily_burn() const {
          + brood_seed * Cfg::SEED_FOOD_PER_DAY;
 }
 
+float ColonyState::play_surplus() const {
+    // The happy mirror of food_pressure: 0 with a thin pantry, ramping to 1
+    // as stores deepen. Drives play behaviours and winds foraging down.
+    float burn = daily_burn();
+    if (burn <= 0.0f) return 0.0f;
+    float days = food_store / burn;
+    float t = (days - Cfg::PLAY_SURPLUS_MIN_DAYS)
+            / (Cfg::PLAY_SURPLUS_MAX_DAYS - Cfg::PLAY_SURPLUS_MIN_DAYS);
+    return fmaxf(0.0f, fminf(1.0f, t));
+}
+
 float ColonyState::food_pressure() const {
     float burn = daily_burn();
     float target = burn * Cfg::FOOD_PRESSURE_BUFFER_DAYS;

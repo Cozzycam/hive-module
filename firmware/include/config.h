@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 94;
+constexpr uint32_t FW_VERSION = 95;
 
 namespace Cfg {
 
@@ -221,6 +221,24 @@ constexpr float ZOOMIE_THIRD_CHANCE        = 0.30f;  // chance to recruit a 3rd 
 constexpr float ZOOMIE_SPEED_MULT          = 4.0f;   // speed multiplier vs normal
 constexpr int   ZOOMIE_MIN_TICKS           = 16;     // ~2s at 8 tps
 constexpr int   ZOOMIE_MAX_TICKS           = 24;     // ~3s at 8 tps
+
+// ---- Surplus playtime ----
+// A deep pantry frees the colony to play: foraging winds down and play
+// behaviours scale up with play_surplus() (0 at MIN_DAYS of food, 1 at MAX).
+constexpr float PLAY_SURPLUS_MIN_DAYS  = 7.0f;
+constexpr float PLAY_SURPLUS_MAX_DAYS  = 28.0f;
+constexpr float SURPLUS_FORAGE_DAMP    = 0.7f;   // max forager-fraction reduction
+constexpr float ZOOMIE_SURPLUS_BOOST   = 2.0f;   // extra zoomie chance at full surplus
+constexpr int   ZOOMIE_SURPLUS_TICKS   = 24;     // extra max duration at full surplus
+constexpr float PARADE_CHANCE          = 0.35f;  // playful encounter becomes a parade
+constexpr float PARADE_MIN_SURPLUS     = 0.30f;  // parades need a comfortable pantry
+constexpr float PARADE_SPEED_MULT      = 1.4f;   // gentle trot, not a sprint
+constexpr int   PARADE_MIN_TICKS       = 64;     // ~8s at 8 tps
+constexpr int   PARADE_MAX_TICKS       = 112;    // ~14s at 8 tps
+constexpr int   PARADE_MAX_FOLLOWERS   = 4;
+constexpr int   PARADE_RECRUIT_RADIUS  = 4;      // cells, manhattan
+constexpr float PIROUETTE_CHANCE       = 0.12f;  // idle microstate roll at full surplus
+constexpr int   PIROUETTE_TICKS        = 12;     // ~1.5s twirl
 
 // ---- Metabolic scaling (3/4-power law) ----
 constexpr float METABOLIC_SCALE_FLOOR = 0.7f;

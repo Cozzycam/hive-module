@@ -279,56 +279,91 @@ void Chamber::_detect_proximity_interactions() {
                 // Grief is private — no games or greetings around mourners
                 if (a.state == STATE_MOURNING || b.state == STATE_MOURNING) return;
 
-                // Zoomies: daytime only, both idle, not stacked, not already zooming
+                // Zoomies & parades: daytime only, both idle, not stacked,
+                // not already zooming. A deep pantry makes play more likely
+                // (the hands freed from foraging) and sometimes turns the
+                // chase into a follow-the-leader parade.
+                float surplus = colony->play_surplus();
                 if (g_tod.phase == PHASE_DAY
                         && a.state == STATE_IDLE && b.state == STATE_IDLE
                         && !in_stack[ai] && !in_stack[bi]
                         && a.zoomie_ticks <= 0 && b.zoomie_ticks <= 0
-                        && g_rng.rand_float() < Cfg::ZOOMIE_CHANCE) {
-                    int duration = g_rng.rand_int(Cfg::ZOOMIE_MIN_TICKS,
-                                                   Cfg::ZOOMIE_MAX_TICKS);
-                    // A = runner (random waypoints), B chases A
+                        && g_rng.rand_float() < Cfg::ZOOMIE_CHANCE
+                                * (1.0f + Cfg::ZOOMIE_SURPLUS_BOOST * surplus)) {
+                    bool parade = surplus >= Cfg::PARADE_MIN_SURPLUS
+                               && g_rng.rand_float() < Cfg::PARADE_CHANCE;
+                    int duration = parade
+                        ? g_rng.rand_int(Cfg::PARADE_MIN_TICKS, Cfg::PARADE_MAX_TICKS)
+                        : g_rng.rand_int(Cfg::ZOOMIE_MIN_TICKS,
+                                         Cfg::ZOOMIE_MAX_TICKS
+                                         + static_cast<int>(surplus * Cfg::ZOOMIE_SURPLUS_TICKS));
+                    uint8_t style = parade ? 1 : 0;
+                    float   mult  = parade ? Cfg::PARADE_SPEED_MULT : Cfg::ZOOMIE_SPEED_MULT;
+
+                    // A = leader/runner (random waypoints), B follows A
                     a.state = STATE_ZOOMIES;
                     a.zoomie_target = -1;  // runner
+                    a.zoomie_style = style;
                     a.zoomie_ticks = duration;
-                    a.speed = Cfg::ROLE_PARAMS[a.role].speed * Cfg::ZOOMIE_SPEED_MULT;
+                    a.speed = Cfg::ROLE_PARAMS[a.role].speed * mult;
                     a.has_target = false;
                     a.has_target_cell = false;
                     a.idle_ticks_remaining = 0;
 
                     b.state = STATE_ZOOMIES;
-                    b.zoomie_target = ai;  // chases A
+                    b.zoomie_target = ai;  // follows A
+                    b.zoomie_style = style;
                     b.zoomie_ticks = duration;
-                    b.speed = Cfg::ROLE_PARAMS[b.role].speed * Cfg::ZOOMIE_SPEED_MULT;
+                    b.speed = Cfg::ROLE_PARAMS[b.role].speed * mult;
                     b.has_target = false;
                     b.has_target_cell = false;
                     b.idle_ticks_remaining = 0;
 
-                    Serial.printf("[zoomies] %s chases %s (%d ticks)\r\n",
-                                  b.name, a.name, duration);
-
-                    // Try to recruit a third nearby idle lil guy
-                    if (g_rng.rand_float() < Cfg::ZOOMIE_THIRD_CHANCE) {
+                    // Recruit more: a parade chains followers behind the
+                    // tail; a chase sometimes picks up a third
+                    int participants = 2;
+                    int tail = bi;
+                    int max_extra = parade ? Cfg::PARADE_MAX_FOLLOWERS - 1 : 1;
+                    if (parade || g_rng.rand_float() < Cfg::ZOOMIE_THIRD_CHANCE) {
                         int acx = a.cell_x(), acy = a.cell_y();
-                        for (int ci = 0; ci < conker_count; ci++) {
+                        int radius = parade ? Cfg::PARADE_RECRUIT_RADIUS : 3;
+                        for (int ci = 0; ci < conker_count
+                                && participants - 2 < max_extra; ci++) {
                             if (ci == ai || ci == bi) continue;
                             auto& c = conkers[ci];
                             if (!c.alive || c.state != STATE_IDLE || c.sleeping) continue;
                             if (in_stack[ci] || c.anim_remaining_ticks > 0) continue;
                             if (c.interaction_cooldown > 0 || c.zoomie_ticks > 0) continue;
                             int d = abs(c.cell_x() - acx) + abs(c.cell_y() - acy);
-                            if (d <= 3) {
-                                // Chain: A runs, B chases A, C chases B
+                            if (d <= radius) {
                                 c.state = STATE_ZOOMIES;
-                                c.zoomie_target = bi;  // chases B
+                                c.zoomie_target = tail;  // each follows the one before
+                                c.zoomie_style = style;
                                 c.zoomie_ticks = duration;
-                                c.speed = Cfg::ROLE_PARAMS[c.role].speed * Cfg::ZOOMIE_SPEED_MULT;
+                                c.speed = Cfg::ROLE_PARAMS[c.role].speed * mult;
                                 c.has_target = false;
                                 c.has_target_cell = false;
                                 c.idle_ticks_remaining = 0;
-                                break;
+                                tail = ci;
+                                participants++;
                             }
                         }
+                    }
+
+                    if (parade) {
+                        Serial.printf("[parade] %s leads %d others on a parade (%d ticks)\r\n",
+                                      a.name, participants - 1, duration);
+                        if (event_bus) {
+                            Event ev = {};
+                            ev.type = EVT_PARADE_STARTED;
+                            ev.tick = tick_num;
+                            ev.parade.leader_idx = static_cast<uint8_t>(ai);
+                            ev.parade.participants = static_cast<uint8_t>(participants);
+                            event_bus->emit(ev);
+                        }
+                    } else {
+                        Serial.printf("[zoomies] %s chases %s (%d ticks)\r\n",
+                                      b.name, a.name, duration);
                     }
                     return;
                 }

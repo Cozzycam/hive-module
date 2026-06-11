@@ -24,6 +24,7 @@ enum EventType : uint8_t {
     EVT_CONKER_DIED        = 8,
     EVT_HANDOFF_INCOMING    = 9,
     EVT_HANDOFF_OUTGOING    = 10,
+    EVT_PARADE_STARTED      = 11,
 };
 
 // ---- Interaction subtypes ----
@@ -71,6 +72,11 @@ struct HandoffData {
     uint16_t neighbour_id; // module_id of the neighbour
 };
 
+struct ParadeData {
+    uint8_t leader_idx;    // slot index in conkers[]
+    uint8_t participants;  // total conkers in the line, leader included
+};
+
 // ---- Event struct (tagged union) ----
 
 struct Event {
@@ -84,6 +90,7 @@ struct Event {
         YoungHatchedData       young_hatched;
         PositionData           position;  // queen_laid_egg, young_died, conker_died
         HandoffData            handoff;   // handoff_incoming, handoff_outgoing
+        ParadeData             parade;    // parade_started
     };
 };
 
