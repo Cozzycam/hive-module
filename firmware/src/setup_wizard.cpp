@@ -320,14 +320,21 @@ void setup_wizard_ceremony(Arduino_Canvas* gfx, const char* colony_id,
     gfx->flush();
     delay(3200);
 
-    // Scene 3: where to watch over them
+    // Scene 3: the name matters — hold here until the user confirms.
+    // (It also lives in the HUD strip from now on, but first impressions.)
     gfx->fillScreen(COL_BG);
-    _text_centered(gfx, 110, 2, COL_TEXT, "watch over them at");
-    _text_centered(gfx, 150, 2, COL_AMBER, "hive.campbell.fish/app");
-    _text_centered(gfx, 200, 2, COL_DIM, "your colony:");
-    _text_centered(gfx, 226, 2, COL_TEXT,
-                   (colony_id && colony_id[0]) ? colony_id : "(on screen soon)");
+    _text_centered(gfx, 48, 2, COL_DIM, "your colony is called");
+    _text_centered(gfx, 84, 3, COL_AMBER,
+                   (colony_id && colony_id[0]) ? colony_id : "the colony");
+    _text_centered(gfx, 138, 2, COL_TEXT, "you'll pick this name in the app:");
+    _text_centered(gfx, 164, 2, COL_AMBER, "hive.campbell.fish/app");
+    Button ok_btn{120, 220, 240, 56};
+    _draw_button(gfx, ok_btn, "got it - begin!", COL_GREEN);
     gfx->flush();
-    delay(4000);
+    while (true) {
+        TouchEvent t;
+        if (touch_poll(&t) && _hit(ok_btn, t)) break;
+        delay(5);
+    }
     // Boot splash follows — the chamber fades in with queen and eggs
 }

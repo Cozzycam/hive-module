@@ -106,6 +106,12 @@ static void _store_founded(uint32_t t, bool reliable) {
     _prefs.end();
 }
 
+static char _colony_name[25] = {};
+
+void hud_set_colony_name(const char* name) {
+    strlcpy(_colony_name, name ? name : "", sizeof(_colony_name));
+}
+
 static uint32_t _colony_age_days() {
     if (_colony_founded_unix == 0) return 0;
     if (g_tod.unix_time <= _colony_founded_unix) return 0;
@@ -527,6 +533,13 @@ void hud_draw(Arduino_Canvas* gfx, const Chamber& ch) {
     x += _draw_text(gfx, x, text_y, buf, ink);
     x += 5;
     x += _draw_text(gfx, x, text_y, "days food", ink2);
+
+    // --- Colony name, centered — so the module always tells you who it is ---
+    if (_colony_name[0]) {
+        int cw = _text_width(_colony_name);
+        int name_x = (SCREEN_W - cw) / 2;
+        if (name_x > x + 10) _draw_text(gfx, name_x, text_y, _colony_name, acc);
+    }
 
     // --- Right-aligned: weather + time + day phase + pulse dot ---
     static const char* DAY_PHASE_LABELS[] = { "night", "dawn", "day", "dusk" };

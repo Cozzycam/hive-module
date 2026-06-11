@@ -607,6 +607,7 @@ void setup() {
     bool queen = sim.coordinator.is_queen();
     if (queen) {
         hud_init();
+        hud_set_colony_name(sim.coordinator.registry.manifest().colony_id);
         if (wizard_choice == SETUP_FOUNDED) {
             setup_wizard_ceremony(gfx,
                 sim.coordinator.registry.manifest().colony_id,

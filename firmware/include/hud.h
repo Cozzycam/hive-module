@@ -11,6 +11,9 @@
 void hud_init();
 void hud_draw(Arduino_Canvas* gfx, const Chamber& ch);
 
+// Colony name shown centered in the strip — set once after persistence init
+void hud_set_colony_name(const char* name);
+
 // Battery indicator — works on both queen and satellite.
 // Call hud_battery_init() once in setup (after Wire.begin).
 // Call hud_draw_battery() every frame.

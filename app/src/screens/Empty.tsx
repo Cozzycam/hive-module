@@ -1,7 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { HIVE } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 import { testLanConnection, setStoredLanIp, setStoredColonyId, fetchColonies } from '../api/client';
+
+function agoLabel(unix: number): string {
+  if (!unix) return 'never seen';
+  const s = Math.max(0, Math.floor(Date.now() / 1000) - unix);
+  if (s < 90) return 'active just now';
+  if (s < 3600) return `active ${Math.round(s / 60)}m ago`;
+  if (s < 86400) return `active ${Math.round(s / 3600)}h ago`;
+  return `active ${Math.round(s / 86400)}d ago`;
+}
 
 const DEMO_COLONY_ID = '3b5ddabf8c9459bd602b3c7a';
 
@@ -88,40 +97,22 @@ function ConnectModal({ onClose, onConnected }: {
   onClose: () => void;
   onConnected: (colonyId: string) => void;
 }) {
+  const [colonies, setColonies] = useState<{ colony_id: string; last_snapshot_unix: number }[] | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [lanIp, setLanIp] = useState('');
-  const [colonyId, setColonyId] = useState('');
-  const [status, setStatus] = useState<'idle' | 'testing' | 'error'>('idle');
-  const [errorMsg, setErrorMsg] = useState('');
 
-  const handleConnect = async () => {
-    setStatus('testing');
-    setErrorMsg('');
+  useEffect(() => {
+    fetchColonies().then(r => {
+      const list = r?.colonies ? [...r.colonies] : [];
+      list.sort((a, b) => b.last_snapshot_unix - a.last_snapshot_unix);
+      setColonies(list);
+    });
+  }, []);
 
-    if (lanIp) {
-      const ok = await testLanConnection(lanIp);
-      if (ok) {
-        setStoredLanIp(lanIp);
-      }
-    }
-
-    // Try to auto-detect colony ID (most recently updated)
-    let resolvedColonyId = colonyId;
-    if (!resolvedColonyId) {
-      const colonies = await fetchColonies();
-      if (colonies && colonies.colonies.length > 0) {
-        const sorted = [...colonies.colonies].sort((a, b) => b.last_snapshot_unix - a.last_snapshot_unix);
-        resolvedColonyId = sorted[0].colony_id;
-      }
-    }
-
-    if (!resolvedColonyId) {
-      setStatus('error');
-      setErrorMsg('Could not detect a colony. Enter the colony ID manually, or check the connection.');
-      return;
-    }
-
-    setStoredColonyId(resolvedColonyId);
-    onConnected(resolvedColonyId);
+  const pick = async (id: string) => {
+    if (lanIp && await testLanConnection(lanIp)) setStoredLanIp(lanIp);
+    setStoredColonyId(id);
+    onConnected(id);
   };
 
   return (
@@ -141,76 +132,81 @@ function ConnectModal({ onClose, onConnected }: {
           padding: 24,
           maxWidth: 360,
           width: '100%',
+          maxHeight: '80vh',
+          overflowY: 'auto',
         }}
       >
-        <h2 style={{ fontSize: SIZES.lg, fontWeight: 700, color: HIVE.ink, margin: '0 0 16px' }}>
-          Connect to a Module
+        <h2 style={{ fontSize: SIZES.lg, fontWeight: 700, color: HIVE.ink, margin: '0 0 4px' }}>
+          Choose your colony
         </h2>
+        <p style={{ fontSize: SIZES.sm, color: HIVE.dimText, margin: '0 0 16px' }}>
+          The name is shown on your module's screen, in the bar at the top.
+        </p>
 
-        <label style={{ display: 'block', marginBottom: 12 }}>
-          <div style={{ fontSize: SIZES.sm, color: HIVE.dimText, marginBottom: 4 }}>
-            Queen's local IP (optional)
+        {colonies === null ? (
+          <div style={{ fontSize: SIZES.sm, color: HIVE.dimText, padding: '12px 0' }}>
+            Looking for colonies…
           </div>
+        ) : colonies.length === 0 ? (
+          <div style={{ fontSize: SIZES.sm, color: HIVE.dimText, padding: '12px 0' }}>
+            No colonies found yet — give the module a minute after setup.
+          </div>
+        ) : (
+          colonies.map(c => (
+            <button
+              key={c.colony_id}
+              onClick={() => pick(c.colony_id)}
+              style={{
+                display: 'block', width: '100%', textAlign: 'left',
+                background: HIVE.cream, border: `1px solid ${HIVE.sand}`,
+                borderRadius: 12, padding: '10px 14px', marginBottom: 8,
+                cursor: 'pointer',
+              }}
+            >
+              <div style={{ fontSize: SIZES.base, fontWeight: 600, color: HIVE.ink }}>
+                {c.colony_id}
+              </div>
+              <div style={{ fontSize: SIZES.xs, color: HIVE.dimText }}>
+                {agoLabel(c.last_snapshot_unix)}
+              </div>
+            </button>
+          ))
+        )}
+
+        <button
+          onClick={() => setShowAdvanced(!showAdvanced)}
+          style={{
+            background: 'none', border: 'none', color: HIVE.dimText,
+            fontSize: SIZES.xs, cursor: 'pointer', padding: '8px 0',
+            textDecoration: 'underline',
+          }}
+        >
+          {showAdvanced ? 'hide advanced' : 'advanced (local IP)'}
+        </button>
+        {showAdvanced && (
           <input
             type="text"
             value={lanIp}
             onChange={e => setLanIp(e.target.value)}
-            placeholder="e.g. 192.168.1.42"
+            placeholder="Queen's local IP (optional)"
             style={{
-              width: '100%', padding: '8px 12px', borderRadius: 8,
+              width: '100%', boxSizing: 'border-box', padding: '8px 12px', borderRadius: 8,
               border: `1px solid ${HIVE.sand}`, fontSize: SIZES.base,
-              background: HIVE.cream,
+              background: HIVE.cream, marginBottom: 8,
             }}
           />
-        </label>
-
-        <label style={{ display: 'block', marginBottom: 16 }}>
-          <div style={{ fontSize: SIZES.sm, color: HIVE.dimText, marginBottom: 4 }}>
-            Colony ID (auto-detected if empty)
-          </div>
-          <input
-            type="text"
-            value={colonyId}
-            onChange={e => setColonyId(e.target.value)}
-            placeholder="Auto-detect from VPS"
-            style={{
-              width: '100%', padding: '8px 12px', borderRadius: 8,
-              border: `1px solid ${HIVE.sand}`, fontSize: SIZES.base,
-              background: HIVE.cream,
-            }}
-          />
-        </label>
-
-        {status === 'error' && (
-          <div style={{ fontSize: SIZES.sm, color: HIVE.alert, marginBottom: 12 }}>
-            {errorMsg}
-          </div>
         )}
 
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            onClick={onClose}
-            style={{
-              flex: 1, padding: '10px 0', borderRadius: 12,
-              border: `1px solid ${HIVE.sand}`, background: 'transparent',
-              color: HIVE.soil, fontSize: SIZES.base, cursor: 'pointer',
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleConnect}
-            disabled={status === 'testing'}
-            style={{
-              flex: 1, padding: '10px 0', borderRadius: 12,
-              border: 'none', background: HIVE.accent,
-              color: HIVE.white, fontSize: SIZES.base, fontWeight: 600,
-              cursor: 'pointer', opacity: status === 'testing' ? 0.6 : 1,
-            }}
-          >
-            {status === 'testing' ? 'Connecting...' : 'Connect'}
-          </button>
-        </div>
+        <button
+          onClick={onClose}
+          style={{
+            width: '100%', padding: '10px 0', borderRadius: 12,
+            border: `1px solid ${HIVE.sand}`, background: 'transparent',
+            color: HIVE.soil, fontSize: SIZES.base, cursor: 'pointer', marginTop: 4,
+          }}
+        >
+          Cancel
+        </button>
       </div>
     </div>
   );
