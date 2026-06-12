@@ -287,6 +287,32 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
         ))}
       </div>
 
+      {/* Her Majesty — first among equals (feedback: queen belongs in the list) */}
+      {filter !== 'deceased' && snapshot?.queen_name && (
+        <Card style={{
+          background: palette.cardBg,
+          display: 'flex', alignItems: 'center', gap: 12,
+          borderLeft: `3px solid ${HIVE.accent}`,
+        }}>
+          <img
+            src="/app/queen.png"
+            alt="Queen"
+            style={{ width: 44, height: 44, imageRendering: 'pixelated', flexShrink: 0 }}
+          />
+          <div>
+            <div style={{ fontSize: SIZES.base, fontWeight: 600, color: palette.text }}>
+              Queen {snapshot.queen_name}
+            </div>
+            <div style={{ fontSize: SIZES.sm, color: palette.dimText }}>
+              Mother of the colony
+              {snapshot.founded_unix
+                ? ` · reigning ${Math.max(1, Math.round((Date.now() / 1000 - snapshot.founded_unix) / 86400))} day${Math.round((Date.now() / 1000 - snapshot.founded_unix) / 86400) !== 1 ? 's' : ''}`
+                : ''}
+            </div>
+          </div>
+        </Card>
+      )}
+
       {charList.length === 0 && (
         <div style={{ color: palette.dimText, fontSize: SIZES.base, textAlign: 'center', padding: 32 }}>
           {filter === 'alive' ? 'No living characters found' : 'No characters found'}
@@ -384,17 +410,26 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
       <h1 style={{ fontSize: SIZES.xxl, fontWeight: 700, color: palette.text, margin: 0 }}>
         {char.name}
         {!isDeceased && (
+          // A proper labelled pill — the bare pencil was invisible (Amber)
           <button
             onClick={handleRename}
             disabled={renaming}
             aria-label="Rename"
             style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              fontSize: 16, color: HIVE.sand, marginLeft: 8,
-              opacity: renaming ? 0.4 : 1, verticalAlign: 'middle',
+              background: 'none',
+              border: `1.5px solid ${HIVE.accent}`,
+              borderRadius: 12,
+              cursor: 'pointer',
+              fontSize: SIZES.sm,
+              fontWeight: 600,
+              color: HIVE.accent,
+              padding: '3px 10px',
+              marginLeft: 10,
+              opacity: renaming ? 0.4 : 1,
+              verticalAlign: 'middle',
             }}
           >
-            {'✎'}
+            {'✎'} Rename
           </button>
         )}
       </h1>

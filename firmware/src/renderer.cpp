@@ -251,7 +251,7 @@ static void _update_night_palette() {
 // ---- Sprite scale factors ----
 // Queen at 2.0x (88px) is the 1.00 anchor
 static constexpr float SCALE_QUEEN          = 2.0f;   // 44x44 base → 88px
-static constexpr float SCALE_EGG            = 3.5f;   //  4x4  base → 14px
+static constexpr float SCALE_EGG            = 4.5f;   //  4x4  base → 18px (Amber: eggs should pop)
 static constexpr float SCALE_SEED           = 4.4f;   //  6x6  base → 26px (was LARVA)
 static constexpr float SCALE_HUSK           = 3.2f;   //  8x8  base → 26px (uses old pupa sprite)
 static constexpr float SCALE_FOOD_PILE      = 1.5f;   // 12x8  base → 18x12
@@ -1125,9 +1125,14 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
                                 SCALE_FOOD_PILE);
             break;
         }
-        case SK_EGG:
+        case SK_EGG: {
+            // Soft ring under each egg so the clutch pops against the floor
+            int r = sd.size_px / 2 + 2;
+            _mark_dirty(sd.render_x - r - 1, sd.render_y - r - 1, 2 * r + 3, 2 * r + 3);
+            _gfx->drawCircle(sd.render_x, sd.render_y, r, _pal_egg_colour);
             _draw_sprite_scaled(sd.render_x, sd.render_y, EGG, EGG_W, EGG_H, SCALE_EGG);
             break;
+        }
         case SK_SEED:
             _draw_sprite_scaled(sd.render_x, sd.render_y, LARVA, LARVA_W, LARVA_H, SCALE_SEED);
             break;
@@ -1716,11 +1721,13 @@ void Renderer::_draw_weather() {
         _wx_snow_count = 0;
         _wx_lightning_cooldown = 0;
         _wx_lightning_flash = 0;
+        // All rain falls fast — slow 2px drizzle drops read as snowflakes
+        // (Amber). Volume is the difference between conditions, not speed.
         switch (wx) {
-        case WX_DRIZZLE:    _wx_init_drops(12, 2.0f, 3.0f); break;
-        case WX_RAIN:       _wx_init_drops(35, 4.0f, 6.0f); break;
-        case WX_HEAVY_RAIN: _wx_init_drops(50, 7.0f, 10.0f); break;
-        case WX_THUNDERSTORM: _wx_init_drops(40, 5.0f, 7.0f); break;
+        case WX_DRIZZLE:    _wx_init_drops(12, 4.5f, 6.5f); break;
+        case WX_RAIN:       _wx_init_drops(35, 6.0f, 8.5f); break;
+        case WX_HEAVY_RAIN: _wx_init_drops(50, 8.0f, 11.0f); break;
+        case WX_THUNDERSTORM: _wx_init_drops(40, 6.5f, 9.0f); break;
         case WX_SNOW:       _wx_init_snow(20); break;
         case WX_FOG:        _wx_init_fog(); break;
         default: break;
@@ -1733,11 +1740,11 @@ void Renderer::_draw_weather() {
         uint16_t col;
         int len;
         if (wx == WX_DRIZZLE) {
-            col = _rgb565(150, 165, 190); len = 2;
+            col = _rgb565(150, 165, 190); len = 3;
         } else if (wx == WX_RAIN) {
-            col = _rgb565(130, 145, 180); len = 3;
+            col = _rgb565(130, 145, 180); len = 4;
         } else {
-            col = _rgb565(110, 125, 170); len = 4;
+            col = _rgb565(110, 125, 170); len = 5;
         }
         for (int i = 0; i < _wx_drop_count; i++) {
             auto& d = _wx_drops[i];

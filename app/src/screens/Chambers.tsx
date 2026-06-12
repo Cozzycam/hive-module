@@ -256,6 +256,11 @@ function ModuleDetail({ module, allModules, onBack, palette }: {
       </Card>
       )}
 
+      {/* Royal diplomacy — a care package may cross a closed border */}
+      {module.role === 'foreign_queen' && (
+        <GiftCarePackageCard moduleId={module.id} palette={palette} />
+      )}
+
       {/* Face connections */}
       <Card style={{ background: palette.cardBg }}>
         <div style={{ fontSize: SIZES.xs, fontWeight: 600, color: palette.dimText, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
@@ -278,5 +283,65 @@ function ModuleDetail({ module, allModules, onBack, palette }: {
         )}
       </Card>
     </div>
+  );
+}
+
+// Cross-border care package — same spirit as the home one, its own cooldown.
+// The receiving queen sizes the gift to her own colony's appetite.
+const GIFT_PKG_KEY = 'hive_last_gift_pkg_ms';
+const GIFT_PKG_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+
+function GiftCarePackageCard({ moduleId, palette }: {
+  moduleId: string;
+  palette: { text: string; dimText: string; cardBg: string };
+}) {
+  const [state, setState] = useState<'ready' | 'sending' | 'sent' | 'cooldown'>(() => {
+    const last = Number(localStorage.getItem(GIFT_PKG_KEY) || 0);
+    return Date.now() - last < GIFT_PKG_COOLDOWN_MS ? 'cooldown' : 'ready';
+  });
+
+  const handleSend = async () => {
+    if (state !== 'ready') return;
+    const colonyId = getStoredColonyId();
+    if (!colonyId) return;
+    setState('sending');
+    const ok = await sendCommand(colonyId, 'gift_care_package', { module: moduleId });
+    if (ok) {
+      localStorage.setItem(GIFT_PKG_KEY, String(Date.now()));
+      setState('sent');
+    } else {
+      setState('ready');
+    }
+  };
+
+  const label = state === 'sending' ? 'Sending…'
+    : state === 'sent' ? 'Caravan dispatched to the border \u{1F381}'
+    : state === 'cooldown' ? 'A gift was sent recently'
+    : 'Send them a care package \u{1F381}';
+
+  return (
+    <Card style={{ background: palette.cardBg }}>
+      <div style={{ fontSize: SIZES.xs, fontWeight: 600, color: palette.dimText, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+        Royal Diplomacy
+      </div>
+      <div style={{ fontSize: SIZES.sm, color: palette.dimText, marginBottom: 4 }}>
+        Borders stay closed, but a care package may cross. Their queen decides
+        how it feeds her colony.
+      </div>
+      <button
+        onClick={handleSend}
+        disabled={state !== 'ready'}
+        style={{
+          marginTop: 8, width: '100%', padding: '8px 0',
+          background: 'none', border: `1px solid ${HIVE.sand}`,
+          borderRadius: 16, fontSize: SIZES.sm,
+          color: state === 'ready' ? palette.text : palette.dimText,
+          cursor: state === 'ready' ? 'pointer' : 'default',
+          opacity: state === 'cooldown' ? 0.6 : 1,
+        }}
+      >
+        {label}
+      </button>
+    </Card>
   );
 }

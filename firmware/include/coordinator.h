@@ -87,6 +87,7 @@ public:
     bool cmd_feed_colony(float amount);
     bool cmd_set_module_role(uint16_t target_id, uint8_t new_role);
     bool cmd_set_floor_tint(uint16_t target_id, uint8_t r, uint8_t g, uint8_t b);
+    bool cmd_gift_care_package(uint16_t target_id);
 
     // Journal — called from main.cpp with drained EventBus events
     void _journal_from_bus_events(const Event* events, int count, uint32_t tick_num);
@@ -135,6 +136,7 @@ private:
 
     void _receive_death_syncs();
     void _send_death_syncs();
+    void _receive_gifts();
 
     // Dedup table for incoming handoffs (one seq per face, 0xFFFF = never seen)
     uint16_t _last_seen_seq[FACE_COUNT] = {0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF};

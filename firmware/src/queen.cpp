@@ -93,6 +93,21 @@ bool Queen::_can_lay(Chamber& ch) {
     return true;
 }
 
+// Eggs gather in a clutch beside the queen — a tight ring around one nest
+// hollow so multiple eggs read as a single nest rather than scattered dots
+// (Amber: eggs should pop and cluster; a nursery module role can take this
+// over properly later).
+static void _clutch_spot(int qx, int qy, int index, int& ex, int& ey) {
+    static const int8_t OFF_X[] = { 0, 1, 0, 1, -1,  0,  1, -1, 2 };
+    static const int8_t OFF_Y[] = { 0, 0, 1, 1,  0, -1, -1,  1, 0 };
+    int nx = qx + 3, ny = qy + 2;  // nest hollow just off her right shoulder
+    if (nx > Cfg::GRID_WIDTH - 3)  nx = Cfg::GRID_WIDTH - 3;
+    if (ny > Cfg::GRID_HEIGHT - 3) ny = Cfg::GRID_HEIGHT - 3;
+    int k = index % 9;
+    ex = nx + OFF_X[k];
+    ey = ny + OFF_Y[k];
+}
+
 void Queen::_lay_founding(Chamber& ch, float dt) {
     if (eggs_laid >= Cfg::FOUNDER_COHORT_SIZE) {
         // All founding eggs laid, pause until first worker hatches
@@ -114,15 +129,9 @@ void Queen::_lay_founding(Chamber& ch, float dt) {
         if (consumed > 0) reserves += consumed;
         return;
     }
-    // Place around queen, just outside her sprite (~3 cells from center)
-    int dx, dy;
-    for (int att = 0; att < 20; att++) {
-        dx = g_rng.rand_int(-4, 4);
-        dy = g_rng.rand_int(-4, 4);
-        if (abs(dx) + abs(dy) >= 3 && (abs(dx) > 2 || abs(dy) > 2))
-            break;
-    }
-    int ex = x + dx, ey = y + dy;
+    // Place in the clutch beside the queen
+    int ex, ey;
+    _clutch_spot(x, y, eggs_laid, ex, ey);
     if (ch.in_bounds(ex, ey)) {
         ch.add_brood_with_duration(ex, ey, Cfg::FOUNDER_DURATIONS_MS[eggs_laid]);
         eggs_laid++;
@@ -160,15 +169,9 @@ void Queen::_lay_established(Chamber& ch, float dt) {
 
         ch.colony->food_store -= Cfg::EGG_FOOD_COST;
 
-        // Place around queen, just outside her sprite (~3 cells from center)
-        int dx, dy;
-        for (int att = 0; att < 20; att++) {
-            dx = g_rng.rand_int(-4, 4);
-            dy = g_rng.rand_int(-4, 4);
-            if (abs(dx) + abs(dy) >= 3 && (abs(dx) > 2 || abs(dy) > 2))
-                break;
-        }
-        int ex = x + dx, ey = y + dy;
+        // Place in the clutch beside the queen
+        int ex, ey;
+        _clutch_spot(x, y, eggs_laid, ex, ey);
         if (ch.in_bounds(ex, ey)) {
             ch.add_brood(ex, ey, Cfg::DEFAULT_BROOD_ROLE);
             eggs_laid++;

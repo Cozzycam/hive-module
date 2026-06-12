@@ -72,6 +72,8 @@ enum ColonyEventKind : uint8_t {
     COLONY_MODULE_CONNECTED   = 1,
     COLONY_MODULE_DISCONNECTED = 2,
     COLONY_FOREIGN_QUEEN      = 3,   // met a neighbouring sovereign colony
+    COLONY_GIFT_SENT          = 4,   // sent a care package across the border
+    COLONY_GIFT_RECEIVED      = 5,   // a care package arrived from next door
 };
 
 // ---- EventJournal ----

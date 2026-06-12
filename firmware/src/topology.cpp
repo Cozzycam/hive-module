@@ -115,6 +115,10 @@ static AnnounceMessage _announce_msg;
 static volatile bool _wifi_creds_pending = false;
 static WifiCredsMessage _wifi_creds_msg;
 
+// Care package from a neighbouring queen (single-shot)
+static volatile bool _gift_food_pending = false;
+static GiftFoodMessage _gift_food_msg;
+
 // OTA cascade (single-shot flags, set by ISR, read by main loop)
 static volatile bool     _ota_announce_pending = false;
 static volatile uint32_t _ota_announce_version = 0;
@@ -291,6 +295,9 @@ static void _on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int l
     } else if (msg_type == TOPO_SET_TINT && len >= (int)sizeof(SetTintMessage)) {
         memcpy(&_set_tint_msg, data, sizeof(SetTintMessage));
         _set_tint_pending = true;
+    } else if (msg_type == TOPO_GIFT_FOOD && len >= (int)sizeof(GiftFoodMessage)) {
+        memcpy(&_gift_food_msg, data, sizeof(GiftFoodMessage));
+        _gift_food_pending = true;
     } else if (msg_type == TOPO_STATE_SYNC && len >= 15) {
         // Queen state broadcast — update g_tod + weather on satellite
         if (!_accept_state_sync) return;
@@ -851,6 +858,13 @@ bool topology_has_announce(AnnounceMessage* out) {
     if (!_announce_pending) return false;
     memcpy(out, &_announce_msg, sizeof(AnnounceMessage));
     _announce_pending = false;
+    return true;
+}
+
+bool topology_has_gift_food(GiftFoodMessage* out) {
+    if (!_gift_food_pending) return false;
+    memcpy(out, (const void*)&_gift_food_msg, sizeof(GiftFoodMessage));
+    _gift_food_pending = false;
     return true;
 }
 

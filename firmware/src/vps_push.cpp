@@ -207,6 +207,10 @@ static void _poll_commands(Coordinator& coord) {
             if (target != 0)
                 coord.cmd_set_floor_tint(target, (rgb >> 16) & 0xFF,
                                          (rgb >> 8) & 0xFF, rgb & 0xFF);
+        } else if (strcmp(type, "gift_care_package") == 0) {
+            const char* mod = cmd["payload"]["module"] | "";
+            uint16_t target = (uint16_t)strtol(mod, nullptr, 16);  // 0 = any neighbour
+            coord.cmd_gift_care_package(target);
         }
         // Always ack — invalid commands must not clog the queue
         if (!first) acks += ",";

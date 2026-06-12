@@ -20,6 +20,7 @@ enum TopoMsgType : uint8_t {
     TOPO_WIFI_CREDS = 0x22, // queen → satellite: WiFi credentials for solo mode
     TOPO_SET_ROLE   = 0x23, // queen → satellite: assign module role (from app)
     TOPO_SET_TINT   = 0x24, // queen → satellite: floor tint (from app)
+    TOPO_GIFT_FOOD  = 0x26, // queen → neighbouring queen: care package across the border
     TOPO_DEATH_SYNC   = 0x15,  // satellite → queen: worker died on satellite
     TOPO_GATHER_SYNC  = 0x16,  // broadcast: finger held, conkers gather
     TOPO_OTA_ANNOUNCE = 0x30, // queen → satellites: "new firmware, connect to WiFi"
@@ -237,6 +238,14 @@ bool topology_has_announce(AnnounceMessage* out);  // returns true + copies once
 
 // WiFi credentials — satellite reads this
 bool topology_has_wifi_creds(WifiCredsMessage* out);  // returns true + copies once, then clears
+
+// Care package from a neighbouring queen — the one sanctioned crossing of a
+// closed border. Receiver sizes the gift itself (its own daily burn).
+struct __attribute__((packed)) GiftFoodMessage {
+    uint8_t  msg_type;   // TOPO_GIFT_FOOD
+    uint16_t sender_id;
+};
+bool topology_has_gift_food(GiftFoodMessage* out);  // returns true + copies once, then clears
 
 // OTA cascade messages
 struct __attribute__((packed)) OtaAnnounceMessage {

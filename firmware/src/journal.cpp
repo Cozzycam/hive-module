@@ -30,7 +30,13 @@ static const char* DEATH_CAUSE[] = { "old_age", "starvation" };
 
 static const char* MILESTONE_NAMES[] = { "workers_born", "first_major" };
 
-static const char* COLONY_EVT_NAMES[] = { "founded", "module_connected", "module_disconnected", "met_a_neighbouring_kingdom" };
+// Keep in lockstep with ColonyEventKind (journal.h) — an OOB read here once
+// shipped garbage event names
+static const char* COLONY_EVT_NAMES[] = {
+    "founded", "module_connected", "module_disconnected",
+    "met_a_neighbouring_kingdom",
+    "sent_a_care_package", "care_package_from_neighbours",
+};
 
 // ---- Path helpers ----
 

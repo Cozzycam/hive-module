@@ -127,7 +127,7 @@ export function LiveNest({
           overflow: 'hidden',
         }}
       >
-        {/* Queen — larger, crowned, stays regal */}
+        {/* Queen — her actual sprite, extracted from the firmware */}
         {queen && (
           <div style={{
             position: 'absolute',
@@ -136,13 +136,11 @@ export function LiveNest({
             transform: 'translate(-50%, -50%)',
             transition: 'left 8s linear, top 8s linear',
             zIndex: 1,
-            textAlign: 'center',
           }}>
-            <div style={{ fontSize: 10, lineHeight: '10px' }}>{'\u{1F451}'}</div>
             <img
-              src="/app/conker.png"
+              src="/app/queen.png"
               alt="Queen"
-              style={{ width: 30, height: 30, display: 'block', imageRendering: 'pixelated' }}
+              style={{ width: 36, height: 36, display: 'block', imageRendering: 'pixelated' }}
             />
           </div>
         )}
@@ -160,11 +158,12 @@ export function LiveNest({
           />
         ))}
 
-        {/* Night falls over the nest just like on the module */}
+        {/* Night falls over the nest just like on the module — gently;
+            you should still see everyone (Campbell: was too dark) */}
         {nightFactor > 0 && (
           <div style={{
             position: 'absolute', inset: 0,
-            background: `rgba(18, 24, 48, ${(nightFactor * 0.45).toFixed(2)})`,
+            background: `rgba(30, 32, 58, ${(nightFactor * 0.22).toFixed(2)})`,
             pointerEvents: 'none',
             zIndex: 4,
           }} />

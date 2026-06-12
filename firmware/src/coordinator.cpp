@@ -104,6 +104,9 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
     // ---- Receive death syncs from satellites (queen only) ----
     if (is_queen()) _receive_death_syncs();
 
+    // ---- Receive care packages from neighbouring kingdoms (queen only) ----
+    if (is_queen()) _receive_gifts();
+
     // ---- Service pending outgoing handoffs (ACK processing, retries, timeouts) ----
     _service_pending_handoffs();
 
@@ -1417,6 +1420,87 @@ bool Coordinator::cmd_feed_colony(float amount) {
     je.food_tap = {static_cast<int8_t>(cx), static_cast<int8_t>(cy), amount};
     journal.emit(je);
     return true;
+}
+
+bool Coordinator::cmd_gift_care_package(uint16_t target_id) {
+#ifdef ARDUINO
+    // Gifts only cross a recognised sovereign border — the one sanctioned
+    // exception to the closed-border rule. target_id 0 = any neighbour.
+    int face = -1;
+    for (int f = 0; f < FACE_COUNT; f++) {
+        const Neighbour& nb = topology_neighbour(static_cast<Face>(f));
+        if (nb.present && foreign_face[f]
+            && (target_id == 0 || nb.module_id == target_id)) {
+            face = f;
+            break;
+        }
+    }
+    if (face < 0) {
+        Serial.println("[cmd] gift: no neighbouring kingdom at the border");
+        return false;
+    }
+
+    // Separate cooldown from the home care package (same 6h span, own timer)
+    Preferences prefs;
+    prefs.begin("hive", false);
+    uint32_t last = prefs.getULong("gift_unix", 0);
+    if (last != 0 && g_tod.unix_time > last
+        && g_tod.unix_time - last < 6UL * 3600UL) {
+        prefs.end();
+        Serial.println("[cmd] gift: caravan still resting (cooldown)");
+        return false;
+    }
+    prefs.putULong("gift_unix", g_tod.unix_time);
+    prefs.end();
+
+    GiftFoodMessage msg;
+    msg.msg_type  = TOPO_GIFT_FOOD;
+    msg.sender_id = topology_my_id();
+    topology_send_to_face(static_cast<Face>(face),
+                          (const uint8_t*)&msg, sizeof(msg));
+
+    uint16_t nb_id = topology_neighbour(static_cast<Face>(face)).module_id;
+    Serial.printf("[cmd] care package sent to neighbouring queen 0x%04X\r\n", nb_id);
+
+    JournalEntry je = {};
+    je.tick = chamber.tick_num;
+    je.unix_time = g_tod.unix_time;
+    je.type = JEVT_COLONY_EVENT;
+    je.colony_event.kind = COLONY_GIFT_SENT;
+    je.colony_event.module_id = nb_id;
+    journal.emit(je);
+    return true;
+#else
+    (void)target_id;
+    return false;
+#endif
+}
+
+void Coordinator::_receive_gifts() {
+#ifdef ARDUINO
+    GiftFoodMessage gm;
+    if (!topology_has_gift_food(&gm)) return;
+
+    // Receiver sizes its own gift — a day's table for this colony, exactly
+    // like the home care package (larder cap still applies in _world_tick)
+    float amount = colony.daily_burn();
+    if (amount <= 0.0f) amount = Cfg::QUEEN_FOOD_PER_DAY;
+    if (amount > 100.0f) amount = 100.0f;
+
+    int cx = Cfg::GRID_WIDTH / 2 + g_rng.rand_int(-5, 5);
+    int cy = Cfg::GRID_HEIGHT / 2 + g_rng.rand_int(-4, 4);
+    chamber.add_food(cx, cy, amount);
+    Serial.printf("[gift] care package from neighbouring queen 0x%04X: %.0fu at (%d,%d)\r\n",
+                  gm.sender_id, amount, cx, cy);
+
+    JournalEntry je = {};
+    je.tick = chamber.tick_num;
+    je.unix_time = g_tod.unix_time;
+    je.type = JEVT_COLONY_EVENT;
+    je.colony_event.kind = COLONY_GIFT_RECEIVED;
+    je.colony_event.module_id = gm.sender_id;
+    journal.emit(je);
+#endif
 }
 
 bool Coordinator::cmd_set_module_role(uint16_t target_id, uint8_t new_role) {
