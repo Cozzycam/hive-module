@@ -152,7 +152,10 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
         chars.set(l.id, {
           id: l.id, name: l.name, role: 'conker',
           founder: l.founder, age_days: l.age_days,
-          traits: l.traits || [], bonds: [],
+          traits: l.traits || [],
+          bonds: (l.bonds || []).map(b => ({
+            to: { id: b.id, name: b.name }, strength: b.strength,
+          })),
           personality: l.personality,
           scale_factor: l.scale_factor,
           tint_seed: l.tint_seed,
@@ -190,7 +193,13 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
         case 'bond_formed': {
           const targetId = (ev.data as { target_id?: number }).target_id;
           if (targetId && !c.bonds.some(b => b.to.id === targetId)) {
-            c.bonds.push({ to: { id: targetId, name: nameFromId(targetId) }, strength: 0.5 });
+            // Resolve the partner's real name from the roster when we can —
+            // nameFromId is a wordlist fallback and wrong for renamed conkers
+            const partner = chars.get(targetId);
+            c.bonds.push({
+              to: { id: targetId, name: partner?.name ?? nameFromId(targetId) },
+              strength: 0.5,
+            });
           }
           break;
         }
@@ -411,14 +420,23 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
           </div>
           {char.traits.map(t => {
             const info = TRAIT_INFO[t];
+            // Bonded names its friends right here (feedback: "says bonded but
+            // doesn't tell you who they're bonded to")
+            let desc = info?.desc;
+            if (t === 'bonded' && bonds.length > 0) {
+              const names = bonds.map(b => b.to.name);
+              desc = names.length === 1
+                ? `Best friends with ${names[0]}.`
+                : `Best friends with ${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}.`;
+            }
             return (
               <div key={t} style={{ marginBottom: 8 }}>
                 <div style={{ fontSize: SIZES.sm, fontWeight: 600, color: palette.text }}>
                   {'\u{1F3C5}'} {info?.label ?? t.replace(/_/g, ' ')}
                 </div>
-                {info && (
+                {desc && (
                   <div style={{ fontSize: SIZES.sm, color: palette.dimText }}>
-                    {info.desc}
+                    {desc}
                   </div>
                 )}
               </div>

@@ -964,7 +964,10 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
             int stack_depth = 0;
             int base_idx = w.stack_on;
             int cur = w.stack_on;
-            while (cur >= 0 && offset < 200.0f) {
+            // Hop-bounded: offset only decreases so it can never terminate the
+            // loop on its own; a stack_on cycle here would hang the render path
+            while (cur >= 0 && cur < ch.conker_count
+                   && stack_depth < Cfg::MAX_CONKERS) {
                 auto& b = ch.conkers[cur];
                 float s = b.scale_factor;
                 offset -= static_cast<int>(WORKER_PIONEER_H * s + 0.5f) * 0.6f;

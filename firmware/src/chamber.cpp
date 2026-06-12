@@ -169,18 +169,27 @@ void Chamber::tick(float dt) {
     // Proximity interactions between lil guys
     _detect_proximity_interactions();
 
-    // Validate stacks: off-screen collapse
+    // Validate stacks: stale/cyclic references collapse, then off-screen collapse.
+    // Every chain walk is hop-bounded — a stack_on cycle must degrade to a
+    // dismount, never an infinite loop (this hang took out a whole module once).
     for (int i = 0; i < conker_count; i++) {
         if (conkers[i].stack_on < 0) continue;
+        if (conkers[i].stack_on >= conker_count) {  // dangling reference
+            conkers[i].stack_on = -1;
+            conkers[i].sleeping = false;
+            conkers[i].anim_type = LG_ANIM_NONE;
+            continue;
+        }
         // Compute approximate screen Y with stack offset
         float screen_y = conkers[i].y * Cfg::CELL_SIZE;
         int cur = conkers[i].stack_on;
-        while (cur >= 0) {
+        int hops = 0;
+        while (cur >= 0 && cur < conker_count && ++hops <= Cfg::MAX_CONKERS) {
             float s = conkers[cur].scale_factor;
             screen_y -= static_cast<int>(10.0f * s + 0.5f) * 0.75f;
             cur = conkers[cur].stack_on;
         }
-        if (screen_y < 28.0f) {  // HUD_STRIP_H
+        if (screen_y < 28.0f || hops > Cfg::MAX_CONKERS) {  // HUD_STRIP_H or cycle
             conkers[i].stack_on = -1;
             conkers[i].sleeping = false;
             conkers[i].anim_type = LG_ANIM_NONE;
@@ -468,9 +477,10 @@ void Chamber::_detect_proximity_interactions() {
                     ee.interaction_ended = {pid};
                     emit(ee);
 
-                    // Find the topmost ant in a tower
+                    // Find the topmost ant in a tower (hop-bounded: a corrupt
+                    // cycle returns the current idx instead of spinning forever)
                     auto top_of = [&](int idx) -> int {
-                        for (;;) {
+                        for (int hops = 0; hops < conker_count; hops++) {
                             int found = -1;
                             for (int j = 0; j < conker_count; j++)
                                 if (conkers[j].alive && conkers[j].stack_on == idx)
@@ -478,6 +488,7 @@ void Chamber::_detect_proximity_interactions() {
                             if (found < 0) return idx;
                             idx = found;
                         }
+                        return idx;
                     };
 
                     // Collapse cooldown: don't stack if either ant recently collapsed
@@ -503,8 +514,12 @@ void Chamber::_detect_proximity_interactions() {
 
                     // Cycle check: ensure hopper isn't already below mount_on
                     bool cycle = false;
-                    for (int check = mount_on; check >= 0; check = conkers[check].stack_on)
-                        if (check == hopper_i) { cycle = true; break; }
+                    int check_hops = 0;
+                    for (int check = mount_on; check >= 0 && check < conker_count;
+                         check = conkers[check].stack_on) {
+                        if (check == hopper_i || ++check_hops > conker_count)
+                            { cycle = true; break; }
+                    }
                     if (cycle) return;
 
                     auto weight_of = [&](int idx) -> int {
@@ -530,7 +545,8 @@ void Chamber::_detect_proximity_interactions() {
                     bool has_pioneer = false;
                     int ground = true_top;
                     int cur = true_top;
-                    while (cur >= 0) {
+                    int walk_hops = 0;
+                    while (cur >= 0 && cur < conker_count && ++walk_hops <= conker_count) {
                         stack_weight += weight_of(cur);
                         if (conkers[cur].is_pioneer) has_pioneer = true;
                         ground = cur;
@@ -555,7 +571,8 @@ void Chamber::_detect_proximity_interactions() {
                             bool in_this_stack = (j == ground);
                             if (!in_this_stack && conkers[j].stack_on >= 0) {
                                 int walk = conkers[j].stack_on;
-                                while (walk >= 0) {
+                                int wh = 0;
+                                while (walk >= 0 && walk < conker_count && ++wh <= conker_count) {
                                     if (walk == ground) { in_this_stack = true; break; }
                                     walk = conkers[walk].stack_on;
                                 }
@@ -564,7 +581,8 @@ void Chamber::_detect_proximity_interactions() {
                                 // Compute depth: count ants below this one
                                 int depth = 0;
                                 int walk = conkers[j].stack_on;
-                                while (walk >= 0) { depth++; walk = conkers[walk].stack_on; }
+                                while (walk >= 0 && walk < conker_count && depth <= conker_count)
+                                    { depth++; walk = conkers[walk].stack_on; }
                                 conkers[j].topple_depth = depth;
                                 conkers[j].anim_type = LG_ANIM_TOPPLE;
                                 conkers[j].anim_remaining_ticks =
@@ -703,16 +721,20 @@ void Chamber::remove_conker(int idx) {
     int last = conker_count - 1;
     conkers[idx] = conkers[last];
     conker_count--;
-    // Patch stack_on and zoomie_target references: last moved to idx, idx is gone
+    // Patch stack_on and zoomie_target references: last moved to idx, idx is gone.
+    // The removed-index check must come FIRST: when idx == last, a rider of the
+    // removed conker would otherwise be "patched" to the same dead index and
+    // dangle into whatever fills that slot next (stack_on cycles → hang).
     for (int k = 0; k < conker_count; k++) {
-        if (conkers[k].stack_on == last)      conkers[k].stack_on = idx;
-        else if (conkers[k].stack_on == idx) {
+        if (conkers[k].stack_on == idx) {
             conkers[k].stack_on = -1;
             conkers[k].sleeping = false;
             conkers[k].anim_type = LG_ANIM_NONE;
+        } else if (conkers[k].stack_on == last) {
+            conkers[k].stack_on = idx;
         }
-        if (conkers[k].zoomie_target == last)      conkers[k].zoomie_target = idx;
-        else if (conkers[k].zoomie_target == idx)   conkers[k].zoomie_target = -1;
+        if (conkers[k].zoomie_target == idx)       conkers[k].zoomie_target = -1;
+        else if (conkers[k].zoomie_target == last) conkers[k].zoomie_target = idx;
     }
 }
 

@@ -94,6 +94,8 @@ export interface LilGuySummary {
   personality?: Personality;
   scale_factor?: number;
   tint_seed?: number;
+  // Formed friendships, strongest first (added v107 — older snapshots omit)
+  bonds?: { id: number; name: string; strength: number }[];
 }
 
 // ---- LilGuy detail (queen LAN: GET /api/v1/lilguys/:id) ----

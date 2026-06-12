@@ -125,6 +125,10 @@ public:
     IdentityRecord* get(uint32_t id);
     void mark_dead(uint32_t id, uint32_t died_unix);
 
+    // Forensics + recovery (serial `who <id>` / `revive <id>`)
+    bool dump_record(uint32_t id, char* out, size_t out_size);  // raw JSON from disk
+    bool revive(uint32_t id);  // clear died_unix on a dead record, reload to cache
+
     // Brood lifecycle
     bool create_brood(const BroodRecord& rec);
     BroodRecord* get_brood(uint32_t id);

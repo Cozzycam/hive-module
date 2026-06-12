@@ -149,6 +149,22 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
         pers["food_preference"] = r.personality[4];
         pers["hardiness"] = r.personality[5];
         pers["learning_rate"] = r.personality[6];
+        // Formed bonds: who this conker is close to, strongest first
+        {
+            BondEntry bonds[BondStore::PER_OWNER_CAP];
+            int nb = coord.bonds.get_bonds(r.id, bonds, BondStore::PER_OWNER_CAP);
+            JsonArray ba;
+            for (int b = 0; b < nb; b++) {
+                if (!bonds[b].formed) continue;
+                IdentityRecord* other = coord.registry.get(bonds[b].target);
+                if (!other) continue;
+                if (ba.isNull()) ba = lg["bonds"].to<JsonArray>();
+                JsonObject bo = ba.add<JsonObject>();
+                bo["id"] = bonds[b].target;
+                bo["name"] = other->name;
+                bo["strength"] = bonds[b].strength;
+            }
+        }
     }
 
     // Food

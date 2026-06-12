@@ -103,6 +103,11 @@ private:
     uint32_t _last_pop_broadcast_ms = 0;
     uint32_t _last_state_broadcast_ms = 0;
 
+    // ANNOUNCE is re-sent periodically while connected (a single lost packet
+    // must never leave a border in the wrong state)
+    void _send_announce(Face face, uint16_t module_id);
+    uint32_t _last_announce_refresh_ms = 0;
+
     // Pending outgoing handoffs (ACK-gated, retried on timeout)
     static constexpr int MAX_PENDING_OUT = 8;
     struct PendingOut {

@@ -79,6 +79,9 @@ extern uint32_t g_handoffs_dropped;
 
 // Remote population per face (updated by TOPO_POP_SYNC messages)
 static volatile uint16_t _remote_pop[FACE_COUNT] = {0, 0, 0, 0};
+// Last POP_SYNC receive time per face — 0 = never. Doubles as satellite-hood
+// proof: only satellites broadcast pop sync, a foreign queen never will.
+static volatile uint32_t _remote_pop_ms[FACE_COUNT] = {0, 0, 0, 0};
 static volatile uint16_t _remote_gatherers[FACE_COUNT] = {0, 0, 0, 0};
 static volatile uint8_t  _remote_role[FACE_COUNT] = {0, 0, 0, 0};
 static volatile uint32_t _remote_tint[FACE_COUNT] = {0, 0, 0, 0};
@@ -220,6 +223,7 @@ static void _disconnect_face(Face f, const char* reason) {
     _neighbours[f].present = false;
     _neighbours[f].module_id = 0;
     _remote_pop[f] = 0;
+    _remote_pop_ms[f] = 0;
     _remote_gatherers[f] = 0;
     _remote_role[f] = 0;
     _remote_tint[f] = 0;
@@ -310,6 +314,7 @@ static void _on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int l
         for (int f = 0; f < FACE_COUNT; f++) {
             if (_faces[f].link == LINK_CONNECTED && _faces[f].neighbour_id == ps->sender_id) {
                 _remote_pop[f] = ps->population;
+                _remote_pop_ms[f] = millis();
                 // Gatherers/role/tint fields (added later — length-gated)
                 _remote_gatherers[f] = (len >= (int)offsetof(PopSyncMessage, role))
                                      ? ps->gatherers : 0;
@@ -801,6 +806,11 @@ bool topology_has_gather(GatherSyncMessage* out) {
 
 uint16_t topology_remote_population(Face f) {
     return _remote_pop[f];
+}
+
+bool topology_pop_sync_fresh(Face f) {
+    uint32_t t = _remote_pop_ms[f];
+    return t != 0 && (millis() - t) < 15000;
 }
 
 uint16_t topology_remote_gatherers(Face f) {

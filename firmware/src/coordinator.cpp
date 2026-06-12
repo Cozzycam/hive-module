@@ -229,8 +229,11 @@ void Coordinator::_broadcast_population() {
         msg.tint_b = tint & 0xFF;
     }
 
+    // Beacon to every present neighbour, not just open entries — pop sync is
+    // the satellite-hood proof that opens a default-closed face in the first
+    // place, so it must flow before the face is open.
     for (int f = 0; f < FACE_COUNT; f++) {
-        if (chamber.entries[f] >= 0) {
+        if (topology_neighbour(static_cast<Face>(f)).present) {
             topology_send_to_face(static_cast<Face>(f),
                                   (const uint8_t*)&msg, sizeof(msg));
         }
@@ -266,21 +269,26 @@ void Coordinator::_broadcast_state() {
 #endif
 }
 
+void Coordinator::_send_announce(Face face, uint16_t module_id) {
+#ifdef ARDUINO
+    AnnounceMessage ann;
+    ann.msg_type       = TOPO_ANNOUNCE;
+    ann.parent_id      = topology_my_id();
+    ann.parent_face    = face;
+    ann.your_id        = module_id;
+    ann.your_home_face = Cfg::FACE_OPPOSITE[face];
+    ann.boot_id        = boot_id;
+    topology_send_to_face(face, (const uint8_t*)&ann, sizeof(ann));
+#endif
+}
+
 void Coordinator::on_topology_change(Face face, bool connected, uint16_t module_id) {
 #ifdef ARDUINO
     if (is_queen() && connected) {
         // Queen: announce chamber to new satellite
         uint8_t satellite_home = Cfg::FACE_OPPOSITE[face];
 
-        AnnounceMessage ann;
-        ann.msg_type       = TOPO_ANNOUNCE;
-        ann.parent_id      = topology_my_id();
-        ann.parent_face    = face;
-        ann.your_id        = module_id;
-        ann.your_home_face = satellite_home;
-        ann.boot_id        = boot_id;
-
-        topology_send_to_face(face, (const uint8_t*)&ann, sizeof(ann));
+        _send_announce(face, module_id);
 
         // Send WiFi credentials so satellite can sync when solo
         WifiCredsMessage wcm;
@@ -450,10 +458,37 @@ void Coordinator::_apply_boundary_pheromones() {
 
 void Coordinator::_sync_topology_to_chamber() {
 #ifdef ARDUINO
+    // Default-closed borders: presence alone never opens a face. A queen
+    // opens a face only once the neighbour has proven itself a satellite
+    // (pop sync beacon — foreign queens never send one). A satellite opens
+    // its home face (proven by ANNOUNCE) and satellite-satellite faces on
+    // the same pop-sync proof.
     for (int f = 0; f < FACE_COUNT; f++) {
         const Neighbour& nb = topology_neighbour(static_cast<Face>(f));
-        chamber.entries[f] = (nb.present && !foreign_face[f])
-                           ? static_cast<int8_t>(nb.module_id & 0x7F) : -1;
+        bool open = nb.present && !foreign_face[f];
+        if (open) {
+            if (is_queen())
+                open = topology_pop_sync_fresh(static_cast<Face>(f));
+            else
+                open = (f == chamber.home_face)
+                    || topology_pop_sync_fresh(static_cast<Face>(f));
+        }
+        chamber.entries[f] = open ? static_cast<int8_t>(nb.module_id & 0x7F) : -1;
+    }
+
+    // Re-announce to every connected face every 5s. The connect-time ANNOUNCE
+    // is a single packet; if it's lost, a satellite never learns its home face
+    // and a neighbouring queen is never recognised as foreign. Idempotent on
+    // the receiver (same boot_id), so repetition is safe.
+    if (is_queen()) {
+        uint32_t now = millis();
+        if (now - _last_announce_refresh_ms >= 5000) {
+            _last_announce_refresh_ms = now;
+            for (int f = 0; f < FACE_COUNT; f++) {
+                const Neighbour& nb = topology_neighbour(static_cast<Face>(f));
+                if (nb.present) _send_announce(static_cast<Face>(f), nb.module_id);
+            }
+        }
     }
 
     // Queen: an ANNOUNCE can only come from another queen claiming us as
@@ -487,6 +522,18 @@ void Coordinator::_sync_topology_to_chamber() {
     if (!is_queen()) {
         AnnounceMessage ann;
         if (topology_has_announce(&ann)) {
+            // Hijack guard: while our queen's face is live, refuse a claim
+            // from any other module (a foreign queen announces to anything
+            // that docks with her).
+            bool home_live = chamber.home_face >= 0 && chamber.home_face < FACE_COUNT
+                && topology_neighbour(static_cast<Face>(chamber.home_face)).present;
+            uint16_t home_id = home_live
+                ? topology_neighbour(static_cast<Face>(chamber.home_face)).module_id : 0;
+            if (home_live && ann.parent_id != home_id) {
+                Serial.printf("[coord] ignoring announce from 0x%04X — already serving queen 0x%04X\r\n",
+                              ann.parent_id, home_id);
+                return;
+            }
             chamber.home_face = ann.your_home_face;
             // Only clear workers if the queen rebooted (new boot_id).
             // A simple reconnect after radio glitch keeps workers alive.
@@ -568,10 +615,11 @@ void Coordinator::_check_edge_crossings(EventBus& bus, uint32_t tick_num) {
         w.depart_at_ms = millis() + DEPART_DELAY_MS;
         w.depart_face = static_cast<int8_t>(face);
 
-        // Also mark stacked workers
+        // Also mark stacked workers (hop-bounded against stack_on cycles)
         int cur = i;
         bool more = true;
-        while (more) {
+        int hops = 0;
+        while (more && ++hops <= Cfg::MAX_CONKERS) {
             more = false;
             for (int j = 0; j < chamber.conker_count; j++) {
                 if (chamber.conkers[j].alive && chamber.conkers[j].stack_on == cur) {
@@ -607,8 +655,9 @@ void Coordinator::_service_departures(EventBus& bus, uint32_t tick_num) {
         int face = w.depart_face;
         const Neighbour& nb = topology_neighbour(static_cast<Face>(face));
 
-        // If neighbour disconnected while waiting, cancel departure
-        if (!nb.present) {
+        // If the neighbour disconnected — or the border closed (foreign queen
+        // recognised mid-delay) — cancel the departure
+        if (!nb.present || chamber.entries[face] < 0) {
             w.departing = false;
             w.depart_face = -1;
             // Unmark stacked workers too
@@ -798,6 +847,17 @@ void Coordinator::_receive_handoffs(EventBus& bus, uint32_t tick_num) {
                 src_face = f;
                 break;
             }
+        }
+
+        // Border guard: never place a worker from an unknown sender or across
+        // a foreign border. No ACK — the sender times out and restores the
+        // worker at home, so nobody is lost or duplicated.
+        if (src_face < 0 || foreign_face[src_face]) {
+            g_handoffs_dropped++;
+            Serial.printf("[handoff] REJECTED id=%lu from 0x%04X (%s)\r\n",
+                          (unsigned long)t.conker_id, t.sender_id,
+                          src_face < 0 ? "unknown sender" : "foreign border");
+            continue;
         }
 
         // Dedup: if seq matches last seen from this face, re-send ACK but skip placement
@@ -1054,6 +1114,28 @@ void Coordinator::_respawn_worker(uint32_t id, IdentityRecord* rec) {
     w.sense_radius = Cfg::ROLE_PARAMS[w.role].sense_radius;
     w.carry_amount = Cfg::ROLE_PARAMS[w.role].carry_amount;
     w.speed        = Cfg::ROLE_PARAMS[w.role].speed;
+
+    // Records have been seen with lifespan_ms == 0 or lived >= lifespan (the
+    // boot-restore path guards this too). A respawn must never materialise a
+    // conker that is instantly past its lifespan — that reads as a spurious
+    // "old age" death seconds after the respawn (killed lilguys 3 & 6,
+    // 2026-06-12). Heal the record, don't just the copy.
+    if (rec->lifespan_ms == 0) {
+        float days = g_rng.rand_gaussian(Cfg::CONKER_LIFESPAN_MEAN,
+                                         Cfg::CONKER_LIFESPAN_SD);
+        if (days < 1.0f) days = 1.0f;
+        rec->lifespan_ms = static_cast<uint32_t>(days * Cfg::SECS_PER_DAY * 1000.0f);
+        rec->dirty = true;
+        Serial.printf("[reconcile] id=%lu record had no lifespan — drew %.1f days\r\n",
+                      (unsigned long)id, days);
+    }
+    if (rec->lived_ms >= rec->lifespan_ms) {
+        Serial.printf("[reconcile] id=%lu lived %.2fd >= lifespan %.2fd — clamping (corrupt record?)\r\n",
+                      (unsigned long)id,
+                      rec->lived_ms / 86400000.0f, rec->lifespan_ms / 86400000.0f);
+        rec->lived_ms = static_cast<uint32_t>(rec->lifespan_ms * 0.95f);
+        rec->dirty = true;
+    }
     w.lifespan_ms  = rec->lifespan_ms;
     w.lived_ms     = rec->lived_ms;
 

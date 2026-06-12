@@ -553,6 +553,67 @@ void ConkerRegistry::mark_dead(uint32_t id, uint32_t died_unix) {
     }
 }
 
+bool ConkerRegistry::dump_record(uint32_t id, char* out, size_t out_size) {
+    if (_state != PERSIST_OK || out_size == 0) return false;
+    char path[80];
+    _record_path(path, sizeof(path), "lilguys", id);
+    File f = SD_MMC.open(path, FILE_READ);
+    if (!f) return false;
+    size_t n = f.read(reinterpret_cast<uint8_t*>(out), out_size - 1);
+    f.close();
+    out[n] = '\0';
+    return true;
+}
+
+bool ConkerRegistry::revive(uint32_t id) {
+    if (_state != PERSIST_OK) return false;
+    if (get(id)) return false;  // already alive
+    if (_alive_count >= MAX_ALIVE) return false;
+
+    char path[80];
+    _record_path(path, sizeof(path), "lilguys", id);
+    File f = SD_MMC.open(path, FILE_READ);
+    if (!f) return false;
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, f);
+    f.close();
+    if (err) return false;
+
+    IdentityRecord& r = _alive[_alive_count];
+    r = IdentityRecord{};
+    r.id          = doc["id"] | 0;
+    if (r.id != id) { r = IdentityRecord{}; return false; }
+    strlcpy(r.name, doc["name"] | "", sizeof(r.name));
+    r.role        = doc["role"] | 0;
+    r.is_pioneer  = doc["is_pioneer"] | false;
+    r.born_unix   = doc["born_unix"] | 0;
+    r.died_unix   = 0;  // the resurrection itself
+    r.lifespan_ms = doc["lifespan_ms"] | 0;
+    r.lived_ms    = doc["lived_ms"] | 0;
+    r.scale_factor = doc["scale_factor"] | 3.2f;
+    r.tint_seed   = doc["tint_seed"] | 0;
+    r.is_founder  = doc["is_founder"] | false;
+    r.tended_by   = doc["tended_by"] | 0;
+    r.traits      = doc["traits"] | 0;
+    JsonArray pers = doc["personality"];
+    for (int i = 0; i < 8 && i < (int)pers.size(); i++)
+        r.personality[i] = pers[i] | 0.0f;
+    JsonObject pos = doc["last_pos"];
+    r.chamber_id = pos["chamber"] | 0;
+    r.last_x     = pos["x"] | 0.0f;
+    r.last_y     = pos["y"] | 0.0f;
+    r.last_state = doc["last_state"] | 0;
+    r.dirty      = false;
+    _alive_count++;
+
+    _write_record(r);  // persist the cleared died_unix
+    if (_manifest.total_workers_died > 0) {
+        _manifest.total_workers_died--;
+        flush_manifest();
+    }
+    return true;
+}
+
 bool ConkerRegistry::create_brood(const BroodRecord& rec) {
     if (_brood_count >= MAX_BROOD_CACHE) return false;
     _brood[_brood_count] = rec;

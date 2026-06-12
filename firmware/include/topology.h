@@ -71,6 +71,11 @@ uint16_t topology_my_id();
 const FaceState& topology_face(Face f);
 const Neighbour& topology_neighbour(Face f);
 
+// True if a POP_SYNC arrived from this face within the last 15s. Only
+// satellites broadcast pop sync, so this is proof the neighbour is a
+// satellite (a foreign queen never sends one).
+bool topology_pop_sync_fresh(Face f);
+
 // Channel management — queen sets the channel, satellites follow
 void     topology_set_wifi_channel(uint8_t channel);  // called when WiFi connects
 uint8_t  topology_current_channel();                  // current ESP-NOW channel

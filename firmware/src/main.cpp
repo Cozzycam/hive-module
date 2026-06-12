@@ -377,6 +377,34 @@ static void process_serial_line(const char* line) {
             }
         }
         WiFi.scanDelete();
+    } else if (strncmp(line, "who ", 4) == 0) {
+        // Raw record JSON straight off the SD — works for dead conkers too
+        uint32_t id = strtoul(line + 4, nullptr, 10);
+        static char dump[600];
+        if (sim.coordinator.registry.dump_record(id, dump, sizeof(dump)))
+            Serial.printf("[who] raw record %lu:\r\n%s\r\n", (unsigned long)id, dump);
+        else
+            Serial.printf("[who] no record file for id %lu\r\n", (unsigned long)id);
+    } else if (strcmp(line, "who") == 0) {
+        auto& reg = sim.coordinator.registry;
+        IdentityRecord* recs = reg.living_records();
+        Serial.printf("[who] %d living records, %d in chamber\r\n",
+                      reg.living_count(), sim.coordinator.chamber.conker_count);
+        for (int i = 0; i < reg.living_count(); i++) {
+            IdentityRecord& r = recs[i];
+            Serial.printf("  id=%-3lu %-14s born=%lu lived=%.2fd lifespan=%.2fd founder=%d\r\n",
+                (unsigned long)r.id, r.name, (unsigned long)r.born_unix,
+                r.lived_ms / 86400000.0f, r.lifespan_ms / 86400000.0f,
+                r.is_founder ? 1 : 0);
+        }
+    } else if (strncmp(line, "revive ", 7) == 0) {
+        uint32_t id = strtoul(line + 7, nullptr, 10);
+        if (sim.coordinator.registry.revive(id))
+            Serial.printf("[revive] id=%lu lives again — reconcile will respawn it at the queen\r\n",
+                          (unsigned long)id);
+        else
+            Serial.printf("[revive] could not revive id=%lu (already alive, or no record on SD)\r\n",
+                          (unsigned long)id);
     } else if (strcmp(line, "vps status") == 0) {
         vps_push_status();
     } else if (strncmp(line, "vps secret ", 11) == 0) {

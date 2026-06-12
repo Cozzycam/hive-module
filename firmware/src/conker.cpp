@@ -533,6 +533,18 @@ void Conker::_pick_task(Chamber& ch) {
     float budget = _colony_idle_budget(ch);
     float tempo_bias = 1.3f - 0.6f * personality[PERS_WORK_TEMPO];  // 0.7 to 1.3
     if (budget > 0 && g_rng.rand_float() < budget * tempo_bias) {
+        // Stacked idlers don't lounge forever: restless personalities hop
+        // down and potter about instead of re-perching every idle cycle
+        // (feedback: "90% of the time they prefer to stay stacked")
+        if (was_stacked >= 0 && !was_sleeping) {
+            float restless = 0.5f * personality[PERS_WORK_TEMPO]
+                           + 0.5f * personality[PERS_EXPLORATION];
+            if (g_rng.rand_float() < 0.30f + 0.45f * restless) {
+                was_stacked = -1;  // dismount and idle on the ground
+                stack_cooldown_ms = millis()
+                    + static_cast<uint32_t>(g_rng.rand_int(20000, 45000));
+            }
+        }
         stack_on = was_stacked;
         sleeping = was_sleeping;
         state = STATE_IDLE;
@@ -1312,14 +1324,22 @@ void Conker::_pick_idle_microstate(Chamber& ch) {
         return;
     }
 
-    float r = g_rng.rand_float();
-    if (r < Cfg::IDLE_HOLD_WEIGHT) {
+    // Personality steers the pick: placid low-tempo conkers hold still,
+    // explorers drift, social butterflies huddle (feedback: personalities
+    // should show in what they choose to do)
+    float hold_w   = Cfg::IDLE_HOLD_WEIGHT   * (1.5f - personality[PERS_WORK_TEMPO]);
+    float drift_w  = Cfg::IDLE_DRIFT_WEIGHT  * (0.5f + personality[PERS_EXPLORATION]);
+    float huddle_w = Cfg::IDLE_HUDDLE_WEIGHT * (0.5f + personality[PERS_SOCIAL_FREQUENCY]);
+    float reface_w = 1.0f - (Cfg::IDLE_HOLD_WEIGHT + Cfg::IDLE_DRIFT_WEIGHT
+                             + Cfg::IDLE_HUDDLE_WEIGHT);
+    float r = g_rng.rand_float() * (hold_w + drift_w + huddle_w + reface_w);
+    if (r < hold_w) {
         idle_microstate = 0;  // hold
         speed = Cfg::ROLE_PARAMS[role].speed;
-    } else if (r < Cfg::IDLE_HOLD_WEIGHT + Cfg::IDLE_DRIFT_WEIGHT) {
+    } else if (r < hold_w + drift_w) {
         idle_microstate = 1;  // random drift
         speed = Cfg::IDLE_DRIFT_SPEED;
-    } else if (r < Cfg::IDLE_HOLD_WEIGHT + Cfg::IDLE_DRIFT_WEIGHT + Cfg::IDLE_HUDDLE_WEIGHT) {
+    } else if (r < hold_w + drift_w + huddle_w) {
         idle_microstate = 3;  // huddle: drift toward nearest idler or queen
         speed = Cfg::IDLE_DRIFT_SPEED;
     } else {
