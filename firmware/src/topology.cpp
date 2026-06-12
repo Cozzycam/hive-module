@@ -100,6 +100,9 @@ static BoundaryPheroData _boundary_phero[FACE_COUNT] = {};
 
 // Queen state sync
 static volatile uint32_t _state_sync_last_ms = 0;
+static volatile bool _accept_state_sync = true;  // false on queens — they own
+                                                 // their clock; a neighbouring
+                                                 // queen must not overwrite it
 
 // Chamber announcement (single-shot, cleared after read)
 static volatile bool _announce_pending = false;
@@ -286,6 +289,7 @@ static void _on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int l
         _set_tint_pending = true;
     } else if (msg_type == TOPO_STATE_SYNC && len >= 15) {
         // Queen state broadcast — update g_tod + weather on satellite
+        if (!_accept_state_sync) return;
         const StateSyncMessage* ss = reinterpret_cast<const StateSyncMessage*>(data);
         g_tod.night_factor  = ss->night_factor;
         g_tod.day_progress  = ss->day_progress;
@@ -823,6 +827,10 @@ bool topology_has_set_tint(SetTintMessage* out) {
     memcpy(out, (const void*)&_set_tint_msg, sizeof(SetTintMessage));
     _set_tint_pending = false;
     return true;
+}
+
+void topology_set_accept_state_sync(bool accept) {
+    _accept_state_sync = accept;
 }
 
 const BoundaryPheroData& topology_boundary_phero(Face f) {

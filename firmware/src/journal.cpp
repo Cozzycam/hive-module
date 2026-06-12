@@ -30,7 +30,7 @@ static const char* DEATH_CAUSE[] = { "old_age", "starvation" };
 
 static const char* MILESTONE_NAMES[] = { "workers_born", "first_major" };
 
-static const char* COLONY_EVT_NAMES[] = { "founded", "module_connected", "module_disconnected" };
+static const char* COLONY_EVT_NAMES[] = { "founded", "module_connected", "module_disconnected", "met_a_neighbouring_kingdom" };
 
 // ---- Path helpers ----
 

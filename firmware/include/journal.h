@@ -71,6 +71,7 @@ enum ColonyEventKind : uint8_t {
     COLONY_FOUNDED            = 0,
     COLONY_MODULE_CONNECTED   = 1,
     COLONY_MODULE_DISCONNECTED = 2,
+    COLONY_FOREIGN_QUEEN      = 3,   // met a neighbouring sovereign colony
 };
 
 // ---- EventJournal ----

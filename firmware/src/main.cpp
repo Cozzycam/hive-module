@@ -605,6 +605,7 @@ void setup() {
     hud_battery_init();  // AXP2101 probe — works on both queen and satellite
 
     bool queen = sim.coordinator.is_queen();
+    topology_set_accept_state_sync(!queen);  // queens own their own clock
     if (queen) {
         hud_init();
         hud_set_colony_name(sim.coordinator.registry.manifest().colony_id);

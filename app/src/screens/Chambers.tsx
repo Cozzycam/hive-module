@@ -16,6 +16,7 @@ const ROLE_META: Record<ModuleRole, { label: string; icon: string; blurb: string
   garden: { label: 'Garden', icon: '🌿', blurb: 'A growing place. Behaviours coming soon.' },
   food_store: { label: 'Food Storage', icon: '🌰', blurb: 'Deep larder. Behaviours coming soon.' },
   heart_tree: { label: 'Heart Tree', icon: '🌳', blurb: 'The colony’s living memory. Behaviours coming soon.' },
+  foreign_queen: { label: 'Neighbour Kingdom', icon: '🏰', blurb: 'Another colony’s queen — borders are politely closed.' },
 };
 
 const ASSIGNABLE_ROLES: ModuleRole[] = ['satellite', 'garden', 'food_store', 'heart_tree'];
@@ -176,8 +177,9 @@ function ModuleDetail({ module, allModules, onBack, palette }: {
       </div>
 
       {/* Role assignment — every module is identical; the role is just data.
-          The queen's own role can't be changed from the app. */}
-      {module.role !== 'queen' && (
+          The queen's own role can't be changed from the app, and a foreign
+          queen isn't ours to command. */}
+      {module.role !== 'queen' && module.role !== 'foreign_queen' && (
         <Card style={{ background: palette.cardBg }}>
           <div style={{ fontSize: SIZES.xs, fontWeight: 600, color: palette.dimText, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
             Role

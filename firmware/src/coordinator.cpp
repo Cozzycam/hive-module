@@ -330,6 +330,9 @@ void Coordinator::on_topology_change(Face face, bool connected, uint16_t module_
         }
     }
 
+    // Any disconnect reopens the face for whoever connects next
+    if (!connected && face >= 0 && face < FACE_COUNT) foreign_face[face] = false;
+
     if (is_queen() && !connected) {
         // Clear graph link
         if (topo_module_count > 0) {
@@ -449,7 +452,35 @@ void Coordinator::_sync_topology_to_chamber() {
 #ifdef ARDUINO
     for (int f = 0; f < FACE_COUNT; f++) {
         const Neighbour& nb = topology_neighbour(static_cast<Face>(f));
-        chamber.entries[f] = nb.present ? static_cast<int8_t>(nb.module_id & 0x7F) : -1;
+        chamber.entries[f] = (nb.present && !foreign_face[f])
+                           ? static_cast<int8_t>(nb.module_id & 0x7F) : -1;
+    }
+
+    // Queen: an ANNOUNCE can only come from another queen claiming us as
+    // her satellite. We are nobody's satellite — recognise the neighbouring
+    // kingdom and close the border before any workers emigrate.
+    if (is_queen()) {
+        AnnounceMessage ann;
+        if (topology_has_announce(&ann)) {
+            for (int f = 0; f < FACE_COUNT; f++) {
+                const Neighbour& nb = topology_neighbour(static_cast<Face>(f));
+                if (nb.present && nb.module_id == ann.parent_id
+                        && !foreign_face[f]) {
+                    foreign_face[f] = true;
+                    chamber.entries[f] = -1;
+                    Serial.printf("[coord] neighbouring queen 0x%04X on face %s"
+                                  " — border closed (two sovereign colonies)\r\n",
+                                  ann.parent_id, face_letter(f));
+                    JournalEntry je = {};
+                    je.tick = chamber.tick_num;
+                    je.unix_time = g_tod.unix_time;
+                    je.type = JEVT_COLONY_EVENT;
+                    je.colony_event.kind = COLONY_FOREIGN_QUEEN;
+                    je.colony_event.module_id = ann.parent_id;
+                    journal.emit(je);
+                }
+            }
+        }
     }
 
     // Satellite: process chamber announcement from queen

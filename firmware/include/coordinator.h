@@ -53,6 +53,11 @@ public:
     TopoGraphEntry topo_graph[MAX_MODULES];
     int            topo_module_count = 0;
 
+    // Foreign borders: a face where the neighbour is another QUEEN.
+    // Two sovereign colonies must not exchange workers — the link stays
+    // up politely but the border is closed (no entries, no handoffs).
+    bool foreign_face[FACE_COUNT] = {};
+
     // Reads role from NVS and initializes accordingly.
     void init();
     void tick(float dt, EventBus& bus, uint32_t tick_num);

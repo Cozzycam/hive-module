@@ -223,6 +223,10 @@ const BoundaryPheroData& topology_boundary_phero(Face f);
 bool     topology_has_state_sync();    // true if received within last 30s
 uint32_t topology_state_sync_age_ms(); // millis since last state sync
 
+// Queens own their clock: call with false so a neighbouring queen's
+// state broadcast can't overwrite g_tod/weather
+void topology_set_accept_state_sync(bool accept);
+
 // Chamber announcement — satellite reads this
 bool topology_has_announce(AnnounceMessage* out);  // returns true + copies once, then clears
 
