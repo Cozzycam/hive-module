@@ -19,7 +19,12 @@ import type { ColonyEvent, LilGuyDetail, Personality, Bond } from '../api/types'
 const TRAIT_INFO: Record<string, { label: string; desc: string }> = {
   pioneer: { label: 'Pioneer', desc: 'First to step into an unexplored chamber.' },
   elder: { label: 'Elder', desc: 'Has lived to a grand old age — the young ones huddle close.' },
-  bonded: { label: 'Bonded', desc: 'Has a true friend in the colony.' },
+  bonded: {
+    label: 'Bonded',
+    desc: 'Made a true friend by spending lots of time side by side. '
+        + 'Friendships can fade if they drift apart — or be lost when a friend dies — '
+        + 'but the badge is theirs to keep.',
+  },
   survived_heatwave: { label: 'Heatwave Survivor', desc: 'Came through a scorching spell.' },
   survived_cold_snap: { label: 'Cold Snap Survivor', desc: 'Endured a bitter freeze.' },
   survived_drought: { label: 'Drought Survivor', desc: 'Outlasted the hungry, dry days.' },
@@ -147,8 +152,10 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
     const roster = snapshot?.lilguys;
 
     // Living characters from snapshot roster
+    const rosterIds = new Set<number>();
     if (roster) {
       for (const l of roster) {
+        rosterIds.add(l.id);
         chars.set(l.id, {
           id: l.id, name: l.name, role: 'conker',
           founder: l.founder, age_days: l.age_days,
@@ -182,25 +189,38 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
           c.founder = !!(ev.data as { is_pioneer?: boolean }).is_pioneer;
           break;
         case 'death':
-          c.died_unix = ev.unix;
-          c.deathCause = String((ev.data as { cause?: string }).cause || 'unknown');
-          break;
-        case 'trait_earned':
-          if ((ev.data as { trait?: string }).trait) {
-            c.traits.push(String((ev.data as { trait: string }).trait));
+          // The living roster is authoritative: a conker present in the
+          // current snapshot is alive no matter what old death events say
+          // (revived conkers carry a death event in their history)
+          if (!rosterIds.has(id)) {
+            c.died_unix = ev.unix;
+            c.deathCause = String((ev.data as { cause?: string }).cause || 'unknown');
           }
           break;
+        case 'trait_earned': {
+          const trait = (ev.data as { trait?: string }).trait;
+          if (trait && !c.traits.includes(String(trait))) {
+            c.traits.push(String(trait));
+          }
+          break;
+        }
         case 'bond_formed': {
-          const targetId = (ev.data as { target_id?: number }).target_id;
+          const { target_id: targetId, target_name: targetName } =
+            ev.data as { target_id?: number; target_name?: string };
           if (targetId && !c.bonds.some(b => b.to.id === targetId)) {
-            // Resolve the partner's real name from the roster when we can —
-            // nameFromId is a wordlist fallback and wrong for renamed conkers
+            // Best name wins: live roster (current, survives renames), then
+            // the name recorded in the event, then the wordlist fallback
             const partner = chars.get(targetId);
             c.bonds.push({
-              to: { id: targetId, name: partner?.name ?? nameFromId(targetId) },
+              to: { id: targetId, name: partner?.name ?? targetName ?? nameFromId(targetId) },
               strength: 0.5,
             });
           }
+          break;
+        }
+        case 'bond_broken': {
+          const targetId = (ev.data as { target_id?: number }).target_id;
+          if (targetId) c.bonds = c.bonds.filter(b => b.to.id !== targetId);
           break;
         }
       }
