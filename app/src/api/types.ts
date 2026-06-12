@@ -12,6 +12,9 @@ export interface ColonySnapshot {
   food: Food;
   modules: Module[];
   lilguys?: LilGuySummary[];  // living roster, included in VPS snapshots
+  // Nest geometry + queen position for the live view (added v110)
+  grid?: { w: number; h: number };
+  queen_pos?: { x: number; y: number };
 }
 
 export interface World {
@@ -96,6 +99,9 @@ export interface LilGuySummary {
   tint_seed?: number;
   // Formed friendships, strongest first (added v107 — older snapshots omit)
   bonds?: { id: number; name: string; strength: number }[];
+  // Live position in nest cells (added v110 — older snapshots omit)
+  x?: number;
+  y?: number;
 }
 
 // ---- LilGuy detail (queen LAN: GET /api/v1/lilguys/:id) ----

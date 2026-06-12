@@ -5,6 +5,7 @@ import { useTOD } from '../state/tod';
 import { Card } from '../components/Card';
 import { ConnectionDot } from '../components/ConnectionDot';
 import { DigestCard } from '../components/DigestCard';
+import { LiveNest } from '../components/LiveNest';
 import { TopologyMiniMap } from '../components/TopologyMiniMap';
 import { nameFromId } from '../data/plantNames';
 import { deriveRoleTag } from '../data/personality';
@@ -71,6 +72,13 @@ export function Home({ onNavigate }: HomeProps) {
 
       {/* While you were away */}
       <DigestCard palette={tod} />
+
+      {/* The Nest — live view of the wee guys moving around */}
+      <LiveNest
+        snapshot={snapshot}
+        palette={tod}
+        onOpenCharacter={(id) => onNavigate('characters', { lilguyId: id })}
+      />
 
       {/* Right Now tile */}
       <Card style={{ background: tod.cardBg }}>

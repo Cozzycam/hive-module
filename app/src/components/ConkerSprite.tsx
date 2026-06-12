@@ -9,7 +9,7 @@ import { useMemo } from 'react';
 // SVG filter ID prefix (unique per seed to avoid collisions)
 let _filterCounter = 0;
 
-function useTintFilter(seed: number): { filterId: string; filterSvg: JSX.Element | null } {
+export function useTintFilter(seed: number): { filterId: string; filterSvg: JSX.Element | null } {
   return useMemo(() => {
     if (seed === 0) return { filterId: '', filterSvg: null };
 

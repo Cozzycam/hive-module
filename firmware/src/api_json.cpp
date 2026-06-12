@@ -122,6 +122,16 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
     by_role["brood_egg"] = coord.colony.brood_egg;
     by_role["brood_seed"] = coord.colony.brood_seed;
 
+    // Nest geometry + queen position — the app's live view scales by these
+    JsonObject grid = doc["grid"].to<JsonObject>();
+    grid["w"] = Cfg::GRID_WIDTH;
+    grid["h"] = Cfg::GRID_HEIGHT;
+    if (coord.chamber.has_queen) {
+        JsonObject qp = doc["queen_pos"].to<JsonObject>();
+        qp["x"] = coord.chamber.queen_obj.x;
+        qp["y"] = coord.chamber.queen_obj.y;
+    }
+
     // Living conkers roster (compact — name, age, founder flag, traits)
     JsonArray lilguys = doc["lilguys"].to<JsonArray>();
     for (int i = 0; i < conkers_count; i++) {
@@ -129,6 +139,19 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
         JsonObject lg = lilguys.add<JsonObject>();
         lg["id"] = r.id;
         lg["name"] = r.name;
+        // Live position (cells): in-chamber truth, else last persisted spot
+        {
+            float px = r.last_x, py = r.last_y;
+            for (int c = 0; c < coord.chamber.conker_count; c++) {
+                if (coord.chamber.conkers[c].id == r.id) {
+                    px = coord.chamber.conkers[c].x;
+                    py = coord.chamber.conkers[c].y;
+                    break;
+                }
+            }
+            lg["x"] = px;
+            lg["y"] = py;
+        }
         lg["age_days"] = (r.born_unix > 0 && g_tod.unix_time > r.born_unix)
             ? (g_tod.unix_time - r.born_unix) / 86400.0f
             : r.lived_ms / (86400.0f * 1000.0f);

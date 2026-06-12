@@ -7,7 +7,9 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt': a waiting service worker surfaces an in-app update toast
+      // instead of silently lagging one version behind (cache-lag confusion)
+      registerType: 'prompt',
       includeAssets: ['icon-192.png', 'icon-512.png', 'apple-touch-icon.png'],
       manifest: {
         name: 'Hive Companion',

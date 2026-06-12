@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { registerSW } from 'virtual:pwa-register';
 import { ColonyContext, ColonyActionsContext, type ColonyState, type ColonyActions } from './state/colony';
 import { PinsProvider } from './state/pins';
 import { Poller } from './api/poller';
@@ -32,6 +33,23 @@ const TAB_ICONS: Record<Tab, string> = {
   feedback: '\u{1F4AC}',
 };
 
+// Service worker registration with an update prompt. onNeedRefresh can fire
+// before React mounts, so buffer it in module state until the App subscribes.
+let _pendingRefresh = false;
+let _notifyRefresh: ((v: boolean) => void) | null = null;
+const updateSW = registerSW({
+  onNeedRefresh() {
+    _pendingRefresh = true;
+    _notifyRefresh?.(true);
+  },
+  onRegisteredSW(_url, registration) {
+    // Poll for a new version every minute while the app is open
+    if (registration) {
+      setInterval(() => { registration.update().catch(() => {}); }, 60_000);
+    }
+  },
+});
+
 // Auth stub — always passes
 function AuthGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
@@ -47,6 +65,12 @@ export function App() {
   const [tab, setTab] = useState<Tab>('home');
   const [showSettings, setShowSettings] = useState(false);
   const [navParams, setNavParams] = useState<Record<string, unknown>>({});
+  const [updateReady, setUpdateReady] = useState(_pendingRefresh);
+
+  useEffect(() => {
+    _notifyRefresh = setUpdateReady;
+    return () => { _notifyRefresh = null; };
+  }, []);
 
   // Colony state managed here, provided via context
   const [colonyState, setColonyState] = useState<ColonyState>({
@@ -200,6 +224,28 @@ export function App() {
                   </>
                 )}
               </div>
+
+              {/* Update toast — a fresh version is waiting in the wings */}
+              {updateReady && (
+                <button
+                  onClick={() => updateSW(true)}
+                  style={{
+                    flexShrink: 0,
+                    margin: '0 12px 8px',
+                    padding: '12px 16px',
+                    background: HIVE.accent,
+                    color: HIVE.cream,
+                    border: 'none',
+                    borderRadius: 12,
+                    fontSize: SIZES.sm,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                  }}
+                >
+                  {'\u{1F41D}'} A new version is ready — tap to update
+                </button>
+              )}
 
               {/* Tab bar */}
               {!showSettings && (

@@ -237,7 +237,7 @@ void vps_push_tick(Coordinator& coord) {
     _last_push_ms = now;
 
     // Push colony snapshot (buffer sized for roster: ~100 bytes per conker)
-    size_t buf_size = 4096 + coord.registry.living_count() * 128;
+    size_t buf_size = 4096 + coord.registry.living_count() * 512;
     char* buf = (char*)malloc(buf_size);
     if (!buf) return;
 
