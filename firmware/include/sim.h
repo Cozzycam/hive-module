@@ -19,6 +19,4 @@ public:
     void init();
     void tick(float dt);
     void handle_touch();
-    // Swipe = finger scent trail: deposit a weak food-pheromone suggestion
-    void handle_swipe(const TouchEvent* pts, int count);
 };

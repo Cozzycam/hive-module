@@ -24,6 +24,14 @@ const TAB_LABELS: Record<Tab, string> = {
   feedback: 'Feedback',
 };
 
+const TAB_ICONS: Record<Tab, string> = {
+  home: '\u{1F3E0}',
+  characters: '\u{1F330}',
+  chambers: '\u{1F9E9}',
+  diary: '\u{1F4D6}',
+  feedback: '\u{1F4AC}',
+};
+
 // Auth stub — always passes
 function AuthGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
@@ -208,7 +216,8 @@ export function App() {
                       onClick={() => { setTab(t); setNavParams({}); }}
                       style={{
                         flex: 1,
-                        padding: '10px 0 8px',
+                        padding: '12px 0 14px',
+                        minHeight: 64,
                         background: 'none',
                         border: 'none',
                         cursor: 'pointer',
@@ -216,10 +225,13 @@ export function App() {
                         fontWeight: tab === t ? 600 : 400,
                         color: tab === t ? HIVE.accent : HIVE.dimText,
                         textAlign: 'center',
-                        borderTop: tab === t ? `2px solid ${HIVE.accent}` : '2px solid transparent',
+                        borderTop: tab === t ? `3px solid ${HIVE.accent}` : '3px solid transparent',
                       }}
                     >
-                      {TAB_LABELS[t]}
+                      <div style={{ fontSize: 22, lineHeight: '26px', filter: tab === t ? 'none' : 'grayscale(0.6)' }}>
+                        {TAB_ICONS[t]}
+                      </div>
+                      <div style={{ marginTop: 2 }}>{TAB_LABELS[t]}</div>
                     </button>
                   ))}
                 </nav>

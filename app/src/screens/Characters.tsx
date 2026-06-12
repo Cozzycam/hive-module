@@ -8,7 +8,7 @@ import { PersonalityPetals } from '../components/PersonalityPetals';
 import { BondsWeb } from '../components/BondsWeb';
 import { ConkerSprite } from '../components/ConkerSprite';
 import { nameFromId } from '../data/plantNames';
-import { personalityPhrase, deriveRoleTag } from '../data/personality';
+import { personalityPhrase, deriveRoleTag, PERSONALITY_DIMS, dimLeaning } from '../data/personality';
 import { HIVE, TOD_PALETTES } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 import { fetchLilguyDetail, fetchLilguyEvents, sendCommand } from '../api/client';
@@ -28,6 +28,41 @@ const TRAIT_INFO: Record<string, { label: string; desc: string }> = {
 
 function traitLabel(t: string): string {
   return TRAIT_INFO[t]?.label ?? t.replace(/_/g, ' ');
+}
+
+// "What does this mean?" — tap to expand each personality dimension into
+// the conker's leaning plus what to expect from them (Amber feedback)
+function PersonalityMeanings({ personality, palette }: {
+  personality: Personality;
+  palette: { text: string; dimText: string };
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginTop: 10 }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: HIVE.accent, fontSize: SIZES.sm, padding: 0,
+        }}
+      >
+        {open ? 'hide explanations' : 'what does this mean?'}
+      </button>
+      {open && PERSONALITY_DIMS.map(d => {
+        const val = personality[d.key as keyof Personality];
+        return (
+          <div key={d.key} style={{ marginTop: 10 }}>
+            <div style={{ fontSize: SIZES.sm, fontWeight: 600, color: palette.text }}>
+              {d.label}: {dimLeaning(d, val)}
+            </div>
+            <div style={{ fontSize: SIZES.sm, color: palette.dimText }}>
+              {d.meaning}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 // Reconstruct basic character info from events
@@ -392,7 +427,7 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
         </Card>
       )}
 
-      {/* Personality petals */}
+      {/* Personality petals + what-it-means */}
       {personality && (
         <Card style={{ background: palette.cardBg }}>
           <div style={{ fontSize: SIZES.xs, fontWeight: 600, color: palette.dimText, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
@@ -401,6 +436,7 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
           <div style={{ display: 'flex', justifyContent: 'center' }}>
             <PersonalityPetals personality={personality} size={180} />
           </div>
+          <PersonalityMeanings personality={personality} palette={palette} />
         </Card>
       )}
 
