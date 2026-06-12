@@ -1353,6 +1353,10 @@ bool Coordinator::cmd_set_module_role(uint16_t target_id, uint8_t new_role) {
     for (int f = 0; f < FACE_COUNT; f++) {
         const Neighbour& nb = topology_neighbour(static_cast<Face>(f));
         if (nb.present && nb.module_id == target_id) {
+            if (foreign_face[f]) {
+                Serial.println("[cmd] set_role: that module is a foreign queen");
+                return false;
+            }
             SetRoleMessage msg;
             msg.msg_type  = TOPO_SET_ROLE;
             msg.sender_id = topology_my_id();
@@ -1380,6 +1384,10 @@ bool Coordinator::cmd_set_floor_tint(uint16_t target_id, uint8_t r, uint8_t g, u
     for (int f = 0; f < FACE_COUNT; f++) {
         const Neighbour& nb = topology_neighbour(static_cast<Face>(f));
         if (nb.present && nb.module_id == target_id) {
+            if (foreign_face[f]) {
+                Serial.println("[cmd] set_tint: that module is a foreign queen");
+                return false;
+            }
             SetTintMessage msg;
             msg.msg_type  = TOPO_SET_TINT;
             msg.sender_id = topology_my_id();

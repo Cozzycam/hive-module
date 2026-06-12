@@ -128,7 +128,7 @@ export function Home({ onNavigate }: HomeProps) {
                   fontSize: SIZES.sm, fontWeight: 500, color: tod.text,
                 }}
               >
-                {nameFromId(id)}
+                {snapshot.lilguys?.find(l => l.id === id)?.name || nameFromId(id)}
               </button>
             ))}
           </div>

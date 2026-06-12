@@ -217,7 +217,9 @@ function ModuleDetail({ module, allModules, onBack, palette }: {
         </Card>
       )}
 
-      {/* Ground tint — any module, applied on the device within ~30s */}
+      {/* Ground tint — any module of ours; a foreign queen decorates her own
+          kingdom */}
+      {module.role !== 'foreign_queen' && (
       <Card style={{ background: palette.cardBg }}>
         <div style={{ fontSize: SIZES.xs, fontWeight: 600, color: palette.dimText, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
           Ground Tint
@@ -252,6 +254,7 @@ function ModuleDetail({ module, allModules, onBack, palette }: {
           </div>
         )}
       </Card>
+      )}
 
       {/* Face connections */}
       <Card style={{ background: palette.cardBg }}>

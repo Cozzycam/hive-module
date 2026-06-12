@@ -104,11 +104,21 @@ const stmts = {
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `),
   getSnapshot: db.prepare(`SELECT last_snapshot FROM colonies WHERE colony_id = ?`),
+  // Newest N events, returned in chronological order — a plain ASC LIMIT
+  // froze the diary at the oldest 200 events once a colony outgrew it
   getEvents: db.prepare(`
-    SELECT raw FROM events WHERE colony_id = ? AND unix >= ? ORDER BY unix, tick LIMIT ?
+    SELECT raw FROM (
+      SELECT raw, unix, tick FROM events
+      WHERE colony_id = ? AND unix >= ?
+      ORDER BY unix DESC, tick DESC LIMIT ?
+    ) ORDER BY unix, tick
   `),
   getLilguyEvents: db.prepare(`
-    SELECT raw FROM events WHERE colony_id = ? AND lilguy = ? AND unix >= ? ORDER BY unix, tick LIMIT ?
+    SELECT raw FROM (
+      SELECT raw, unix, tick FROM events
+      WHERE colony_id = ? AND lilguy = ? AND unix >= ?
+      ORDER BY unix DESC, tick DESC LIMIT ?
+    ) ORDER BY unix, tick
   `),
   listColonies: db.prepare(`SELECT colony_id, last_snapshot_unix FROM colonies`),
   insertCommand: db.prepare(`
