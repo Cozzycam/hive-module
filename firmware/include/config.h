@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 103;
+constexpr uint32_t FW_VERSION = 104;
 
 namespace Cfg {
 
@@ -119,7 +119,10 @@ struct RoleParams {
 };
 
 constexpr RoleParams ROLE_PARAMS[ROLE_COUNT] = {
-    { 4, 8, 6.6f, 0.25f },        // ROLE_CONKER
+    // carry 0.4u/trip: a tapped pile (2u) takes 5 hauls — repeat journeys
+    // are what lay and ratify pheromone trails, and a care package becomes
+    // a proper supply column
+    { 4, 8, 0.4f, 0.25f },        // ROLE_CONKER
 };
 
 constexpr Role DEFAULT_BROOD_ROLE = ROLE_CONKER;
