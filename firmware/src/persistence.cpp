@@ -653,6 +653,11 @@ void ConkerRegistry::flush() {
             if (_write_record(_alive[i])) {
                 _alive[i].dirty = false;
                 flushed++;
+            } else {
+                // A silently failing write leaves the record stale on disk
+                // forever — say so
+                Serial.printf("[persist] WRITE FAILED id=%lu\r\n",
+                              (unsigned long)_alive[i].id);
             }
         }
     }

@@ -1754,8 +1754,18 @@ void Coordinator::_persist_restore_from_disk() {
         chamber.conkers[idx].prev_x = pos_x;
         chamber.conkers[idx].prev_y = pos_y;
         // Restore lifespan (init randomizes it — override with persisted value)
-        if (r.lifespan_ms > 0)
+        if (r.lifespan_ms > 0) {
             chamber.conkers[idx].lifespan_ms = r.lifespan_ms;
+        } else {
+            // Heal the RECORD, not just the conker: a zero-lifespan record
+            // otherwise lives forever (the conker gets a fresh random draw
+            // each boot that is never written back) and kills its owner the
+            // next time the respawn path copies it verbatim.
+            r.lifespan_ms = chamber.conkers[idx].lifespan_ms;
+            r.dirty = true;
+            Serial.printf("[persist] id=%lu record had no lifespan — healed to %.1fd\r\n",
+                          (unsigned long)r.id, r.lifespan_ms / 86400000.0f);
+        }
         // Restore lived_ms (ageing source of truth — no wall-clock reconstruction)
         chamber.conkers[idx].lived_ms = r.lived_ms;
         // Restore scale_factor (init randomizes it — override with persisted value)
