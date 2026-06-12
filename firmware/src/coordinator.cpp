@@ -2004,11 +2004,19 @@ void Coordinator::_trait_tick(uint32_t tick_num) {
         // Pioneer: set if is_pioneer flag (already determined at hatch)
         if (w.is_pioneer) rec->traits |= TRAIT_PIONEER;
 
-        // Elder: age > 80% of typical lifespan
+        // Elder: lived past 80% of lifespan. Uses lived_ms — the same clock
+        // as the old-age death check (born_at_ms is another module's millis
+        // domain after a handoff) — and 64-bit math: lifespan_ms * 4
+        // overflows uint32 for lifespans past ~12.4 days, which is how a
+        // 1.8-day-old Lupin got an Elder badge. Self-heal: a conker clearly
+        // young (<50% lived) loses a wrongly-awarded badge; genuine elders
+        // (>80%, and lived only rises) never flap.
         if (w.lifespan_ms > 0) {
-            uint32_t age_ms = millis() - w.born_at_ms;
-            if (age_ms > w.lifespan_ms * 4 / 5)
+            uint64_t threshold = static_cast<uint64_t>(w.lifespan_ms) * 4 / 5;
+            if (w.lived_ms >= threshold)
                 rec->traits |= TRAIT_ELDER;
+            else if (w.lived_ms < w.lifespan_ms / 2)
+                rec->traits &= ~TRAIT_ELDER;
         }
 
         // Bonded: any bond >= 0.6 (hysteresis: clear below 0.4)
@@ -2046,8 +2054,9 @@ void Coordinator::_trait_tick(uint32_t tick_num) {
                     journal.emit(je);
                 }
             }
-            rec->dirty = true;
         }
+        // Persist clears too (bonded hysteresis, elder self-heal)
+        if (rec->traits != prev_traits) rec->dirty = true;
     }
 }
 

@@ -198,6 +198,10 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
           }
           break;
         case 'trait_earned': {
+          // Roster traits are authoritative for the living — the firmware can
+          // revoke a wrongly-awarded badge, but the trait_earned event stays
+          // in history forever. Events only dress the deceased.
+          if (rosterIds.has(id)) break;
           const trait = (ev.data as { trait?: string }).trait;
           if (trait && !c.traits.includes(String(trait))) {
             c.traits.push(String(trait));
