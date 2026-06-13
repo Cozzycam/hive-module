@@ -33,6 +33,9 @@ const TAB_ICONS: Record<Tab, string> = {
   feedback: '\u{1F4AC}',
 };
 
+// localStorage key: unix of the most recent neighbour gift the user has seen.
+const GIFT_SEEN_KEY = 'hive_last_gift_seen_unix';
+
 // Service worker registration with an update prompt. onNeedRefresh can fire
 // before React mounts, so buffer it in module state until the App subscribes.
 let _pendingRefresh = false;
@@ -72,6 +75,14 @@ export function App() {
     return () => { _notifyRefresh = null; };
   }, []);
 
+  // Gift toast — a neighbouring kingdom sent us a care package (royal diplomacy).
+  // We track the last acknowledged gift by its unix timestamp so it only pops
+  // once per gift, and baseline to existing history on first run so old gifts
+  // (from before the app was installed) never pop.
+  const [giftSeenUnix, setGiftSeenUnix] = useState<number>(
+    () => Number(localStorage.getItem(GIFT_SEEN_KEY) || 0)
+  );
+
   // Colony state managed here, provided via context
   const [colonyState, setColonyState] = useState<ColonyState>({
     snapshot: null,
@@ -100,6 +111,9 @@ export function App() {
       setColonyState(s => ({
         ...s,
         snapshot: state.snapshot ?? s.snapshot,
+        // Poller now polls events too — keep them fresh so the gift toast can
+        // surface proactively (don't clobber with the initial null state).
+        events: state.events?.results ?? s.events,
         source: state.source as DataSource,
         lastFetchMs: state.lastFetchMs,
         colonyId,
@@ -167,6 +181,34 @@ export function App() {
     setShowSettings(false);
   }, []);
 
+  // Newest "care package from a neighbour" event, if any.
+  const latestGift = useMemo<ColonyEvent | null>(() => {
+    let best: ColonyEvent | null = null;
+    for (const e of colonyState.events) {
+      if (e.type === 'colony_event' && e.data?.kind === 'care_package_from_neighbours') {
+        if (!best || e.unix > best.unix) best = e;
+      }
+    }
+    return best;
+  }, [colonyState.events]);
+
+  // First run: baseline to existing history so we only pop for FUTURE gifts.
+  useEffect(() => {
+    if (latestGift && localStorage.getItem(GIFT_SEEN_KEY) === null) {
+      localStorage.setItem(GIFT_SEEN_KEY, String(latestGift.unix));
+      setGiftSeenUnix(latestGift.unix);
+    }
+  }, [latestGift]);
+
+  const showGiftToast = !!latestGift && latestGift.unix > giftSeenUnix;
+
+  const dismissGift = useCallback(() => {
+    if (latestGift) {
+      localStorage.setItem(GIFT_SEEN_KEY, String(latestGift.unix));
+      setGiftSeenUnix(latestGift.unix);
+    }
+  }, [latestGift]);
+
   // No colony — show empty state
   if (!colonyId) {
     return <Empty onConnected={handleConnect} />;
@@ -224,6 +266,29 @@ export function App() {
                   </>
                 )}
               </div>
+
+              {/* Gift toast — a neighbouring kingdom sent a care package */}
+              {showGiftToast && (
+                <button
+                  onClick={() => { handleNavigate('diary'); dismissGift(); }}
+                  style={{
+                    flexShrink: 0,
+                    margin: '0 12px 8px',
+                    padding: '12px 16px',
+                    background: HIVE.green,
+                    color: HIVE.white,
+                    border: 'none',
+                    borderRadius: 12,
+                    fontSize: SIZES.sm,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                    textAlign: 'left',
+                  }}
+                >
+                  {'\u{1F381}'} A neighbouring kingdom sent a care package! Tap to see it.
+                </button>
+              )}
 
               {/* Update toast — a fresh version is waiting in the wings */}
               {updateReady && (

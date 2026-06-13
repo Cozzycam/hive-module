@@ -64,16 +64,21 @@ export class Poller {
     }
   }
 
-  start(): void {
+  private tick(): void {
     this.poll();
-    this.timer = setInterval(() => this.poll(), this.interval);
+    this.pollEvents();
+  }
+
+  start(): void {
+    this.tick();
+    this.timer = setInterval(() => this.tick(), this.interval);
 
     this.visibilityHandler = () => {
       if (document.visibilityState === 'hidden') {
         this.stop(true);
       } else {
-        this.poll();
-        this.timer = setInterval(() => this.poll(), this.interval);
+        this.tick();
+        this.timer = setInterval(() => this.tick(), this.interval);
       }
     };
     document.addEventListener('visibilitychange', this.visibilityHandler);
