@@ -132,6 +132,7 @@ public:
     // Brood lifecycle
     bool create_brood(const BroodRecord& rec);
     BroodRecord* get_brood(uint32_t id);
+    bool update_brood(const BroodRecord& rec);  // re-persist developmental state (stage, timing, feeding)
     void remove_brood(uint32_t id);  // hatched or died — remove from cache + disk
 
     // Flush dirty records to disk.  Called periodically (30s) and on lifecycle events.

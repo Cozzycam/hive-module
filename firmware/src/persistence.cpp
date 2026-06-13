@@ -630,6 +630,17 @@ BroodRecord* ConkerRegistry::get_brood(uint32_t id) {
     return nullptr;
 }
 
+bool ConkerRegistry::update_brood(const BroodRecord& rec) {
+    for (int i = 0; i < _brood_count; i++) {
+        if (_brood[i].id == rec.id) {
+            _brood[i] = rec;
+            if (_state == PERSIST_OK) return _write_brood(rec);
+            return true;
+        }
+    }
+    return false;
+}
+
 void ConkerRegistry::remove_brood(uint32_t id) {
     for (int i = 0; i < _brood_count; i++) {
         if (_brood[i].id == id) {

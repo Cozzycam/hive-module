@@ -1100,6 +1100,14 @@ void Coordinator::_respawn_worker(uint32_t id, IdentityRecord* rec) {
     Conker& w = chamber.conkers[idx];
     w = Conker{};
     w.id = id;
+    // Heal a nameless record before copying (see restore path) — else the
+    // respawned conker renders "???" and never gets named again.
+    if (rec->name[0] == '\0') {
+        name_random(rec->name, sizeof(rec->name));
+        rec->dirty = true;
+        Serial.printf("[reconcile] id=%lu record had no name — healed to %s\r\n",
+                      (unsigned long)id, rec->name);
+    }
     strncpy(w.name, rec->name, sizeof(w.name) - 1);
     w.alive = true;
     w.x = static_cast<float>(qx) + 0.5f;
@@ -1271,6 +1279,7 @@ void Coordinator::_persist_tick(uint32_t tick_num) {
     if (now - _last_manifest_ms >= 30000) {
         _last_manifest_ms = now;
         _persist_update_positions();
+        _persist_sync_brood();
         _persist_sync_colony_state(tick_num);
         registry.flush_manifest();
         _bond_persist();
@@ -1300,6 +1309,35 @@ void Coordinator::_persist_assign_new_brood_ids() {
             rec.born_unix = g_tod.unix_time;
             registry.create_brood(rec);
         }
+    }
+}
+
+// Brood records were written once at laying and never again — so a larva that
+// advanced past the egg stage reverted to an egg on every reboot (the stale
+// on-disk record still said STAGE_EGG). Mirror each live brood's developmental
+// state back into its record when it has materially changed. Runs on the 30s
+// manifest cadence; brood stages last hours, so 30s of slack is harmless.
+void Coordinator::_persist_sync_brood() {
+    for (int i = 0; i < chamber.brood_count; i++) {
+        Brood& b = chamber.brood[i];
+        if (b.id == 0) continue;  // not yet assigned a record this tick
+        BroodRecord* rec = registry.get_brood(b.id);
+        if (!rec) continue;
+
+        bool changed = (rec->stage != static_cast<uint8_t>(b.stage))
+                    || (rec->stage_start_ms != b.stage_start_ms)
+                    || (fabsf(rec->food_invested - b.food_invested) > 0.25f)
+                    || (fabsf(rec->hunger - b.hunger) > 0.05f);
+        if (!changed) continue;
+
+        BroodRecord updated = *rec;
+        updated.stage          = static_cast<uint8_t>(b.stage);
+        updated.stage_start_ms = b.stage_start_ms;
+        updated.hunger         = b.hunger;
+        updated.food_invested  = b.food_invested;
+        updated.x              = b.x;
+        updated.y              = b.y;
+        registry.update_brood(updated);
     }
 }
 
@@ -1858,7 +1896,16 @@ void Coordinator::_persist_restore_from_disk() {
         // Restore tint_seed (init randomizes it — override with persisted value)
         if (r.tint_seed > 0)
             chamber.conkers[idx].tint_seed = r.tint_seed;
-        // Restore name from registry
+        // Restore name from registry. Heal the RECORD if it has no name (a
+        // partial/malformed write — same family as the zero-lifespan records):
+        // otherwise the conker renders "???" forever, and _persist_tick won't
+        // fix it because the record exists (only record-LESS conkers get named).
+        if (r.name[0] == '\0') {
+            name_random(r.name, sizeof(r.name));
+            r.dirty = true;
+            Serial.printf("[persist] id=%lu record had no name — healed to %s\r\n",
+                          (unsigned long)r.id, r.name);
+        }
         strncpy(chamber.conkers[idx].name, r.name, sizeof(chamber.conkers[idx].name) - 1);
         // Restore personality (init randomizes it — override with persisted value)
         memcpy(chamber.conkers[idx].personality, r.personality,

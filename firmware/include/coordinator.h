@@ -165,6 +165,7 @@ private:
     uint32_t _last_persist_flush_ms = 0;
     void _persist_tick(uint32_t tick_num);
     void _persist_assign_new_brood_ids();
+    void _persist_sync_brood();
     void _persist_process_hatches();
     void _persist_process_deaths();
     void _persist_update_positions();
