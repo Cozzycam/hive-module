@@ -42,6 +42,7 @@
 #include "setup_wizard.h"
 #include <SD_MMC.h>
 #include <Preferences.h>
+#include <esp_ota_ops.h>
 
 // Event type names for serial logging
 static const char* EVT_NAMES[] = {
@@ -583,6 +584,29 @@ void setup() {
     Serial.println("Hive Module -- live sim");
     Serial.println("Commands: +/- speed, 1-9/0 speed level, r redraw, R reboot, ? status");
 
+    // OTA rollback guard: a freshly-flashed image is "on trial" until it proves
+    // healthy (confirmed in loop() after a clean uptime). If it keeps rebooting
+    // without confirming, revert to the previous image. Runs first so a crash-
+    // looping image still gets its attempts counted before it can crash again.
+    {
+        Preferences p; p.begin("ota", false);
+        if (p.getBool("trial", false)) {
+            int tries = p.getInt("boot_try", 0) + 1;
+            p.putInt("boot_try", tries);
+            Serial.printf("[ota] trial boot attempt %d\r\n", tries);
+            if (tries >= 3) {
+                const esp_partition_t* prev = esp_ota_get_next_update_partition(nullptr);
+                p.putBool("trial", false); p.putInt("boot_try", 0); p.end();
+                if (prev) {
+                    Serial.println("[ota] new image never confirmed — ROLLING BACK");
+                    esp_ota_set_boot_partition(prev);
+                }
+                delay(100); ESP.restart();
+            }
+        }
+        p.end();
+    }
+
     g_rng = Rng(esp_random());
 
     Wire.begin(I2C_SDA, I2C_SCL);
@@ -664,6 +688,41 @@ void loop() {
     topology_poll();
     if (sim.coordinator.is_queen())
         weather_tick();
+
+    // OTA: confirm a freshly-flashed image healthy once it's run cleanly for a
+    // bit (cancels the rollback trial), then — on the queen — cascade the new
+    // firmware to a present satellite via the existing :8266 push.
+    static bool _ota_confirmed = false;
+    if (!_ota_confirmed && now > 10000) {
+        _ota_confirmed = true;
+        Preferences p; p.begin("ota", false);
+        if (p.getBool("trial", false)) {
+            p.putBool("trial", false); p.putInt("boot_try", 0);
+            esp_ota_mark_app_valid_cancel_rollback();
+            Serial.println("[ota] new image confirmed healthy");
+        }
+        p.end();
+    }
+    static bool _ota_cascaded = false;
+    if (!_ota_cascaded && now > 15000 && sim.coordinator.is_queen()) {
+        Preferences p; p.begin("ota", false);
+        bool cascade = p.getBool("cascade", false);
+        if (cascade) {
+            bool sat = false;
+            for (int f = 0; f < FACE_COUNT; f++)
+                if (topology_neighbour((Face)f).present) sat = true;
+            p.putBool("cascade", false);
+            if (sat) {
+                p.end();
+                _ota_cascaded = true;
+                Serial.println("[ota] cascading new firmware to satellite...");
+                ota_push();  // broadcasts announce + serves :8266 (blocks, reboots)
+            } else {
+                p.end();
+                _ota_cascaded = true;
+            }
+        } else { p.end(); _ota_cascaded = true; }
+    }
 
     // Debug fast-forward: hatch founder brood instantly until target reached
     if (g_ff_target_workers > 0) {

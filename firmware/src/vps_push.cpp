@@ -12,6 +12,7 @@
 #include <mbedtls/md.h>
 #include <ArduinoJson.h>
 #include <esp_random.h>
+#include <Update.h>
 
 static constexpr uint32_t PUSH_INTERVAL_MS = 30000;  // 30s
 static constexpr int MAX_SECRET_LEN = 80;
@@ -164,6 +165,100 @@ static bool _get_json(const char* path, JsonDocument& doc) {
     return !err;
 }
 
+// ---- Firmware OTA from VPS ----
+// Authenticity is anchored in the manifest signature, not the transport: the
+// VPS signs {version,url,md5} with this colony's HMAC secret, we verify it with
+// our own secret, then verify the downloaded image against the (now-trusted)
+// MD5. A forged trigger can at worst cause a legitimate update — never a
+// malicious flash. Dual-bank means an interrupted download is harmless.
+static bool _ota_from_vps(const char* colony_id) {
+    if (_secret[0] == '\0' || WiFi.status() != WL_CONNECTED) {
+        Serial.println("[ota] not ready (no secret / no WiFi)");
+        return false;
+    }
+
+    // 1. Fetch the signed manifest
+    char path[96];
+    snprintf(path, sizeof(path), "/api/v1/colonies/%s/firmware", colony_id);
+    JsonDocument doc;
+    if (!_get_json(path, doc)) { Serial.println("[ota] manifest fetch failed"); return false; }
+
+    uint32_t version = doc["version"] | 0;
+    const char* url = doc["url"] | "";
+    const char* md5 = doc["md5"] | "";
+    const char* sig = doc["sig"] | "";
+    if (version == 0 || !url[0] || !md5[0] || !sig[0]) {
+        Serial.println("[ota] manifest incomplete");
+        return false;
+    }
+
+    // 2. Verify the manifest signature with our device secret
+    char signed_data[256];
+    int n = snprintf(signed_data, sizeof(signed_data), "%lu\n%s\n%s",
+                     (unsigned long)version, url, md5);
+    char expect[65];
+    _hmac_sha256(_secret, strlen(_secret), signed_data, n, expect, sizeof(expect));
+    if (strncmp(expect, sig, 64) != 0) {
+        Serial.println("[ota] SIGNATURE MISMATCH — refusing update");
+        return false;
+    }
+
+    // 3. Only update if strictly newer
+    if (version <= FW_VERSION) {
+        Serial.printf("[ota] already current (v%lu, manifest v%lu)\r\n",
+                      (unsigned long)FW_VERSION, (unsigned long)version);
+        return false;
+    }
+    Serial.printf("[ota] verified manifest — updating v%lu -> v%lu\r\n",
+                  (unsigned long)FW_VERSION, (unsigned long)version);
+
+    // 4. Download + flash, verifying the authenticated MD5
+    WiFiClient client;
+    client.setTimeout(20);
+    HTTPClient http;
+    http.begin(client, url);
+    http.setTimeout(20000);
+    int code = http.GET();
+    if (code != 200) { Serial.printf("[ota] download HTTP %d\r\n", code); http.end(); return false; }
+    int len = http.getSize();
+    if (len <= 0) { Serial.println("[ota] bad content length"); http.end(); return false; }
+
+    if (!Update.begin(len)) {
+        Serial.printf("[ota] Update.begin failed: %s\r\n", Update.errorString());
+        http.end();
+        return false;
+    }
+    Update.setMD5(md5);  // Update.end() fails if the image MD5 doesn't match
+    size_t written = Update.writeStream(*http.getStreamPtr());
+    http.end();
+    if (written != (size_t)len) {
+        Serial.printf("[ota] short write %u/%d\r\n", (unsigned)written, len);
+        Update.abort();
+        return false;
+    }
+    if (!Update.end(true)) {
+        Serial.printf("[ota] verify/commit failed: %s\r\n", Update.errorString());
+        return false;
+    }
+
+    // 5. Arm the rollback trial + satellite cascade, then reboot into the new image
+    Serial.println("[ota] flash OK, MD5 verified — rebooting into new image");
+    Preferences prefs;
+    prefs.begin("ota", false);
+    prefs.putBool("trial", true);
+    prefs.putInt("boot_try", 0);
+    prefs.putBool("cascade", true);
+    prefs.end();
+    return true;
+}
+
+void vps_ota_update(Coordinator& coord) {
+    if (_ota_from_vps(coord.registry.manifest().colony_id)) {
+        delay(200);
+        ESP.restart();
+    }
+}
+
 // ---- Command queue (app -> queen via VPS) ----
 
 static void _poll_commands(Coordinator& coord) {
@@ -211,6 +306,11 @@ static void _poll_commands(Coordinator& coord) {
             const char* mod = cmd["payload"]["module"] | "";
             uint16_t target = (uint16_t)strtol(mod, nullptr, 16);  // 0 = any neighbour
             coord.cmd_gift_care_package(target);
+        } else if (strcmp(type, "ota_update") == 0) {
+            // Reboots into the new image on success. The command stays pending
+            // until then; after the reboot the manifest reads "already current"
+            // so it acks without re-flashing — no loop.
+            vps_ota_update(coord);
         }
         // Always ack — invalid commands must not clog the queue
         if (!first) acks += ",";

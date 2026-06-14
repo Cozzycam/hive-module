@@ -17,5 +17,10 @@ void vps_push_set_secret(const char* base64_secret);
 // Set the VPS endpoint URL
 void vps_push_set_endpoint(const char* url);
 
+// Check the VPS for a newer firmware build and, if the signed manifest
+// verifies, download + flash it (reboots on success). Triggered by the
+// app's ota_update command.
+void vps_ota_update(Coordinator& coord);
+
 // Print VPS push status to Serial
 void vps_push_status();
