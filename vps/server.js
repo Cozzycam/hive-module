@@ -313,11 +313,14 @@ app.get('/api/v1/firmware/bin/:version', (req, res) => {
 app.get('/api/v1/colonies/:colony_id/firmware', (req, res) => {
   const m = readFwManifest();
   if (!m) return res.status(404).json({ error: 'no firmware published' });
+  // Sign with the colony's own secret, falling back to the legacy global
+  // secret — same order colonyAuth uses to verify the module's requests.
   const sec = db.prepare(`SELECT secret FROM colony_secrets WHERE colony_id = ?`).get(req.params.colony_id);
-  if (!sec) return res.status(404).json({ error: 'unknown colony' });
+  const secret = sec ? sec.secret : HMAC_SECRET;
+  if (!secret) return res.status(404).json({ error: 'no signing secret' });
   const url = `${PUBLIC_BASE}/api/v1/firmware/bin/${m.version}`;
   const signed = `${m.version}\n${url}\n${m.md5}`;
-  const sig = crypto.createHmac('sha256', sec.secret).update(signed).digest('hex');
+  const sig = crypto.createHmac('sha256', secret).update(signed).digest('hex');
   res.json({ schema: 1, version: m.version, url, md5: m.md5, sig });
 });
 
