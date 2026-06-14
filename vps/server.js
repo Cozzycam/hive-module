@@ -21,6 +21,24 @@ if (!HMAC_SECRET) {
   console.warn('WARNING: HMAC_SECRET not set — auth disabled');
 }
 
+// ---- Web push (optional — disabled gracefully if web-push isn't installed) ----
+let webpush = null;
+let VAPID = { publicKey: process.env.VAPID_PUBLIC || '', privateKey: process.env.VAPID_PRIVATE || '' };
+try {
+  webpush = require('web-push');
+  if (!VAPID.publicKey || !VAPID.privateKey) {
+    try { VAPID = JSON.parse(fs.readFileSync(path.join(__dirname, 'vapid.json'), 'utf8')); } catch {}
+  }
+  if (VAPID.publicKey && VAPID.privateKey) {
+    webpush.setVapidDetails('mailto:campbellanderson24@gmail.com', VAPID.publicKey, VAPID.privateKey);
+    console.log('web push enabled');
+  } else {
+    console.warn('web push: no VAPID keys — push disabled');
+  }
+} catch {
+  console.warn('web-push not installed — push disabled');
+}
+
 // ---- Database ----
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
@@ -69,6 +87,14 @@ db.exec(`
     context TEXT,
     created_at INTEGER DEFAULT (unixepoch()),
     read_at INTEGER DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    colony_id TEXT NOT NULL,
+    endpoint TEXT NOT NULL UNIQUE,
+    sub TEXT NOT NULL,
+    created_at INTEGER DEFAULT (unixepoch())
   );
 `);
 
@@ -204,6 +230,62 @@ function colonyAuth(req, res, next) {
   return res.status(401).json({ error: 'invalid signature' });
 }
 
+// ---- Web push ----
+
+// Build a notification for a noteworthy event, or null to skip it.
+function notificationFor(ev) {
+  if (ev.type === 'discovery') {
+    const critter = (ev.data && ev.data.critter) || 'critter';
+    const who = ev.name || 'One of your guys';
+    return { body: `${who} found a ${critter}!`, tag: 'discovery' };
+  }
+  if (ev.type === 'colony_event' && ev.data && ev.data.kind === 'care_package_from_neighbours') {
+    return { body: 'A neighbouring kingdom sent a care package!', tag: 'gift' };
+  }
+  return null;
+}
+
+// Fire push notifications for a batch of newly-ingested events (best-effort).
+function sendPushesForEvents(colonyId, events) {
+  if (!webpush || !VAPID.publicKey) return;
+  const seen = new Set();
+  const notes = [];
+  for (const ev of events) {
+    const n = notificationFor(ev);
+    if (n && !seen.has(n.tag)) { seen.add(n.tag); notes.push(n); }  // ≤1 per tag per batch
+  }
+  if (!notes.length) return;
+  const subs = db.prepare(`SELECT id, sub FROM push_subscriptions WHERE colony_id = ?`).all(colonyId);
+  for (const row of subs) {
+    let sub;
+    try { sub = JSON.parse(row.sub); } catch { continue; }
+    for (const note of notes) {
+      const payload = JSON.stringify({ title: 'Hive', body: note.body, tag: note.tag, url: '/app/' });
+      webpush.sendNotification(sub, payload).catch((err) => {
+        if (err.statusCode === 404 || err.statusCode === 410) {
+          db.prepare(`DELETE FROM push_subscriptions WHERE id = ?`).run(row.id);  // dead subscription
+        }
+      });
+    }
+  }
+}
+
+// Public VAPID key for the app to subscribe with
+app.get('/api/v1/push/vapid', (req, res) => {
+  res.json({ publicKey: VAPID.publicKey || null });
+});
+
+// Register a browser push subscription against a colony
+app.post('/api/v1/colonies/:colony_id/push/subscribe', (req, res) => {
+  let sub;
+  try { sub = JSON.parse(req.body.toString()); } catch { return res.status(400).json({ error: 'invalid json' }); }
+  if (!sub || !sub.endpoint) return res.status(400).json({ error: 'no endpoint' });
+  db.prepare(`INSERT INTO push_subscriptions (colony_id, endpoint, sub) VALUES (?, ?, ?)
+              ON CONFLICT(endpoint) DO UPDATE SET colony_id = excluded.colony_id, sub = excluded.sub`)
+    .run(req.params.colony_id, sub.endpoint, JSON.stringify(sub));
+  res.json({ status: 'subscribed' });
+});
+
 // ---- Queen push endpoints ----
 
 // POST /api/v1/colonies/:colony_id/snapshot
@@ -228,8 +310,9 @@ app.post('/api/v1/colonies/:colony_id/events', colonyAuth, (req, res) => {
   db.prepare(`INSERT OR IGNORE INTO colonies (colony_id) VALUES (?)`).run(colony_id);
 
   const insertMany = db.transaction((events) => {
+    const fresh = [];
     for (const ev of events) {
-      stmts.insertEvent.run(
+      const info = stmts.insertEvent.run(
         colony_id,
         ev.tick || 0,
         ev.unix || 0,
@@ -238,12 +321,16 @@ app.post('/api/v1/colonies/:colony_id/events', colonyAuth, (req, res) => {
         JSON.stringify(ev.data || {}),
         JSON.stringify(ev)
       );
+      if (info.changes > 0) fresh.push(ev);  // newly inserted (not a dedup'd repeat)
     }
+    return fresh;
   });
 
   const events = parsed.events || [];
-  insertMany(events);
+  const fresh = insertMany(events);
   res.json({ status: 'ok', inserted: events.length });
+  // Best-effort push for noteworthy new events — after responding
+  sendPushesForEvents(colony_id, fresh);
 });
 
 // ---- App read endpoints (same shape as queen's local API) ----

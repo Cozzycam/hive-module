@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useColony, timeSince } from '../state/colony';
-import { getStoredLanIp, getStoredColonyId, clearConnection, testLanConnection, setStoredLanIp, setStoredColonyId, fetchColonies } from '../api/client';
+import { getStoredLanIp, getStoredColonyId, clearConnection, testLanConnection, setStoredLanIp, setStoredColonyId, fetchColonies, enablePushNotifications, pushSupported } from '../api/client';
+import type { PushResult } from '../api/client';
 import { Card } from '../components/Card';
 import { HIVE, CONNECTION_COLORS } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
@@ -39,6 +40,15 @@ export function Settings({ onBack, onDisconnect, onReconnect }: SettingsProps) {
   const [showConnect, setShowConnect] = useState(false);
   const { snapshot, source, lastFetchMs, colonyId } = useColony();
   const [notifPref, setNotifPref] = useState<NotifPref>(loadNotifPref);
+  const [pushState, setPushState] = useState<'idle' | 'working' | PushResult>(
+    () => (typeof Notification !== 'undefined' && Notification.permission === 'granted' ? 'ok' : 'idle')
+  );
+
+  const handleEnablePush = async () => {
+    if (!colonyId) return;
+    setPushState('working');
+    setPushState(await enablePushNotifications(colonyId));
+  };
 
   const lanIp = getStoredLanIp();
   const storedColonyId = getStoredColonyId();
@@ -77,6 +87,44 @@ export function Settings({ onBack, onDisconnect, onReconnect }: SettingsProps) {
       <div style={{ fontSize: SIZES.xs, fontWeight: 600, color: HIVE.dimText, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
         Notifications
       </div>
+      <Card style={{ background: '#F5ECDD', marginBottom: 8 }}>
+        <div style={{ fontSize: SIZES.sm, color: HIVE.ink, marginBottom: 8 }}>
+          Get a buzz on your phone when something happens — a bug discovered, a gift
+          from next door — even when the app is closed.
+        </div>
+        {pushState === 'ok' ? (
+          <div style={{ fontSize: SIZES.sm, color: HIVE.green, fontWeight: 600 }}>
+            ✓ Phone notifications are on
+          </div>
+        ) : !pushSupported() ? (
+          <div style={{ fontSize: SIZES.sm, color: HIVE.dimText, fontStyle: 'italic' }}>
+            On iPhone, add this app to your Home Screen first (Share → Add to Home
+            Screen), then come back here to switch it on.
+          </div>
+        ) : (
+          <button
+            onClick={handleEnablePush}
+            disabled={pushState === 'working'}
+            style={{
+              padding: '8px 16px', borderRadius: 10, border: 'none',
+              background: HIVE.accent, color: HIVE.white, fontSize: SIZES.sm,
+              fontWeight: 600, cursor: 'pointer', opacity: pushState === 'working' ? 0.6 : 1,
+            }}
+          >
+            {pushState === 'working' ? 'Enabling…' : 'Enable phone notifications'}
+          </button>
+        )}
+        {pushState === 'denied' && (
+          <div style={{ fontSize: SIZES.xs, color: HIVE.alert, marginTop: 6 }}>
+            Notifications are blocked — turn them on for this site in your browser/phone settings.
+          </div>
+        )}
+        {pushState === 'error' && (
+          <div style={{ fontSize: SIZES.xs, color: HIVE.alert, marginTop: 6 }}>
+            Couldn’t enable just now — give it another tap.
+          </div>
+        )}
+      </Card>
       <Card style={{ background: '#F5ECDD' }}>
         {NOTIF_OPTIONS.map(opt => (
           <label

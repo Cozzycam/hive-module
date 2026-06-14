@@ -27,6 +27,8 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,png,svg,woff2}'],
+        // Pull our push / notificationclick handlers into the generated SW
+        importScripts: ['push-handler.js'],
         runtimeCaching: [
           {
             urlPattern: /\/api\/v1\//,

@@ -6,7 +6,7 @@ import { sendFeedback } from '../api/client';
 import { HIVE } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 
-const APP_VERSION = '1.4.1';
+const APP_VERSION = '1.5.0';
 
 export function Feedback() {
   const { snapshot, colonyId, source } = useColony();

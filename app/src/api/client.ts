@@ -244,6 +244,58 @@ export async function sendCommand(
   }
 }
 
+// ---- Web push notifications ----
+
+function urlBase64ToUint8Array(base64: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64.length % 4)) % 4);
+  const b64 = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(b64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+export type PushResult = 'ok' | 'denied' | 'unsupported' | 'error';
+
+// Whether this browser can do web push at all (iOS needs an installed PWA)
+export function pushSupported(): boolean {
+  return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+}
+
+export async function pushPermission(): Promise<NotificationPermission | 'unsupported'> {
+  if (!pushSupported()) return 'unsupported';
+  return Notification.permission;
+}
+
+// Request permission, subscribe, and register the subscription against a colony
+export async function enablePushNotifications(colonyId: string): Promise<PushResult> {
+  if (!pushSupported()) return 'unsupported';
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') return 'denied';
+
+    const vapidRes = await fetch(`${VPS_BASE}/api/v1/push/vapid`);
+    if (!vapidRes.ok) return 'error';
+    const { publicKey } = await vapidRes.json();
+    if (!publicKey) return 'error';
+
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource,
+    });
+
+    const res = await fetch(`${VPS_BASE}/api/v1/colonies/${colonyId}/push/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sub),
+    });
+    return res.ok ? 'ok' : 'error';
+  } catch {
+    return 'error';
+  }
+}
+
 // Latest published module firmware version (for the "update available" check)
 export async function fetchLatestFirmware(): Promise<number | null> {
   try {
