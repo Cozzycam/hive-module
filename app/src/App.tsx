@@ -3,7 +3,7 @@ import { registerSW } from 'virtual:pwa-register';
 import { ColonyContext, ColonyActionsContext, type ColonyState, type ColonyActions } from './state/colony';
 import { PinsProvider } from './state/pins';
 import { Poller } from './api/poller';
-import { getStoredColonyId, setStoredColonyId, fetchEvents, clearConnection } from './api/client';
+import { getStoredColonyId, setStoredColonyId, fetchEvents, clearConnection, fetchLatestFirmware, sendCommand } from './api/client';
 import { Home } from './screens/Home';
 import { Characters } from './screens/Characters';
 import { Chambers } from './screens/Chambers';
@@ -241,6 +241,30 @@ export function App() {
     }
   }, [latestDiscovery]);
 
+  // Module firmware: compare the latest published version to what the
+  // connected colony reports, and offer a one-tap OTA (the ota_update command).
+  const [latestFw, setLatestFw] = useState<number | null>(null);
+  const [fwUpdating, setFwUpdating] = useState(false);
+
+  useEffect(() => {
+    if (!colonyId) { setLatestFw(null); return; }
+    fetchLatestFirmware().then(v => { if (v) setLatestFw(v); });
+  }, [colonyId]);
+
+  const currentFw = colonyState.snapshot?.fw_version;
+  const fwUpdateAvailable = !!latestFw && typeof currentFw === 'number' && latestFw > currentFw;
+
+  useEffect(() => {
+    // Module rebooted into the new version — clear the "updating" state.
+    if (typeof currentFw === 'number' && latestFw && currentFw >= latestFw) setFwUpdating(false);
+  }, [currentFw, latestFw]);
+
+  const triggerFwUpdate = useCallback(async () => {
+    if (!colonyId) return;
+    setFwUpdating(true);
+    await sendCommand(colonyId, 'ota_update', {});
+  }, [colonyId]);
+
   const discoveryText = (() => {
     if (!latestDiscovery) return '';
     const critter = String((latestDiscovery.data as Record<string, unknown>)?.critter || 'critter');
@@ -352,6 +376,33 @@ export function App() {
                   }}
                 >
                   {'\u{1F381}'} A neighbouring kingdom sent a care package! Tap to see it.
+                </button>
+              )}
+
+              {/* Module firmware OTA — push new firmware to the hardware */}
+              {fwUpdateAvailable && (
+                <button
+                  onClick={triggerFwUpdate}
+                  disabled={fwUpdating}
+                  style={{
+                    flexShrink: 0,
+                    margin: '0 12px 8px',
+                    padding: '12px 16px',
+                    background: HIVE.sky,
+                    color: HIVE.ink,
+                    border: 'none',
+                    borderRadius: 12,
+                    fontSize: SIZES.sm,
+                    fontWeight: 600,
+                    cursor: fwUpdating ? 'default' : 'pointer',
+                    opacity: fwUpdating ? 0.7 : 1,
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                    textAlign: 'left',
+                  }}
+                >
+                  {fwUpdating
+                    ? '\u{1F504} Updating the wee guys’ brains… they’ll blink and reboot'
+                    : `\u{1F4E1} Module firmware v${latestFw} is ready — tap to update over WiFi`}
                 </button>
               )}
 

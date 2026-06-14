@@ -229,7 +229,7 @@ export async function fetchColonies(): Promise<ColoniesListResponse | null> {
 // Queue a command for the queen (applied on her next VPS poll, ~30s)
 export async function sendCommand(
   colonyId: string,
-  type: 'name_conker' | 'feed_colony' | 'set_module_role' | 'set_floor_tint' | 'gift_care_package',
+  type: 'name_conker' | 'feed_colony' | 'set_module_role' | 'set_floor_tint' | 'gift_care_package' | 'ota_update',
   payload: Record<string, unknown>,
 ): Promise<boolean> {
   try {
@@ -241,6 +241,20 @@ export async function sendCommand(
     return res.ok;
   } catch {
     return false;
+  }
+}
+
+// Latest published module firmware version (for the "update available" check)
+export async function fetchLatestFirmware(): Promise<number | null> {
+  try {
+    const res = await fetchWithTimeout2(
+      `${VPS_BASE}/api/v1/firmware/latest`, {}, VPS_TIMEOUT,
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return typeof data.version === 'number' ? data.version : null;
+  } catch {
+    return null;
   }
 }
 
