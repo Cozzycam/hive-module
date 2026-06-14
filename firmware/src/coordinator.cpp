@@ -1182,8 +1182,16 @@ void Coordinator::_journal_from_bus_events(const Event* events, int count,
             break;
 
         case EVT_PARADE_STARTED: {
+            // Boredom makes conkers play constantly now — journaling every
+            // parade floods the diary. Keep an occasional "they're playing"
+            // note (≤ 1 per 30 min) instead of one per romp.
+            static uint32_t _last_play_journal_ms = 0;
+            uint32_t now_ms = millis();
+            bool cooled = (_last_play_journal_ms == 0
+                           || now_ms - _last_play_journal_ms >= 1800000);
             int li = ev.parade.leader_idx;
-            if (li < chamber.conker_count && chamber.conkers[li].alive) {
+            if (cooled && li < chamber.conker_count && chamber.conkers[li].alive) {
+                _last_play_journal_ms = now_ms;
                 je.type = JEVT_PLAY;
                 je.lilguy_id = chamber.conkers[li].id;
                 strlcpy(je.who, chamber.conkers[li].name, sizeof(je.who));

@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 117;
+constexpr uint32_t FW_VERSION = 118;
 
 namespace Cfg {
 
@@ -278,13 +278,15 @@ constexpr int   MAX_CRITTERS             = 2;
 constexpr float CRITTER_SPAWN_CHANCE     = 0.0012f; // per tick (daytime), gated by count
 constexpr int   CRITTER_TTL_MIN          = 320;     // ~40s — wanders off if undiscovered
 constexpr int   CRITTER_TTL_MAX          = 720;     // ~90s
-constexpr float CRITTER_SPEED_BEETLE     = 0.045f;
+constexpr float CRITTER_SPEED_BEETLE     = 0.065f;
 constexpr float CRITTER_SPEED_BUTTERFLY  = 0.13f;
-constexpr float CRITTER_SPEED_WORM       = 0.025f;
-constexpr float CRITTER_SEEK_CONKER      = 0.012f;  // gentle drift toward the nearest guy
+constexpr float CRITTER_SPEED_WORM       = 0.045f;
+constexpr float CRITTER_SEEK_CONKER      = 0.06f;   // homes toward the nearest guy
+                                                    // (must beat the wander jitter
+                                                    // or it never reaches the cluster)
 constexpr float CRITTER_FLEE_SPEED       = 0.32f;   // scurries off once found
 constexpr int   CRITTER_FLEE_TICKS       = 14;      // ~2s of fleeing, then gone
-constexpr float CRITTER_FIND_RADIUS      = 0.8f;    // cells — contact = discovery
+constexpr float CRITTER_FIND_RADIUS      = 1.4f;    // cells — contact = discovery
 constexpr float DISCOVERY_BOREDOM_RELIEF = 0.7f;    // novelty is a big relief
 
 // ---- Metabolic scaling (3/4-power law) ----
