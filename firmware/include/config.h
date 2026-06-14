@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 118;
+constexpr uint32_t FW_VERSION = 119;
 
 namespace Cfg {
 
@@ -263,6 +263,8 @@ constexpr uint8_t NEEDS_ACTIVE_MASK        = 0x01;
 // curious social conker reaches full in ~12-15 min while a placid loner
 // barely climbs in an hour. Average personality ≈ full in ~25 min.
 constexpr float BOREDOM_RISE_PER_SEC       = 1.0f / 1800.0f;
+constexpr float BOREDOM_NIGHT_DECAY_PER_SEC = 1.0f / 600.0f;  // winds down by dusk/night
+                                                             // so it never competes with sleep
 constexpr float BOREDOM_PLAY_DRAIN_PER_SEC = 0.30f;  // a play bout empties it in ~3s
 constexpr float BOREDOM_WORK_RISE_SCALE    = 0.4f;   // rote work is mildly stimulating
 constexpr float BOREDOM_RESTLESS_AT        = 0.55f;  // mood: content → restless

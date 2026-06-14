@@ -228,6 +228,7 @@ function formatEvent(ev: ColonyEvent, rosterNames: Map<number, string>): { icon:
       const critter = String(data.critter || 'critter');
       const icon = critter === 'butterfly' ? '\u{1F98B}'
                  : critter === 'worm' ? '\u{1FAB1}'
+                 : critter === 'firefly' ? '\u{2728}'
                  : '\u{1FAB2}'; // beetle
       return {
         icon,

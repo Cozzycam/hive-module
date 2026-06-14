@@ -33,7 +33,8 @@ enum CritterKind : uint8_t {
     CRITTER_BEETLE     = 0,
     CRITTER_BUTTERFLY  = 1,
     CRITTER_WORM       = 2,
-    CRITTER_KIND_COUNT = 3,
+    CRITTER_FIREFLY    = 3,   // the night critter — caught via the firefly chase
+    CRITTER_KIND_COUNT = 4,
 };
 
 struct Critter {

@@ -1203,8 +1203,15 @@ void Coordinator::_journal_from_bus_events(const Event* events, int count,
         }
 
         case EVT_DISCOVERY: {
+            // Throttle so frequent finds (e.g. firefly catches at night) don't
+            // flood the diary or spam phone notifications — ≤1 per 10 min.
+            static uint32_t _last_discovery_journal_ms = 0;
+            uint32_t now_ms = millis();
+            bool cooled = (_last_discovery_journal_ms == 0
+                           || now_ms - _last_discovery_journal_ms >= 600000);
             int fi = ev.discovery.finder_idx;
-            if (fi < chamber.conker_count && chamber.conkers[fi].alive) {
+            if (cooled && fi < chamber.conker_count && chamber.conkers[fi].alive) {
+                _last_discovery_journal_ms = now_ms;
                 je.type = JEVT_DISCOVERY;
                 je.lilguy_id = chamber.conkers[fi].id;
                 strlcpy(je.who, chamber.conkers[fi].name, sizeof(je.who));

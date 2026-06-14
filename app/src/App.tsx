@@ -271,6 +271,7 @@ export function App() {
     const finder = (latestDiscovery as unknown as { name?: string }).name || 'Someone';
     const emoji = critter === 'butterfly' ? '\u{1F98B}'
                 : critter === 'worm' ? '\u{1FAB1}'
+                : critter === 'firefly' ? '\u{2728}'
                 : '\u{1FAB2}';
     return `${emoji} ${finder} found a ${critter}! Tap to see.`;
   })();

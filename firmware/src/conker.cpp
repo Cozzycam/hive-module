@@ -1164,6 +1164,15 @@ void Conker::_do_zoomies(Chamber& ch) {
             anim_type = LG_ANIM_NOTICE;
             anim_remaining_ticks = 12;
             zoomie_ticks = 1;          // wind down next tick
+            // A caught firefly is a find too — the night critter. Lets
+            // discoveries (and their notifications) happen after dark.
+            needs[NEED_BOREDOM] -= Cfg::DISCOVERY_BOREDOM_RELIEF;
+            if (needs[NEED_BOREDOM] < 0.0f) needs[NEED_BOREDOM] = 0.0f;
+            Event fev;
+            fev.type = EVT_DISCOVERY;
+            fev.tick = ch.tick_num;
+            fev.discovery = { static_cast<uint8_t>(this - ch.conkers), CRITTER_FIREFLY };
+            ch.emit(fev);
             return;
         }
         _step_toward_cell(static_cast<int>(f.x), static_cast<int>(f.y), ch);
@@ -1326,7 +1335,10 @@ void Conker::_update_needs(Chamber& ch, float dt) {
         float& boredom = needs[NEED_BOREDOM];
         if (state == STATE_ZOOMIES) {
             boredom -= Cfg::BOREDOM_PLAY_DRAIN_PER_SEC * dt;   // playing relieves it
-        } else if (!sleeping && !departing) {
+        } else if (sleeping || departing) {
+            // leave it be
+        } else if (g_tod.phase == PHASE_DAY) {
+            // Boredom is a daytime drive — builds only during the active day.
             // Restless temperaments crave stimulation: busy bees, explorers
             // and social butterflies fill fast; placid loners barely climb.
             float drive = 0.4f
@@ -1339,6 +1351,9 @@ void Conker::_update_needs(Chamber& ch, float dt) {
             float rise = Cfg::BOREDOM_RISE_PER_SEC * drive * dt;
             if (working) rise *= Cfg::BOREDOM_WORK_RISE_SCALE;  // rote work helps a little
             boredom += rise;
+        } else {
+            // Dawn/dusk/night: wind down so restlessness never keeps them up.
+            boredom -= Cfg::BOREDOM_NIGHT_DECAY_PER_SEC * dt;
         }
         if (boredom < 0.0f) boredom = 0.0f;
         if (boredom > 1.0f) boredom = 1.0f;
