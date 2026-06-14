@@ -10,6 +10,7 @@ const Database = require('better-sqlite3');
 const crypto = require('crypto');
 const morgan = require('morgan');
 const path = require('path');
+const fs = require('fs');
 
 // ---- Config (env vars) ----
 const PORT = process.env.PORT || 3000;
@@ -143,7 +144,7 @@ const stmts = {
 };
 
 // Command types the app may enqueue (queen applies them on her next poll)
-const COMMAND_TYPES = new Set(['name_conker', 'feed_colony', 'set_module_role', 'set_floor_tint', 'gift_care_package']);
+const COMMAND_TYPES = new Set(['name_conker', 'feed_colony', 'set_module_role', 'set_floor_tint', 'gift_care_package', 'ota_update']);
 
 // ---- HMAC verification ----
 function verifyHmac(body, signature) {
@@ -279,6 +280,46 @@ app.get('/api/v1/colonies/:colony_id/lilguys/:id/events', (req, res) => {
 });
 
 // ---- Command queue (app -> queen) ----
+
+// ---- Firmware OTA ----
+// Binaries + a latest.json {version, file, md5} live in FW_DIR. The per-colony
+// manifest is HMAC-signed with that colony's secret so a module can trust the
+// version/url/md5 even though the binary itself is fetched over plain HTTP.
+const FW_DIR = process.env.FW_DIR || '/opt/hive-vps/fw';
+const PUBLIC_BASE = process.env.PUBLIC_BASE || 'http://hive.campbell.fish';
+
+function readFwManifest() {
+  try { return JSON.parse(fs.readFileSync(path.join(FW_DIR, 'latest.json'), 'utf8')); }
+  catch { return null; }
+}
+
+// Public: just the latest version (for the app's "update available" check)
+app.get('/api/v1/firmware/latest', (req, res) => {
+  const m = readFwManifest();
+  if (!m) return res.status(404).json({ error: 'no firmware published' });
+  res.json({ schema: 1, version: m.version });
+});
+
+// The binary itself (HTTP — integrity/authenticity come from the signed md5)
+app.get('/api/v1/firmware/bin/:version', (req, res) => {
+  const m = readFwManifest();
+  if (!m || String(m.version) !== req.params.version) return res.status(404).end();
+  const file = path.join(FW_DIR, path.basename(m.file));
+  if (!fs.existsSync(file)) return res.status(404).end();
+  res.type('application/octet-stream').sendFile(file);
+});
+
+// Per-colony signed manifest: {version, url, md5, sig=HMAC(secret, "version\nurl\nmd5")}
+app.get('/api/v1/colonies/:colony_id/firmware', (req, res) => {
+  const m = readFwManifest();
+  if (!m) return res.status(404).json({ error: 'no firmware published' });
+  const sec = db.prepare(`SELECT secret FROM colony_secrets WHERE colony_id = ?`).get(req.params.colony_id);
+  if (!sec) return res.status(404).json({ error: 'unknown colony' });
+  const url = `${PUBLIC_BASE}/api/v1/firmware/bin/${m.version}`;
+  const signed = `${m.version}\n${url}\n${m.md5}`;
+  const sig = crypto.createHmac('sha256', sec.secret).update(signed).digest('hex');
+  res.json({ schema: 1, version: m.version, url, md5: m.md5, sig });
+});
 
 // POST /api/v1/colonies/:colony_id/commands  (from app — no HMAC, validated + capped)
 app.post('/api/v1/colonies/:colony_id/commands', (req, res) => {
