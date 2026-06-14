@@ -12,7 +12,7 @@ import { personalityPhrase, deriveRoleTag, PERSONALITY_DIMS, dimLeaning } from '
 import { HIVE, TOD_PALETTES } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 import { fetchLilguyDetail, fetchLilguyEvents, sendCommand } from '../api/client';
-import type { ColonyEvent, LilGuyDetail, Personality, Bond } from '../api/types';
+import type { ColonyEvent, LilGuyDetail, Personality, Bond, ConkerMood } from '../api/types';
 
 // Trait names arrive as firmware identifiers — translate to human warmth
 // (Amber feedback: "make the traits be understandable")
@@ -84,8 +84,24 @@ interface CharacterInfo {
   personality?: Personality;
   scale_factor?: number;
   tint_seed?: number;
+  mood?: ConkerMood;
+  needs?: { boredom?: number };
   deathCause?: string;
 }
+
+const MOOD_EMOJI: Record<ConkerMood, string> = {
+  content: '\u{1F60C}',   // relieved
+  restless: '\u{1F300}',  // cyclone (fidgety)
+  bored: '\u{1F611}',     // expressionless
+  playing: '\u{2728}',    // sparkles
+};
+
+const MOOD_BLURB: Record<ConkerMood, string> = {
+  content: 'Happy as they are right now.',
+  restless: 'Getting fidgety — could use something to do.',
+  bored: 'Properly bored. Give them a boop, or watch them go looking for fun.',
+  playing: 'Having a great time!',
+};
 
 function buildCharactersFromEvents(events: ColonyEvent[]): Map<number, CharacterInfo> {
   const chars = new Map<number, CharacterInfo>();
@@ -166,6 +182,8 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
           personality: l.personality,
           scale_factor: l.scale_factor,
           tint_seed: l.tint_seed,
+          mood: l.mood,
+          needs: l.needs,
         });
       }
     }
@@ -449,6 +467,44 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
             tintSeed={char.tint_seed}
             palette={palette}
           />
+        </Card>
+      )}
+
+      {/* Mood & needs (live conkers only) */}
+      {!isDeceased && char.mood && (
+        <Card style={{ background: palette.cardBg }}>
+          <div style={{ fontSize: SIZES.xs, color: palette.dimText, marginBottom: 8 }}>
+            Mood &amp; needs
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+            <span style={{ fontSize: 22 }}>{MOOD_EMOJI[char.mood]}</span>
+            <div>
+              <div style={{ fontSize: SIZES.base, color: palette.text, textTransform: 'capitalize' }}>
+                {char.mood}
+              </div>
+              <div style={{ fontSize: SIZES.xs, color: palette.dimText }}>
+                {MOOD_BLURB[char.mood]}
+              </div>
+            </div>
+          </div>
+          {typeof char.needs?.boredom === 'number' && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between',
+                            fontSize: SIZES.xs, color: palette.dimText, marginBottom: 3 }}>
+                <span>Restlessness</span>
+                <span>{Math.round(char.needs.boredom * 100)}%</span>
+              </div>
+              <div style={{ height: 6, borderRadius: 3, background: HIVE.parchment, overflow: 'hidden' }}>
+                <div style={{
+                  width: `${Math.round(Math.min(1, char.needs.boredom) * 100)}%`,
+                  height: '100%',
+                  background: char.needs.boredom >= 0.85 ? HIVE.alert
+                            : char.needs.boredom >= 0.55 ? HIVE.accent
+                            : HIVE.leafGreen,
+                }} />
+              </div>
+            </div>
+          )}
         </Card>
       )}
 

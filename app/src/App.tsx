@@ -35,6 +35,8 @@ const TAB_ICONS: Record<Tab, string> = {
 
 // localStorage key: unix of the most recent neighbour gift the user has seen.
 const GIFT_SEEN_KEY = 'hive_last_gift_seen_unix';
+// localStorage key: unix of the most recent critter discovery the user has seen.
+const DISCOVERY_SEEN_KEY = 'hive_last_discovery_seen_unix';
 
 // Service worker registration with an update prompt. onNeedRefresh can fire
 // before React mounts, so buffer it in module state until the App subscribes.
@@ -81,6 +83,9 @@ export function App() {
   // (from before the app was installed) never pop.
   const [giftSeenUnix, setGiftSeenUnix] = useState<number>(
     () => Number(localStorage.getItem(GIFT_SEEN_KEY) || 0)
+  );
+  const [discoverySeenUnix, setDiscoverySeenUnix] = useState<number>(
+    () => Number(localStorage.getItem(DISCOVERY_SEEN_KEY) || 0)
   );
 
   // Colony state managed here, provided via context
@@ -209,6 +214,43 @@ export function App() {
     }
   }, [latestGift]);
 
+  // Newest critter discovery ("Dahlia found a beetle"), if any.
+  const latestDiscovery = useMemo<ColonyEvent | null>(() => {
+    let best: ColonyEvent | null = null;
+    for (const e of colonyState.events) {
+      if (e.type === 'discovery') {
+        if (!best || e.unix > best.unix) best = e;
+      }
+    }
+    return best;
+  }, [colonyState.events]);
+
+  useEffect(() => {
+    if (latestDiscovery && localStorage.getItem(DISCOVERY_SEEN_KEY) === null) {
+      localStorage.setItem(DISCOVERY_SEEN_KEY, String(latestDiscovery.unix));
+      setDiscoverySeenUnix(latestDiscovery.unix);
+    }
+  }, [latestDiscovery]);
+
+  const showDiscoveryToast = !!latestDiscovery && latestDiscovery.unix > discoverySeenUnix;
+
+  const dismissDiscovery = useCallback(() => {
+    if (latestDiscovery) {
+      localStorage.setItem(DISCOVERY_SEEN_KEY, String(latestDiscovery.unix));
+      setDiscoverySeenUnix(latestDiscovery.unix);
+    }
+  }, [latestDiscovery]);
+
+  const discoveryText = (() => {
+    if (!latestDiscovery) return '';
+    const critter = String((latestDiscovery.data as Record<string, unknown>)?.critter || 'critter');
+    const finder = (latestDiscovery as unknown as { name?: string }).name || 'Someone';
+    const emoji = critter === 'butterfly' ? '\u{1F98B}'
+                : critter === 'worm' ? '\u{1FAB1}'
+                : '\u{1FAB2}';
+    return `${emoji} ${finder} found a ${critter}! Tap to see.`;
+  })();
+
   // No colony — show empty state
   if (!colonyId) {
     return <Empty onConnected={handleConnect} />;
@@ -266,6 +308,29 @@ export function App() {
                   </>
                 )}
               </div>
+
+              {/* Discovery toast — a conker found a visiting critter */}
+              {showDiscoveryToast && (
+                <button
+                  onClick={() => { handleNavigate('diary'); dismissDiscovery(); }}
+                  style={{
+                    flexShrink: 0,
+                    margin: '0 12px 8px',
+                    padding: '12px 16px',
+                    background: HIVE.leafGreen,
+                    color: HIVE.white,
+                    border: 'none',
+                    borderRadius: 12,
+                    fontSize: SIZES.sm,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                    textAlign: 'left',
+                  }}
+                >
+                  {discoveryText}
+                </button>
+              )}
 
               {/* Gift toast — a neighbouring kingdom sent a care package */}
               {showGiftToast && (

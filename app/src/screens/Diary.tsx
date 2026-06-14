@@ -13,6 +13,7 @@ const EVENT_CATEGORIES: { label: string; types: EventType[] }[] = [
   { label: 'Deaths', types: ['death'] },
   { label: 'Milestones', types: ['milestone', 'colony_event'] },
   { label: 'Social', types: ['bond_formed', 'bond_broken', 'tended_by_assigned', 'play'] },
+  { label: 'Discoveries', types: ['discovery'] },
   { label: 'Challenges', types: ['challenge_start', 'challenge_end'] },
   { label: 'Traits', types: ['trait_earned', 'role_change'] },
 ];
@@ -202,6 +203,16 @@ function formatEvent(ev: ColonyEvent, rosterNames: Map<number, string>): { icon:
         icon: '\u{1F3E0}',
         description: `Colony: ${String(data.kind).replace(/_/g, ' ')}.`,
       };
+    case 'discovery': {
+      const critter = String(data.critter || 'critter');
+      const icon = critter === 'butterfly' ? '\u{1F98B}'
+                 : critter === 'worm' ? '\u{1FAB1}'
+                 : '\u{1FAB2}'; // beetle
+      return {
+        icon,
+        description: `${name} found a ${critter}!`,
+      };
+    }
     case 'challenge_start':
       return {
         icon: '\u{26A0}',
