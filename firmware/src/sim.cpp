@@ -83,6 +83,9 @@ void Sim::handle_touch() {
         // Tapped a conker — select it
         auto& c = ch.conkers[best];
         selected_conker_id = c.id;
+        // A boop perks them up — attention relieves boredom.
+        c.needs[NEED_BOREDOM] -= Cfg::BOREDOM_BOOP_RELIEF;
+        if (c.needs[NEED_BOREDOM] < 0.0f) c.needs[NEED_BOREDOM] = 0.0f;
         // It notices: stop, face the glass, little startle hop.
         // Only idle conkers react — jobs and sleep are never interrupted.
         if (c.state == STATE_IDLE && !c.sleeping && c.stack_on < 0

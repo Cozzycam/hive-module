@@ -28,6 +28,7 @@ enum JournalType : uint8_t {
     JEVT_TRAIT_EARNED,
     JEVT_MOURNING,
     JEVT_PLAY,
+    JEVT_DISCOVERY,   // a conker found a visiting critter
     JEVT_COUNT
 };
 
@@ -57,6 +58,7 @@ struct JournalEntry {
         struct { uint32_t trait_bit; } trait;
         struct { uint32_t dead_id; } mourning;  // lilguy_id grieves for dead_id
         struct { uint8_t kind; uint8_t participants; } play;  // kind 0=parade
+        struct { uint8_t critter; } discovery;  // CritterKind found
     };
 };
 

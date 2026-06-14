@@ -177,6 +177,9 @@ void Conker::tick(Chamber& ch, float dt) {
         return;
     }
 
+    // Needs / mood (boredom etc.) — evolve drives + derive the display mood
+    _update_needs(ch, dt);
+
     // Speed: base speed modified by ageing and starvation
     float base_speed = Cfg::ROLE_PARAMS[ROLE_CONKER].speed;
 
@@ -1256,9 +1259,12 @@ void Conker::_tick_idle(Chamber& ch) {
     // game via the proximity join. The curious ones launch most often.
     if (g_tod.phase == PHASE_DAY && !sleeping && stack_on < 0
             && anim_type == LG_ANIM_NONE && interaction_cooldown == 0) {
-        float surplus = ch.colony->play_surplus();
-        if (surplus > 0.0f
-                && g_rng.rand_float() < Cfg::JOY_SPRINT_CHANCE * surplus
+        // A full pantry frees time for play — but so does plain boredom: a
+        // restless conker takes off even on an empty larder, just to burn it off.
+        float urge = ch.colony->play_surplus()
+                   + needs[NEED_BOREDOM] * Cfg::BOREDOM_PLAY_DRIVE;
+        if (urge > 0.0f
+                && g_rng.rand_float() < Cfg::JOY_SPRINT_CHANCE * urge
                                         * (0.5f + personality[PERS_EXPLORATION])) {
             // Don't pile on: if a game is already running, watch instead
             int playing = 0;
@@ -1272,7 +1278,7 @@ void Conker::_tick_idle(Chamber& ch) {
             zoomie_style = 0;
             zoomie_ticks = g_rng.rand_int(Cfg::ZOOMIE_MIN_TICKS,
                                           Cfg::ZOOMIE_MAX_TICKS
-                                          + static_cast<int>(surplus * Cfg::ZOOMIE_SURPLUS_TICKS));
+                                          + static_cast<int>(fminf(urge, 2.0f) * Cfg::ZOOMIE_SURPLUS_TICKS));
             has_target = false;
             has_target_cell = false;
             idle_ticks_remaining = 0;
@@ -1309,14 +1315,56 @@ void Conker::_tick_idle(Chamber& ch) {
     }
 }
 
+// Evolve the needs drives and derive the display mood. The framework holds
+// several needs but only those in Cfg::NEEDS_ACTIVE_MASK move — so each can be
+// activated and tuned on its own. First active need: boredom.
+void Conker::_update_needs(Chamber& ch, float dt) {
+    (void)ch;
+
+    // ---- Boredom (stimulation) ----
+    if (Cfg::NEEDS_ACTIVE_MASK & (1 << NEED_BOREDOM)) {
+        float& boredom = needs[NEED_BOREDOM];
+        if (state == STATE_ZOOMIES) {
+            boredom -= Cfg::BOREDOM_PLAY_DRAIN_PER_SEC * dt;   // playing relieves it
+        } else if (!sleeping && !departing) {
+            // Restless temperaments crave stimulation: busy bees, explorers
+            // and social butterflies fill fast; placid loners barely climb.
+            float drive = 0.4f
+                        + 0.7f * personality[PERS_WORK_TEMPO]
+                        + 0.6f * personality[PERS_EXPLORATION]
+                        + 0.3f * personality[PERS_SOCIAL_FREQUENCY];
+            bool working = (state == STATE_TO_FOOD || state == STATE_TO_HOME
+                         || state == STATE_TEND_BROOD || state == STATE_TEND_QUEEN
+                         || state == STATE_EATING);
+            float rise = Cfg::BOREDOM_RISE_PER_SEC * drive * dt;
+            if (working) rise *= Cfg::BOREDOM_WORK_RISE_SCALE;  // rote work helps a little
+            boredom += rise;
+        }
+        if (boredom < 0.0f) boredom = 0.0f;
+        if (boredom > 1.0f) boredom = 1.0f;
+    }
+
+    // ---- Derive mood from the loudest active need (+ live states) ----
+    ConkerMood m = MOOD_CONTENT;
+    if (state == STATE_ZOOMIES) {
+        m = MOOD_PLAYING;
+    } else if (!sleeping) {
+        float b = needs[NEED_BOREDOM];
+        if (b >= Cfg::BOREDOM_BORED_AT)         m = MOOD_BORED;
+        else if (b >= Cfg::BOREDOM_RESTLESS_AT) m = MOOD_RESTLESS;
+    }
+    mood = static_cast<uint8_t>(m);
+}
+
 void Conker::_pick_idle_microstate(Chamber& ch) {
     has_target_cell = false;
 
-    // Pirouette: a well-fed daytime idler sometimes just... twirls.
-    // The curious ones most of all.
-    float surplus = ch.colony->play_surplus();
-    if (surplus > 0.0f && g_tod.phase == PHASE_DAY && !sleeping
-            && g_rng.rand_float() < Cfg::PIROUETTE_CHANCE * surplus
+    // Pirouette: a well-fed (or just restless) daytime idler sometimes
+    // twirls. The curious ones most of all.
+    float urge = ch.colony->play_surplus()
+               + needs[NEED_BOREDOM] * Cfg::BOREDOM_PLAY_DRIVE;
+    if (urge > 0.0f && g_tod.phase == PHASE_DAY && !sleeping
+            && g_rng.rand_float() < Cfg::PIROUETTE_CHANCE * urge
                                     * (0.5f + personality[PERS_EXPLORATION])) {
         idle_microstate = 5;
         speed = Cfg::ROLE_PARAMS[role].speed;

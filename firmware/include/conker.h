@@ -36,6 +36,24 @@ enum ConkerSpriteFrame : uint8_t {
 
 class Chamber;  // forward declaration
 
+// Needs (drives). The framework is wired up whole; Cfg::NEEDS_ACTIVE_MASK
+// gates which ones actually evolve so each can be tuned in isolation.
+enum NeedDim : uint8_t {
+    NEED_BOREDOM = 0,   // stimulation / play (first active need)
+    NEED_SOCIAL  = 1,   // companionship (dormant)
+    NEED_REST    = 2,   // energy (dormant)
+    NEED_COUNT   = 3,
+};
+
+// Readable summary of the loudest unmet need — drives the on-screen emote
+// and the app. Live states (sleeping, playing) are folded in here too.
+enum ConkerMood : uint8_t {
+    MOOD_CONTENT  = 0,
+    MOOD_RESTLESS = 1,   // a need is rising
+    MOOD_BORED    = 2,   // a need is urgent
+    MOOD_PLAYING  = 3,   // actively relieving it
+};
+
 // Personality dimension indices
 enum PersonalityDim : uint8_t {
     PERS_WORK_TEMPO = 0,
@@ -119,6 +137,11 @@ struct Conker {
     uint8_t  flair_casts_used     = 0;   // casts this trip (capped)
     bool     flair_ceremony_done  = false;  // pickup inspection done this trip
 
+    // Needs / mood (v114) — needs[i] in 0..1, 1 = urgent. mood is derived
+    // each tick for the renderer + API. See NeedDim / ConkerMood.
+    float    needs[NEED_COUNT]    = {};
+    uint8_t  mood                 = MOOD_CONTENT;
+
     uint8_t  tint_seed            = 0;   // per-worker colour variation (set at init)
     int8_t   arrival_face        = -1;  // face this ant arrived from (-1 = locally spawned)
     uint32_t arrival_ms          = 0;   // millis() when placed after transfer
@@ -154,6 +177,7 @@ struct Conker {
     void _do_tend_brood(Chamber& ch);
     void _do_tend_queen(Chamber& ch);
     void _do_idle(Chamber& ch);
+    void _update_needs(Chamber& ch, float dt);
     void _tick_idle(Chamber& ch);
     void _pick_idle_microstate(Chamber& ch);
     float _colony_idle_budget(Chamber& ch);

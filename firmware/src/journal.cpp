@@ -14,8 +14,11 @@ static const char* JEVT_NAMES[] = {
     "food_discovered", "food_delivered", "chamber_crossing",
     "milestone", "colony_event", "tended_by_assigned",
     "bond_formed", "bond_broken", "challenge_start",
-    "challenge_end", "trait_earned", "mourning", "play"
+    "challenge_end", "trait_earned", "mourning", "play", "discovery"
 };
+
+// Keep in lockstep with CritterKind (chamber.h)
+static const char* CRITTER_NAMES[] = { "beetle", "butterfly", "worm" };
 
 static const char* CHALLENGE_NAMES[] = {
     "none", "heatwave", "cold_snap", "drought", "storm"
@@ -131,6 +134,10 @@ void EventJournal::_serialize_entry(const JournalEntry& e, char* buf, size_t buf
     case JEVT_PLAY:
         data["kind"] = e.play.kind == 0 ? "parade" : "play";
         data["participants"] = e.play.participants;
+        break;
+    case JEVT_DISCOVERY:
+        data["critter"] = (e.discovery.critter < 3)
+            ? CRITTER_NAMES[e.discovery.critter] : "critter";
         break;
     }
 

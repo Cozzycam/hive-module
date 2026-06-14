@@ -15,6 +15,7 @@ void Chamber::init(ColonyState* col, bool with_queen) {
     cannibalism_cooldown = 0;
     husk_count = 0;
     for (int i = 0; i < Cfg::MAX_FIREFLIES; i++) fireflies[i] = Firefly{};
+    for (int i = 0; i < Cfg::MAX_CRITTERS; i++) critters[i] = Critter{};
     for (int i = 0; i < Cfg::MAX_SCENT_MARKS; i++) scent_marks[i] = {0, 0, 0};
     home_face = -1;
     has_queen = with_queen;
@@ -115,6 +116,8 @@ void Chamber::tick(float dt) {
 
     // Night ambience
     _tick_fireflies();
+    _tick_critters();
+    _detect_critter_discovery();
 
     // Finger scent shimmer fade
     for (int i = 0; i < Cfg::MAX_SCENT_MARKS; i++)
@@ -830,6 +833,144 @@ void Chamber::_tick_fireflies() {
         if (f.y > Cfg::GRID_HEIGHT - 2.0f) { f.y = Cfg::GRID_HEIGHT - 2.0f; f.vy = -fabsf(f.vy); }
 
         f.glow_phase += 3;  // wraps — ~10s blink cycle at 8tps
+    }
+}
+
+void Chamber::_tick_critters() {
+    bool day = (g_tod.phase == PHASE_DAY || g_tod.phase == PHASE_DUSK
+             || g_tod.phase == PHASE_DAWN);
+
+    int active = 0;
+    for (int i = 0; i < Cfg::MAX_CRITTERS; i++)
+        if (critters[i].active) active++;
+
+    for (int i = 0; i < Cfg::MAX_CRITTERS; i++) {
+        Critter& cr = critters[i];
+
+        if (!cr.active) {
+            // One visitor wanders in at a time, only in daylight.
+            if (day && active == 0 && conker_count > 0
+                    && g_rng.rand_float() < Cfg::CRITTER_SPAWN_CHANCE) {
+                cr.active = true;
+                cr.flee = 0;
+                cr.ttl = static_cast<uint16_t>(
+                    g_rng.rand_int(Cfg::CRITTER_TTL_MIN, Cfg::CRITTER_TTL_MAX));
+                float r = g_rng.rand_float();
+                cr.kind = (r < 0.50f) ? CRITTER_BUTTERFLY
+                        : (r < 0.85f) ? CRITTER_BEETLE
+                                      : CRITTER_WORM;
+                // Enter from a random edge
+                if (g_rng.rand_int(0, 1) == 0) {
+                    cr.x = (g_rng.rand_int(0, 1) == 0) ? 1.0f : Cfg::GRID_WIDTH - 2.0f;
+                    cr.y = static_cast<float>(g_rng.rand_int(2, Cfg::GRID_HEIGHT - 3));
+                } else {
+                    cr.x = static_cast<float>(g_rng.rand_int(2, Cfg::GRID_WIDTH - 3));
+                    cr.y = (g_rng.rand_int(0, 1) == 0) ? 1.0f : Cfg::GRID_HEIGHT - 2.0f;
+                }
+                cr.prev_x = cr.x; cr.prev_y = cr.y;
+                cr.vx = cr.vy = 0.0f;
+                cr.anim_phase = 0;
+                active++;
+            }
+            continue;
+        }
+
+        cr.prev_x = cr.x;
+        cr.prev_y = cr.y;
+        cr.anim_phase++;
+
+        if (cr.flee > 0) {
+            // Scurry off after being found, then vanish at the edge / timeout
+            cr.x += cr.vx; cr.y += cr.vy;
+            cr.flee--;
+            if (cr.flee == 0) { cr.active = false; }
+            continue;
+        }
+
+        if (cr.ttl > 0) cr.ttl--;
+        if (cr.ttl == 0) { cr.active = false; continue; }  // wandered off unseen
+
+        float max_speed = (cr.kind == CRITTER_BUTTERFLY) ? Cfg::CRITTER_SPEED_BUTTERFLY
+                        : (cr.kind == CRITTER_WORM)       ? Cfg::CRITTER_SPEED_WORM
+                                                          : Cfg::CRITTER_SPEED_BEETLE;
+        // Wander, with a gentle pull toward the nearest conker so encounters
+        // actually happen (you watch the bug amble into the group).
+        float jitter = (cr.kind == CRITTER_BUTTERFLY) ? 0.05f : 0.02f;
+        cr.vx += (g_rng.rand_float() - 0.5f) * jitter;
+        cr.vy += (g_rng.rand_float() - 0.5f) * jitter;
+        int nx = -1; float best_d2 = 1e9f;
+        for (int c = 0; c < conker_count; c++) {
+            if (!conkers[c].alive || conkers[c].departing) continue;
+            float dx = conkers[c].x - cr.x, dy = conkers[c].y - cr.y;
+            float d2 = dx * dx + dy * dy;
+            if (d2 < best_d2) { best_d2 = d2; nx = c; }
+        }
+        if (nx >= 0 && best_d2 > 0.01f) {
+            float d = sqrtf(best_d2);
+            cr.vx += (conkers[nx].x - cr.x) / d * Cfg::CRITTER_SEEK_CONKER;
+            cr.vy += (conkers[nx].y - cr.y) / d * Cfg::CRITTER_SEEK_CONKER;
+        }
+        float sp = sqrtf(cr.vx * cr.vx + cr.vy * cr.vy);
+        if (sp > max_speed) { cr.vx *= max_speed / sp; cr.vy *= max_speed / sp; }
+
+        cr.x += cr.vx; cr.y += cr.vy;
+        if (cr.x < 1.0f) { cr.x = 1.0f; cr.vx = fabsf(cr.vx); }
+        if (cr.x > Cfg::GRID_WIDTH - 2.0f)  { cr.x = Cfg::GRID_WIDTH - 2.0f;  cr.vx = -fabsf(cr.vx); }
+        if (cr.y < 1.0f) { cr.y = 1.0f; cr.vy = fabsf(cr.vy); }
+        if (cr.y > Cfg::GRID_HEIGHT - 2.0f) { cr.y = Cfg::GRID_HEIGHT - 2.0f; cr.vy = -fabsf(cr.vy); }
+    }
+}
+
+void Chamber::_detect_critter_discovery() {
+    for (int i = 0; i < Cfg::MAX_CRITTERS; i++) {
+        Critter& cr = critters[i];
+        if (!cr.active || cr.flee > 0) continue;
+
+        int finder = -1; float best_d2 = Cfg::CRITTER_FIND_RADIUS * Cfg::CRITTER_FIND_RADIUS;
+        for (int c = 0; c < conker_count; c++) {
+            Conker& w = conkers[c];
+            if (!w.alive || w.departing || w.sleeping) continue;
+            float dx = w.x - cr.x, dy = w.y - cr.y;
+            float d2 = dx * dx + dy * dy;
+            if (d2 < best_d2) { best_d2 = d2; finder = c; }
+        }
+        if (finder < 0) continue;
+
+        // Discovery! Novelty relieves boredom, the finder startles, and a
+        // couple of bystanders come to look — a little commotion.
+        Conker& f = conkers[finder];
+        f.needs[NEED_BOREDOM] -= Cfg::DISCOVERY_BOREDOM_RELIEF;
+        if (f.needs[NEED_BOREDOM] < 0.0f) f.needs[NEED_BOREDOM] = 0.0f;
+        if (f.anim_remaining_ticks == 0 && f.state == STATE_IDLE && f.stack_on < 0) {
+            f.anim_type = LG_ANIM_NOTICE;
+            f.anim_remaining_ticks = 12;
+        }
+        int gawkers = 0;
+        for (int c = 0; c < conker_count && gawkers < 2; c++) {
+            if (c == finder) continue;
+            Conker& w = conkers[c];
+            if (!w.alive || w.sleeping || w.stack_on >= 0) continue;
+            if (w.anim_remaining_ticks != 0 || w.state != STATE_IDLE) continue;
+            float dx = w.x - cr.x, dy = w.y - cr.y;
+            if (dx * dx + dy * dy > 16.0f) continue;  // within ~4 cells
+            w.anim_type = LG_ANIM_NOTICE;
+            w.anim_remaining_ticks = 12;
+            gawkers++;
+        }
+
+        // The critter bolts away from the finder, then despawns.
+        float dx = cr.x - f.x, dy = cr.y - f.y;
+        float d = sqrtf(dx * dx + dy * dy);
+        if (d < 0.001f) { dx = 1.0f; dy = 0.0f; d = 1.0f; }
+        cr.vx = dx / d * Cfg::CRITTER_FLEE_SPEED;
+        cr.vy = dy / d * Cfg::CRITTER_FLEE_SPEED;
+        cr.flee = Cfg::CRITTER_FLEE_TICKS;
+
+        Event ev;
+        ev.type = EVT_DISCOVERY;
+        ev.tick = tick_num;
+        ev.discovery = { static_cast<uint8_t>(finder), cr.kind };
+        emit(ev);
     }
 }
 

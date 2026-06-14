@@ -28,6 +28,24 @@ struct Firefly {
     bool    active = false;
 };
 
+// Visiting critters — a beetle/butterfly/worm wanders in for a conker to find
+enum CritterKind : uint8_t {
+    CRITTER_BEETLE     = 0,
+    CRITTER_BUTTERFLY  = 1,
+    CRITTER_WORM       = 2,
+    CRITTER_KIND_COUNT = 3,
+};
+
+struct Critter {
+    float    x = 0, y = 0, prev_x = 0, prev_y = 0;  // cell coords
+    float    vx = 0, vy = 0;
+    uint8_t  kind = 0;          // CritterKind
+    uint16_t ttl = 0;           // ticks before it wanders off on its own
+    uint8_t  flee = 0;          // >0: found — scurries off, then despawns
+    uint8_t  anim_phase = 0;    // wing flap / wriggle cycle
+    bool     active = false;
+};
+
 class Chamber {
 public:
     ColonyState* colony;
@@ -57,6 +75,10 @@ public:
     // Nearest active firefly within manhattan radius, -1 if none
     int  nearest_firefly(int cx, int cy, int radius) const;
     void _tick_fireflies();
+
+    Critter  critters[Cfg::MAX_CRITTERS];
+    void _tick_critters();
+    void _detect_critter_discovery();   // contact → discovery event + boredom relief
 
     // Finger scent shimmer — visual echo of a swipe, fades over TTL
     struct ScentMark { int8_t x, y; uint8_t ttl; };

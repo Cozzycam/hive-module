@@ -25,6 +25,7 @@ enum EventType : uint8_t {
     EVT_HANDOFF_INCOMING    = 9,
     EVT_HANDOFF_OUTGOING    = 10,
     EVT_PARADE_STARTED      = 11,
+    EVT_DISCOVERY           = 12,   // a conker found a visiting critter
 };
 
 // ---- Interaction subtypes ----
@@ -77,6 +78,11 @@ struct ParadeData {
     uint8_t participants;  // total conkers in the line, leader included
 };
 
+struct DiscoveryData {
+    uint8_t finder_idx;    // slot index in conkers[]
+    uint8_t kind;          // CritterKind value
+};
+
 // ---- Event struct (tagged union) ----
 
 struct Event {
@@ -91,6 +97,7 @@ struct Event {
         PositionData           position;  // queen_laid_egg, young_died, conker_died
         HandoffData            handoff;   // handoff_incoming, handoff_outgoing
         ParadeData             parade;    // parade_started
+        DiscoveryData          discovery; // discovery
     };
 };
 

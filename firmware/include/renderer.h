@@ -197,6 +197,9 @@ private:
     // Night ambience: blinking firefly glows (sim-owned, lerped)
     void _draw_fireflies(const Chamber& ch, float lerp_t);
 
+    // Visiting critters: beetle/butterfly/worm wandering the chamber
+    void _draw_critters(const Chamber& ch, float lerp_t);
+
     // Finger scent shimmer — fading echo of a swipe
     void _draw_scent_marks(const Chamber& ch);
 };

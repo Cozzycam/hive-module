@@ -577,6 +577,7 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
     _draw_anims();
     _draw_scent_marks(ch);
     _draw_fireflies(ch, lerp_t);
+    _draw_critters(ch, lerp_t);
     _draw_weather();
     // Weather particles cover the whole screen — force full flush when active
     if (g_weather.valid && g_weather.condition >= WX_DRIZZLE)
@@ -1205,6 +1206,29 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
                     _mark_dirty(zx, zy, 6, 8);
                 }
             }
+
+            // Mood emote — the loudest unmet need, floating above the head.
+            // Sleep has its own Zs; stacked riders are too cramped to read.
+            if (w.mood != MOOD_CONTENT && w.anim_type != LG_ANIM_SNOOZE
+                    && w.stack_on < 0) {
+                const char* glyph = nullptr;
+                uint16_t mc = 0;
+                switch (w.mood) {
+                    case MOOD_PLAYING:  glyph = "\x0E"; mc = _rgb565(255, 220, 90);  break; // music note
+                    case MOOD_BORED:    glyph = "...";  mc = _rgb565(150, 150, 165); break;
+                    case MOOD_RESTLESS: glyph = "?";    mc = _rgb565(220, 185, 95);  break;
+                    default: break;
+                }
+                if (glyph) {
+                    int ex = sd.render_x + 4;
+                    int ey = sd.render_y - 12;
+                    _gfx->setTextSize(1);
+                    _gfx->setTextColor(mc);
+                    _gfx->setCursor(ex, ey);
+                    _gfx->print(glyph);
+                    _mark_dirty(ex, ey, 20, 8);
+                }
+            }
             break;
         }
     }
@@ -1441,6 +1465,51 @@ void Renderer::_draw_fireflies(const Chamber& ch, float lerp_t) {
             _gfx->drawPixel(px, py + 1, halo);
         }
         _mark_dirty(px - 2, py - 2, 5, 5);
+    }
+}
+
+void Renderer::_draw_critters(const Chamber& ch, float lerp_t) {
+    float t = (lerp_t < 0.0f) ? 0.0f : ((lerp_t > 1.0f) ? 1.0f : lerp_t);
+
+    for (int i = 0; i < Cfg::MAX_CRITTERS; i++) {
+        const Critter& cr = ch.critters[i];
+        if (!cr.active) continue;
+
+        float cx = cr.prev_x + (cr.x - cr.prev_x) * t;
+        float cy = cr.prev_y + (cr.y - cr.prev_y) * t;
+        int px = static_cast<int>(cx * Cfg::CELL_SIZE);
+        int py = static_cast<int>(cy * Cfg::CELL_SIZE);
+
+        switch (cr.kind) {
+        case CRITTER_BUTTERFLY: {
+            // Two wings that flap (open/closed) — a little dab of colour
+            bool open = (cr.anim_phase & 0x04);
+            uint16_t wing = _rgb565(235, 140, 200);
+            uint16_t body = _rgb565(60, 40, 40);
+            int spread = open ? 3 : 1;
+            _gfx->fillRect(px - spread, py - 1, spread, 3, wing);
+            _gfx->fillRect(px + 1,      py - 1, spread, 3, wing);
+            _gfx->drawPixel(px, py, body);
+            _mark_dirty(px - 4, py - 3, 9, 7);
+            break;
+        }
+        case CRITTER_WORM: {
+            // Short wriggling segment
+            uint16_t c = _rgb565(210, 120, 120);
+            int wig = ((cr.anim_phase >> 1) & 1) ? 1 : 0;
+            _gfx->fillRect(px - 2, py + wig, 5, 2, c);
+            _mark_dirty(px - 3, py - 1, 8, 5);
+            break;
+        }
+        default: {  // CRITTER_BEETLE — a dark trundling oval with a shell line
+            uint16_t shell = _rgb565(70, 55, 40);
+            uint16_t back  = _rgb565(110, 90, 60);
+            _gfx->fillRect(px - 2, py - 1, 5, 3, shell);
+            _gfx->drawPixel(px, py - 1, back);
+            _mark_dirty(px - 3, py - 2, 8, 6);
+            break;
+        }
+        }
     }
 }
 

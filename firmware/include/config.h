@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 113;
+constexpr uint32_t FW_VERSION = 115;
 
 namespace Cfg {
 
@@ -252,6 +252,40 @@ constexpr float JOY_SPRINT_CHANCE      = 0.003f; // per idle tick at full surplu
 constexpr float ZOOMIE_JOIN_CHANCE     = 0.5f;   // bystander swept into a passing game
 constexpr int   MAX_CONCURRENT_PLAY    = 2;      // solo launches wait their turn —
                                                  // keeps a big colony from stampeding
+
+// ---- Needs / mood (v114) ----
+// The needs framework is wired up whole, but NEEDS_ACTIVE_MASK gates which
+// drives actually evolve so each can be activated and tuned on its own.
+// bit0 = boredom (first need). Others stay dormant at 0 until lit.
+constexpr uint8_t NEEDS_ACTIVE_MASK        = 0x01;
+// Boredom (stimulation): rises while idle/rote, drains while playing. The
+// personality drive (tempo+exploration+social) scales the rise, so a busy
+// curious social conker reaches full in ~12-15 min while a placid loner
+// barely climbs in an hour. Average personality ≈ full in ~25 min.
+constexpr float BOREDOM_RISE_PER_SEC       = 1.0f / 1800.0f;
+constexpr float BOREDOM_PLAY_DRAIN_PER_SEC = 0.30f;  // a play bout empties it in ~3s
+constexpr float BOREDOM_WORK_RISE_SCALE    = 0.4f;   // rote work is mildly stimulating
+constexpr float BOREDOM_RESTLESS_AT        = 0.55f;  // mood: content → restless
+constexpr float BOREDOM_BORED_AT           = 0.85f;  // mood: restless → bored
+constexpr float BOREDOM_PLAY_DRIVE         = 2.0f;   // boredom's weight as a play instigator
+constexpr float BOREDOM_BOOP_RELIEF        = 0.5f;   // a player tap perks them up
+
+// ---- Critters (visiting bugs to discover) ----
+// A beetle/butterfly/worm wanders in, drifts toward the colony, and the first
+// conker to reach it "discovers" it — a burst of novelty that relieves boredom
+// and makes a "Dahlia found a beetle" moment. Reuses the firefly drift model.
+constexpr int   MAX_CRITTERS             = 2;
+constexpr float CRITTER_SPAWN_CHANCE     = 0.0012f; // per tick (daytime), gated by count
+constexpr int   CRITTER_TTL_MIN          = 320;     // ~40s — wanders off if undiscovered
+constexpr int   CRITTER_TTL_MAX          = 720;     // ~90s
+constexpr float CRITTER_SPEED_BEETLE     = 0.045f;
+constexpr float CRITTER_SPEED_BUTTERFLY  = 0.13f;
+constexpr float CRITTER_SPEED_WORM       = 0.025f;
+constexpr float CRITTER_SEEK_CONKER      = 0.012f;  // gentle drift toward the nearest guy
+constexpr float CRITTER_FLEE_SPEED       = 0.32f;   // scurries off once found
+constexpr int   CRITTER_FLEE_TICKS       = 14;      // ~2s of fleeing, then gone
+constexpr float CRITTER_FIND_RADIUS      = 0.8f;    // cells — contact = discovery
+constexpr float DISCOVERY_BOREDOM_RELIEF = 0.7f;    // novelty is a big relief
 
 // ---- Metabolic scaling (3/4-power law) ----
 constexpr float METABOLIC_SCALE_FLOOR = 0.7f;

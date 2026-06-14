@@ -1194,6 +1194,18 @@ void Coordinator::_journal_from_bus_events(const Event* events, int count,
             break;
         }
 
+        case EVT_DISCOVERY: {
+            int fi = ev.discovery.finder_idx;
+            if (fi < chamber.conker_count && chamber.conkers[fi].alive) {
+                je.type = JEVT_DISCOVERY;
+                je.lilguy_id = chamber.conkers[fi].id;
+                strlcpy(je.who, chamber.conkers[fi].name, sizeof(je.who));
+                je.discovery.critter = ev.discovery.kind;
+                journal.emit(je);
+            }
+            break;
+        }
+
         default:
             // Other events handled directly (hatch, death, crossing, food_tap)
             break;
