@@ -39,9 +39,30 @@ export function Diary() {
       ? meaningful
       : meaningful.filter(e => cat.types.includes(e.type));
     // Group food_delivered events within 10 minutes of each other
-    const grouped: (ColonyEvent | { type: 'food_group'; count: number; totalAmount: number; unix: number; tick: number; lilguy: number; data: Record<string, unknown> })[] = [];
+    const grouped: (ColonyEvent | { type: 'food_group'; count: number; totalAmount: number; unix: number; tick: number; lilguy: number; data: Record<string, unknown> } | { type: 'play_group'; count: number; unix: number; tick: number; lilguy: number; data: Record<string, unknown> })[] = [];
     const TEN_MIN = 600;
+    const THIRTY_MIN = 1800;
     for (let i = 0; i < list.length; i++) {
+      // Collapse runs of play — conkers romp constantly; one "playing" note per
+      // burst, not one per romp.
+      if (list[i].type === 'play') {
+        let count = 1;
+        const startUnix = list[i].unix;
+        const firstName = (list[i] as unknown as { name?: string }).name;
+        while (i + 1 < list.length && list[i + 1].type === 'play'
+               && Math.abs(list[i + 1].unix - startUnix) < THIRTY_MIN) {
+          i++; count++;
+        }
+        if (count === 1) {
+          grouped.push(list[i]);
+        } else {
+          grouped.push({
+            type: 'play_group', count,
+            unix: startUnix, tick: list[i].tick, lilguy: 0, data: { name: firstName },
+          });
+        }
+        continue;
+      }
       if (list[i].type !== 'food_delivered') {
         grouped.push(list[i]);
         continue;
@@ -247,6 +268,11 @@ function formatEvent(ev: ColonyEvent, rosterNames: Map<number, string>): { icon:
       return {
         icon: '\u{1F36F}',
         description: `${(ev as unknown as { count: number }).count} food deliveries (${((ev as unknown as { totalAmount: number }).totalAmount).toFixed(0)}u total).`,
+      };
+    case 'play_group' as EventType:
+      return {
+        icon: '\u{2728}',
+        description: `Lots of playing — ${(ev as unknown as { count: number }).count} romps.`,
       };
     default:
       return {
