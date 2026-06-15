@@ -1255,6 +1255,31 @@ void Renderer::_draw_sprite_scaled(int cx, int cy, const uint16_t* data,
     _draw_sprite_scaled_tinted(cx, cy, data, sw, sh, scale, flip_h, 0);
 }
 
+// Eye-white sprite colours, exempt from the per-conker recolour (see loop below).
+static const uint16_t EYE_HI = 0xE77A;   // upper eye highlight (cream)
+static const uint16_t EYE_LO = 0xCF35;   // lower eye (pale)
+
+// Fully-saturated RGB (0-255) for a hue angle in degrees — the vivid colour a
+// rare conker recolours toward. (s=1, v=1 HSV → RGB.)
+static void _hue_vivid(float h, int& r, int& g, int& b) {
+    float hp = h / 60.0f;
+    int   seg = (int)hp;
+    float f   = hp - seg;
+    float q = 1.0f - f, t = f;
+    float rf, gf, bf;
+    switch (seg % 6) {
+        case 0:  rf = 1; gf = t; bf = 0; break;
+        case 1:  rf = q; gf = 1; bf = 0; break;
+        case 2:  rf = 0; gf = 1; bf = t; break;
+        case 3:  rf = 0; gf = q; bf = 1; break;
+        case 4:  rf = t; gf = 0; bf = 1; break;
+        default: rf = 1; gf = 0; bf = q; break;
+    }
+    r = (int)(rf * 255.0f);
+    g = (int)(gf * 255.0f);
+    b = (int)(bf * 255.0f);
+}
+
 void Renderer::_draw_sprite_scaled_tinted(int cx, int cy, const uint16_t* data,
                                            int sw, int sh, float scale,
                                            bool flip_h, uint8_t tint_seed,
@@ -1269,15 +1294,46 @@ void Renderer::_draw_sprite_scaled_tinted(int cx, int cy, const uint16_t* data,
     _mark_dirty(ox, oy, dw, dh);
 
     bool tint = (_nf > 0.01f);
-    // Per-worker RGB offsets from seed: visible colour variation on TFT.
-    // Full 1-255 range used for colour; ageing grey passed separately.
-    int tint_r = 0, tint_g = 0, tint_b = 0;
+    // Per-conker colour. Every conker gets its OWN vivid hue so the colony is easy
+    // to tell apart; what's distributed like the size bell curve is how far a
+    // conker is allowed to stray from the warm band. The common case is a warm hue
+    // (reds/oranges/ambers/golds) at strong saturation; a rare roll widens the band
+    // so the occasional outlier lands on a vivid off-hue (green/teal/violet).
+    //
+    // The sprite's luma drives shading (light = highlight, dark = shadow), but it's
+    // a fairly dark brown, so we DON'T scale the target by it directly — that just
+    // dims every conker. Instead we treat REF_LUMA as the sprite's body tone: a
+    // pixel at REF maps to the FULL-brightness target colour, lighter pixels brighten
+    // it (toward white highlights) and darker pixels shade it down. Keeps conkers
+    // bright and vivid while preserving the sprite's modelling.
+    static const int REF_LUMA = 98;   // lower = lighter conkers (body tone → target colour)
+    int  tgt_r = 0, tgt_g = 0, tgt_b = 0;
+    int  recolor = 0;     // 0..256 pull toward the target colour
+    int  ref_eff = REF_LUMA;
+    bool has_recolor = false;
     if (tint_seed != 0) {
-        tint_r = ((int)(tint_seed & 0x07) - 3) * 2;        // -6..+8
-        tint_g = ((int)((tint_seed >> 3) & 0x07) - 3);     // -3..+4
-        tint_b = ((int)((tint_seed >> 6) & 0x03) - 1) * 2; // -2..+2
+        uint32_t hs = (uint32_t)tint_seed * 2654435761u;   // spread 8 bits → 32
+        float ur = (hs & 0xFFFF) / 65535.0f;               // rarity roll
+        float uh = ((hs >> 16) & 0xFFFF) / 65535.0f;       // hue position in the band
+        // A decorrelated third roll for per-conker lightness, so two conkers that
+        // land on the same hue still differ in shade (one deeper, one lighter).
+        uint32_t h2 = hs ^ (hs >> 13);
+        float ul = ((h2 >> 5) & 0xFF) / 255.0f;
+        float rare = ur * ur; rare = rare * rare * rare;    // ur^6 — straying far is rare
+        float spread = 40.0f + 240.0f * rare;               // ±deg: warm band wider so they separate
+        float hue = 28.0f + (uh * 2.0f - 1.0f) * spread;    // anchor on orange (28°)
+        while (hue < 0.0f)      hue += 360.0f;
+        while (hue >= 360.0f)   hue -= 360.0f;
+        _hue_vivid(hue, tgt_r, tgt_g, tgt_b);
+        recolor = (int)((0.70f + 0.25f * rare) * 256.0f);   // 0.70x .. 0.95x
+        // Base brightness 0.85x..1.20x; rare conkers that also roll bright get an
+        // extra lift (up to ~1.75x) so the occasional outlier really pops, while a
+        // rare one that rolls dark stays deep and moody.
+        float light = 0.85f + 0.35f * ul + 0.55f * rare * ul;
+        ref_eff = (int)(REF_LUMA / light);                  // lower ref = brighter conker
+        if (ref_eff < 55) ref_eff = 55;
+        has_recolor = true;
     }
-    bool has_tint = (tint_r | tint_g | tint_b) != 0;
     bool has_grey = (age_grey > 0.001f);
     uint16_t row_buf[MAX_SCALED_DIM];
 
@@ -1301,15 +1357,30 @@ void Renderer::_draw_sprite_scaled_tinted(int cx, int cy, const uint16_t* data,
                 }
                 continue;
             }
+            // Eye whites (two fixed sprite colours) are exempt from the per-conker
+            // recolour — tinting them looks odd. They still dim with night.
+            bool is_eye = (c == EYE_HI || c == EYE_LO);
             if (tint) c = tint_night(c, _nf, 0.4f);
-            if (has_tint) {
-                int r5 = (c >> 11) & 0x1F;
-                int g6 = (c >> 5)  & 0x3F;
-                int b5 =  c        & 0x1F;
-                r5 += tint_r; if (r5 < 0) r5 = 0; if (r5 > 31) r5 = 31;
-                g6 += tint_g; if (g6 < 0) g6 = 0; if (g6 > 63) g6 = 63;
-                b5 += tint_b; if (b5 < 0) b5 = 0; if (b5 > 31) b5 = 31;
-                c = (r5 << 11) | (g6 << 5) | b5;
+            if (has_recolor && !is_eye) {
+                int r8 = ((c >> 11) & 0x1F) << 3;
+                int g8 = ((c >> 5)  & 0x3F) << 2;
+                int b8 =  (c        & 0x1F) << 3;
+                int luma = (r8 * 77 + g8 * 150 + b8 * 29) >> 8;
+                // Shade the full-brightness target by the sprite's luma relative to
+                // its body tone. shade=256 at REF_LUMA → full target colour; brighter
+                // pixels push past it (clamp → white highlight), darker ones dim it.
+                int shade = (luma << 8) / ref_eff;
+                int tr = (tgt_r * shade) >> 8; if (tr > 255) tr = 255;
+                int tg = (tgt_g * shade) >> 8; if (tg > 255) tg = 255;
+                int tb = (tgt_b * shade) >> 8; if (tb > 255) tb = 255;
+                // Pull the sprite pixel toward that bright target colour.
+                r8 += ((tr - r8) * recolor) >> 8;
+                g8 += ((tg - g8) * recolor) >> 8;
+                b8 += ((tb - b8) * recolor) >> 8;
+                if (r8 < 0) r8 = 0; if (r8 > 255) r8 = 255;
+                if (g8 < 0) g8 = 0; if (g8 > 255) g8 = 255;
+                if (b8 < 0) b8 = 0; if (b8 > 255) b8 = 255;
+                c = ((r8 >> 3) << 11) | ((g8 >> 2) << 5) | (b8 >> 3);
             }
             if (has_grey) {
                 int r5 = (c >> 11) & 0x1F;

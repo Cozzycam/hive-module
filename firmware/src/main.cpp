@@ -398,6 +398,27 @@ static void process_serial_line(const char* line) {
                 r.lived_ms / 86400000.0f, r.lifespan_ms / 86400000.0f,
                 r.is_founder ? 1 : 0);
         }
+    } else if (strncmp(line, "tintseed ", 9) == 0) {
+        // tintseed <id> <0-255> — force a conker's colour seed (live + persisted).
+        // Handy for previewing the colour range: try a few values on one conker.
+        char* p = (char*)line + 9;
+        uint32_t id = strtoul(p, &p, 10);
+        long seed = strtol(p, nullptr, 10);
+        if (seed < 0) seed = 0;
+        if (seed > 255) seed = 255;
+        auto& cham = sim.coordinator.chamber;
+        bool live = false;
+        for (int i = 0; i < cham.conker_count; i++) {
+            if (cham.conkers[i].id == id) {
+                cham.conkers[i].tint_seed = (uint8_t)seed;
+                live = true;
+                break;
+            }
+        }
+        IdentityRecord* rec = sim.coordinator.registry.get(id);
+        if (rec) { rec->tint_seed = (uint8_t)seed; rec->dirty = true; }
+        Serial.printf("[tintseed] id=%lu seed=%ld (live=%d record=%d)\r\n",
+                      (unsigned long)id, seed, live, rec != nullptr);
     } else if (strncmp(line, "revive ", 7) == 0) {
         uint32_t id = strtoul(line + 7, nullptr, 10);
         if (sim.coordinator.registry.revive(id))

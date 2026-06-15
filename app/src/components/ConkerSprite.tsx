@@ -1,10 +1,17 @@
 import { useMemo } from 'react';
 
-// Firmware tint algorithm (from renderer.cpp):
-// tint_r = ((tint_seed & 0x07) - 3) * 2        → -6..+8  (on 5-bit R, 0-31)
-// tint_g = ((tint_seed >> 3) & 0x07) - 3        → -3..+4  (on 6-bit G, 0-63)
-// tint_b = (((tint_seed >> 6) & 0x03) - 1) * 2  → -2..+2  (on 5-bit B, 0-31)
-// Applied as direct per-channel offsets on RGB565 pixel values.
+// Per-conker colour (mirrors renderer.cpp `_draw_sprite_scaled_tinted`):
+// every conker gets its own vivid hue so the colony is easy to tell apart; what's
+// distributed like the size bell curve is how far a conker may stray from the warm
+// band. Common = a warm hue at strong saturation; a rare roll widens the band so
+// the occasional outlier lands on a vivid off-hue.
+//
+// The firmware recolours each pixel onto a luma-scaled target ramp; SVG filters
+// can't do that per-pixel lerp, so we approximate the read with saturate +
+// hueRotate driven by the identical seed→(hue, rarity) derivation.
+
+// The bare sprite's brown sits near this hue (degrees); we rotate onto the target.
+const SPRITE_BASE_HUE = 32;
 
 // SVG filter ID prefix (unique per seed to avoid collisions)
 let _filterCounter = 0;
@@ -13,26 +20,35 @@ export function useTintFilter(seed: number): { filterId: string; filterSvg: JSX.
   return useMemo(() => {
     if (seed === 0) return { filterId: '', filterSvg: null };
 
-    const r = ((seed & 0x07) - 3) * 2;
-    const g = ((seed >> 3) & 0x07) - 3;
-    const b = (((seed >> 6) & 0x03) - 1) * 2;
+    // Same hash + derivation as the firmware (Knuth multiplicative).
+    const hs = (seed * 2654435761) >>> 0;
+    const ur = (hs & 0xffff) / 65535;
+    const uh = ((hs >>> 16) & 0xffff) / 65535;
+    // Decorrelated third roll for per-conker lightness (matches firmware h2/ul).
+    const h2 = (hs ^ (hs >>> 13)) >>> 0;
+    const ul = ((h2 >>> 5) & 0xff) / 255;
 
-    if (r === 0 && g === 0 && b === 0) return { filterId: '', filterSvg: null };
+    const rare = ur ** 6; // straying far is rare
+    const spread = 40 + 240 * rare;
+    let hue = 28 + (uh * 2 - 1) * spread; // anchor on orange (28°)
+    hue = ((hue % 360) + 360) % 360;
 
-    // Map firmware RGB565 offsets to 8-bit: R/B *8, G *4
-    const rOff = (r * 8) / 255;
-    const gOff = (g * 4) / 255;
-    const bOff = (b * 8) / 255;
+    const rotateDeg = ((hue - SPRITE_BASE_HUE + 540) % 360) - 180;
+    const saturate = 1.5 + 0.6 * rare;
+    // Per-conker brightness; rare conkers that also roll bright get an extra lift to pop.
+    const bright = 1.0 + 0.35 * ul + 0.55 * rare * ul;
 
     const id = `tint-${seed}-${++_filterCounter}`;
     const svg = (
       <svg width={0} height={0} style={{ position: 'absolute' }}>
         <defs>
           <filter id={id} colorInterpolationFilters="sRGB">
+            <feColorMatrix type="saturate" values={`${saturate}`} />
+            <feColorMatrix type="hueRotate" values={`${rotateDeg}`} />
             <feComponentTransfer>
-              <feFuncR type="linear" slope={1} intercept={rOff} />
-              <feFuncG type="linear" slope={1} intercept={gOff} />
-              <feFuncB type="linear" slope={1} intercept={bOff} />
+              <feFuncR type="linear" slope={bright} />
+              <feFuncG type="linear" slope={bright} />
+              <feFuncB type="linear" slope={bright} />
             </feComponentTransfer>
           </filter>
         </defs>
