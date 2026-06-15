@@ -52,6 +52,7 @@ enum ConkerMood : uint8_t {
     MOOD_RESTLESS = 1,   // a need is rising
     MOOD_BORED    = 2,   // a need is urgent
     MOOD_PLAYING  = 3,   // actively relieving it
+    MOOD_SLEEPY   = 4,   // tired — heading for bed
 };
 
 // Personality dimension indices

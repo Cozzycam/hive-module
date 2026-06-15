@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 119;
+constexpr uint32_t FW_VERSION = 120;
 
 namespace Cfg {
 
@@ -257,7 +257,7 @@ constexpr int   MAX_CONCURRENT_PLAY    = 2;      // solo launches wait their tur
 // The needs framework is wired up whole, but NEEDS_ACTIVE_MASK gates which
 // drives actually evolve so each can be activated and tuned on its own.
 // bit0 = boredom (first need). Others stay dormant at 0 until lit.
-constexpr uint8_t NEEDS_ACTIVE_MASK        = 0x01;
+constexpr uint8_t NEEDS_ACTIVE_MASK        = 0x05;  // bit0 boredom + bit2 rest
 // Boredom (stimulation): rises while idle/rote, drains while playing. The
 // personality drive (tempo+exploration+social) scales the rise, so a busy
 // curious social conker reaches full in ~12-15 min while a placid loner
@@ -271,6 +271,17 @@ constexpr float BOREDOM_RESTLESS_AT        = 0.55f;  // mood: content → restle
 constexpr float BOREDOM_BORED_AT           = 0.85f;  // mood: restless → bored
 constexpr float BOREDOM_PLAY_DRIVE         = 2.0f;   // boredom's weight as a play instigator
 constexpr float BOREDOM_BOOP_RELIEF        = 0.5f;   // a player tap perks them up
+
+// ---- Need #2: tiredness (NEED_REST) ----
+// Rises while awake (maxed after ~16h, hardiness scaled), falls while asleep
+// (a full night restores it). They settle to sleep in the dusk→dawn window
+// once reasonably tired, can power-nap any time if exhausted, and once asleep
+// stay down until rested — wakeable only by a player boop or colony famine.
+constexpr float TIRED_RISE_PER_SEC   = 1.0f / (16.0f * 3600.0f);  // ~16h awake → maxed
+constexpr float TIRED_FALL_PER_SEC   = 1.0f / (10.0f * 3600.0f);  // ~a night's sleep restores
+constexpr float TIRED_SLEEP_NIGHT    = 0.45f;  // dusk→dawn: sleep once this tired
+constexpr float TIRED_SLEEP_ANY      = 0.70f;  // any time of day: sleep if this tired
+constexpr float TIRED_RESTED_WAKE    = 0.15f;  // wake naturally once rested to here
 
 // ---- Critters (visiting bugs to discover) ----
 // A beetle/butterfly/worm wanders in, drifts toward the colony, and the first

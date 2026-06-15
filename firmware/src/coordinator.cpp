@@ -1100,6 +1100,7 @@ void Coordinator::_respawn_worker(uint32_t id, IdentityRecord* rec) {
     Conker& w = chamber.conkers[idx];
     w = Conker{};
     w.id = id;
+    w.needs[NEED_REST] = g_tod.night_factor;  // seed tiredness from time of day
     // Heal a nameless record before copying (see restore path) — else the
     // respawned conker renders "???" and never gets named again.
     if (rec->name[0] == '\0') {

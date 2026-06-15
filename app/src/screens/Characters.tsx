@@ -85,7 +85,7 @@ interface CharacterInfo {
   scale_factor?: number;
   tint_seed?: number;
   mood?: ConkerMood;
-  needs?: { boredom?: number };
+  needs?: { boredom?: number; tiredness?: number };
   deathCause?: string;
 }
 
@@ -94,6 +94,7 @@ const MOOD_EMOJI: Record<ConkerMood, string> = {
   restless: '\u{1F300}',  // cyclone (fidgety)
   bored: '\u{1F611}',     // expressionless
   playing: '\u{2728}',    // sparkles
+  sleepy: '\u{1F971}',    // yawning
 };
 
 const MOOD_BLURB: Record<ConkerMood, string> = {
@@ -101,6 +102,7 @@ const MOOD_BLURB: Record<ConkerMood, string> = {
   restless: 'Getting fidgety — could use something to do.',
   bored: 'Properly bored. Give them a boop, or watch them go looking for fun.',
   playing: 'Having a great time!',
+  sleepy: 'Worn out — heading for bed. A boop will rouse them if you must.',
 };
 
 function buildCharactersFromEvents(events: ColonyEvent[]): Map<number, CharacterInfo> {
@@ -501,6 +503,22 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
                   background: char.needs.boredom >= 0.85 ? HIVE.alert
                             : char.needs.boredom >= 0.55 ? HIVE.accent
                             : HIVE.leafGreen,
+                }} />
+              </div>
+            </div>
+          )}
+          {typeof char.needs?.tiredness === 'number' && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between',
+                            fontSize: SIZES.xs, color: palette.dimText, marginBottom: 3 }}>
+                <span>Tiredness</span>
+                <span>{Math.round(char.needs.tiredness * 100)}%</span>
+              </div>
+              <div style={{ height: 6, borderRadius: 3, background: HIVE.parchment, overflow: 'hidden' }}>
+                <div style={{
+                  width: `${Math.round(Math.min(1, char.needs.tiredness) * 100)}%`,
+                  height: '100%',
+                  background: char.needs.tiredness >= 0.7 ? HIVE.sky : HIVE.bark,
                 }} />
               </div>
             </div>

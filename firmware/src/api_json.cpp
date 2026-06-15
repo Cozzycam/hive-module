@@ -18,7 +18,7 @@ static const char* TRAIT_STRINGS[] = {
 };
 
 // Keep in lockstep with ConkerMood (conker.h)
-static const char* MOOD_STRINGS[] = { "content", "restless", "bored", "playing" };
+static const char* MOOD_STRINGS[] = { "content", "restless", "bored", "playing", "sleepy" };
 
 static void add_traits_array(JsonArray& arr, uint32_t traits) {
     for (int i = 0; i < 7; i++) {
@@ -146,21 +146,23 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
         {
             float px = r.last_x, py = r.last_y;
             uint8_t mood = MOOD_CONTENT;
-            float boredom = 0.0f;
+            float boredom = 0.0f, tiredness = 0.0f;
             for (int c = 0; c < coord.chamber.conker_count; c++) {
                 if (coord.chamber.conkers[c].id == r.id) {
                     px = coord.chamber.conkers[c].x;
                     py = coord.chamber.conkers[c].y;
                     mood = coord.chamber.conkers[c].mood;
                     boredom = coord.chamber.conkers[c].needs[NEED_BOREDOM];
+                    tiredness = coord.chamber.conkers[c].needs[NEED_REST];
                     break;
                 }
             }
             lg["x"] = px;
             lg["y"] = py;
-            lg["mood"] = MOOD_STRINGS[mood < 4 ? mood : 0];
+            lg["mood"] = MOOD_STRINGS[mood < 5 ? mood : 0];
             JsonObject needs = lg["needs"].to<JsonObject>();
             needs["boredom"] = boredom;
+            needs["tiredness"] = tiredness;
         }
         lg["age_days"] = (r.born_unix > 0 && g_tod.unix_time > r.born_unix)
             ? (g_tod.unix_time - r.born_unix) / 86400.0f

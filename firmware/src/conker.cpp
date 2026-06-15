@@ -47,6 +47,8 @@ void Conker::init(int8_t px, int8_t py, Role c, bool pioneer) {
     sleeping = false;
     sleep_until_ms = 0;
     sleep_cooldown_ms = 0;
+    needs[NEED_BOREDOM] = 0.0f;
+    needs[NEED_REST]    = g_tod.night_factor;  // seed: as tired as it is "night"
     zoomie_target = -1;
     zoomie_ticks = 0;
     flair_kind = 0;
@@ -256,13 +258,14 @@ void Conker::tick(Chamber& ch, float dt) {
             // Sleeping ants show snooze sprite, skip grooming
             // Wake on famine or personal hunger crisis
             if (sleeping) {
-                bool swake = (millis() >= sleep_until_ms)
+                // Wake only once rested, or roused by famine / personal starving
+                // (a player boop wakes them directly, in sim.cpp).
+                bool swake = (needs[NEED_REST] <= Cfg::TIRED_RESTED_WAKE)
                           || ch.colony->food_pressure() > Cfg::FAMINE_SLOWDOWN_PRESSURE
                           || hunger > 60.0f;
                 if (swake) {
                     sleeping = false;
                     anim_type = LG_ANIM_NONE;
-                    sleep_cooldown_ms = millis() + 4UL * 3600UL * 1000UL;
                     stack_on = -1;  // unstack to go hustle
                 } else {
                     anim_type = LG_ANIM_SNOOZE;
@@ -296,15 +299,14 @@ void Conker::tick(Chamber& ch, float dt) {
     // Sleeping: stay put, skip normal behavior until wake time
     // Wake up early during famine or if starving
     if (sleeping) {
-        bool wake = (millis() >= sleep_until_ms);
-        if (!wake && (ch.colony->food_pressure() > Cfg::FAMINE_SLOWDOWN_PRESSURE
-                      || hunger > 60.0f)) {
-            wake = true;
-        }
+        // Stay down until rested; rouse on famine or personal starving
+        // (a player boop wakes them directly, in sim.cpp).
+        bool wake = (needs[NEED_REST] <= Cfg::TIRED_RESTED_WAKE)
+                 || ch.colony->food_pressure() > Cfg::FAMINE_SLOWDOWN_PRESSURE
+                 || hunger > 60.0f;
         if (wake) {
             sleeping = false;
             anim_type = LG_ANIM_NONE;
-            sleep_cooldown_ms = millis() + 4UL * 3600UL * 1000UL;
         } else {
             anim_type = LG_ANIM_SNOOZE;
             return;
@@ -512,22 +514,26 @@ void Conker::_pick_task(Chamber& ch) {
         return;
     }
 
-    // Sleep check — skip during famine so some workers keep hustling
-    if (!was_sleeping && !sleeping
-            && g_tod.phase == PHASE_NIGHT
-            && millis() >= sleep_cooldown_ms
-            && pressure <= Cfg::FAMINE_SLOWDOWN_PRESSURE
-            && g_rng.rand_float() < 0.25f) {
-        stack_on = was_stacked;
-        sleeping = true;
-        sleep_until_ms = millis() + 3600UL * 1000UL;
-        anim_type = LG_ANIM_SNOOZE;
-        state = STATE_IDLE;
-        has_target = false;
-        has_target_cell = false;
-        idle_ticks_remaining = g_rng.rand_int(Cfg::IDLE_REST_MIN_TICKS,
-                                               Cfg::IDLE_REST_MAX_TICKS);
-        return;
+    // Sleep check (tiredness-driven) — settle for the night once reasonably
+    // tired, or power-nap any time if exhausted. Famine keeps everyone hustling.
+    {
+        bool nightish = (g_tod.phase == PHASE_DUSK || g_tod.phase == PHASE_NIGHT
+                      || g_tod.phase == PHASE_DAWN);
+        float tired = needs[NEED_REST];
+        bool wants_sleep = (tired >= Cfg::TIRED_SLEEP_ANY)
+                        || (tired >= Cfg::TIRED_SLEEP_NIGHT && nightish);
+        if (!was_sleeping && !sleeping && wants_sleep
+                && pressure <= Cfg::FAMINE_SLOWDOWN_PRESSURE) {
+            stack_on = was_stacked;
+            sleeping = true;
+            anim_type = LG_ANIM_SNOOZE;
+            state = STATE_IDLE;
+            has_target = false;
+            has_target_cell = false;
+            idle_ticks_remaining = g_rng.rand_int(Cfg::IDLE_REST_MIN_TICKS,
+                                                   Cfg::IDLE_REST_MAX_TICKS);
+            return;
+        }
     }
 
     // Idle budget — gates all non-critical tasks.
@@ -1247,8 +1253,11 @@ void Conker::_tick_idle(Chamber& ch) {
         return;
     }
 
-    // A nearby glow is irresistible to a restless night idler
+    // A nearby glow is irresistible to a restless night idler — but only one
+    // that isn't yet ready for bed (tired conkers head to sleep instead, so
+    // chasing never keeps them up all night).
     if (g_tod.night_factor >= Cfg::FIREFLY_NIGHT_FACTOR_MIN
+            && needs[NEED_REST] < Cfg::TIRED_SLEEP_NIGHT
             && !sleeping && stack_on < 0 && anim_type == LG_ANIM_NONE
             && g_rng.rand_float() < Cfg::FIREFLY_CHASE_CHANCE) {
         int fi = ch.nearest_firefly(cell_x(), cell_y(), Cfg::FIREFLY_CHASE_RADIUS);
@@ -1359,13 +1368,29 @@ void Conker::_update_needs(Chamber& ch, float dt) {
         if (boredom > 1.0f) boredom = 1.0f;
     }
 
+    // ---- Tiredness (rest) ----
+    if (Cfg::NEEDS_ACTIVE_MASK & (1 << NEED_REST)) {
+        float& tired = needs[NEED_REST];
+        if (sleeping) {
+            tired -= Cfg::TIRED_FALL_PER_SEC * dt;             // a good sleep restores
+        } else if (!departing) {
+            // Awake is tiring; hardy ones last longer (staggers bedtimes).
+            tired += Cfg::TIRED_RISE_PER_SEC * dt
+                   * (1.2f - 0.4f * personality[PERS_HARDINESS]);
+        }
+        if (tired < 0.0f) tired = 0.0f;
+        if (tired > 1.0f) tired = 1.0f;
+    }
+
     // ---- Derive mood from the loudest active need (+ live states) ----
     ConkerMood m = MOOD_CONTENT;
     if (state == STATE_ZOOMIES) {
         m = MOOD_PLAYING;
     } else if (!sleeping) {
+        float tired = needs[NEED_REST];
         float b = needs[NEED_BOREDOM];
-        if (b >= Cfg::BOREDOM_BORED_AT)         m = MOOD_BORED;
+        if (tired >= Cfg::TIRED_SLEEP_ANY)      m = MOOD_SLEEPY;   // tired beats bored
+        else if (b >= Cfg::BOREDOM_BORED_AT)    m = MOOD_BORED;
         else if (b >= Cfg::BOREDOM_RESTLESS_AT) m = MOOD_RESTLESS;
     }
     mood = static_cast<uint8_t>(m);

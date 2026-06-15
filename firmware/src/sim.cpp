@@ -86,9 +86,17 @@ void Sim::handle_touch() {
         // A boop perks them up — attention relieves boredom.
         c.needs[NEED_BOREDOM] -= Cfg::BOREDOM_BOOP_RELIEF;
         if (c.needs[NEED_BOREDOM] < 0.0f) c.needs[NEED_BOREDOM] = 0.0f;
+        // A boop also rouses a sleeper — the one thing (besides famine) that
+        // wakes them. Knock tiredness below the sleep threshold so they don't
+        // flop straight back down — a boop earns a little awake time.
+        if (c.sleeping) {
+            c.sleeping = false;
+            c.stack_on = -1;
+            if (c.needs[NEED_REST] > 0.6f) c.needs[NEED_REST] = 0.6f;
+        }
         // It notices: stop, face the glass, little startle hop.
-        // Only idle conkers react — jobs and sleep are never interrupted.
-        if (c.state == STATE_IDLE && !c.sleeping && c.stack_on < 0
+        // Sleepers were just roused above, so let them react too.
+        if (c.state == STATE_IDLE && c.stack_on < 0
                 && c.anim_remaining_ticks == 0) {
             c.anim_type = LG_ANIM_NOTICE;
             c.anim_remaining_ticks = 12;
