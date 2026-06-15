@@ -520,7 +520,8 @@ void Conker::_pick_task(Chamber& ch) {
         bool nightish = (g_tod.phase == PHASE_DUSK || g_tod.phase == PHASE_NIGHT
                       || g_tod.phase == PHASE_DAWN);
         float tired = needs[NEED_REST];
-        bool wants_sleep = (tired >= Cfg::TIRED_SLEEP_ANY)
+        // Chronotype: dozy ones cross the any-time (daytime-nap) line sooner.
+        bool wants_sleep = (tired >= _nap_threshold())
                         || (tired >= Cfg::TIRED_SLEEP_NIGHT && nightish);
         if (!was_sleeping && !sleeping && wants_sleep
                 && pressure <= Cfg::FAMINE_SLOWDOWN_PRESSURE) {
@@ -1174,6 +1175,7 @@ void Conker::_do_zoomies(Chamber& ch) {
             // discoveries (and their notifications) happen after dark.
             needs[NEED_BOREDOM] -= Cfg::DISCOVERY_BOREDOM_RELIEF;
             if (needs[NEED_BOREDOM] < 0.0f) needs[NEED_BOREDOM] = 0.0f;
+            afterglow_ticks = Cfg::AFTERGLOW_TICKS;   // a find is a delight
             Event fev;
             fev.type = EVT_DISCOVERY;
             fev.tick = ch.tick_num;
@@ -1337,8 +1339,6 @@ void Conker::_tick_idle(Chamber& ch) {
 // several needs but only those in Cfg::NEEDS_ACTIVE_MASK move — so each can be
 // activated and tuned on its own. First active need: boredom.
 void Conker::_update_needs(Chamber& ch, float dt) {
-    (void)ch;
-
     // ---- Boredom (stimulation) ----
     if (Cfg::NEEDS_ACTIVE_MASK & (1 << NEED_BOREDOM)) {
         float& boredom = needs[NEED_BOREDOM];
@@ -1382,18 +1382,115 @@ void Conker::_update_needs(Chamber& ch, float dt) {
         if (tired > 1.0f) tired = 1.0f;
     }
 
-    // ---- Derive mood from the loudest active need (+ live states) ----
+    // ---- Social (companionship) — BUILT, dormant until mask bit1 is lit ----
+    if (Cfg::NEEDS_ACTIVE_MASK & (1 << NEED_SOCIAL)) {
+        float& lonely = needs[NEED_SOCIAL];
+        if (sleeping || departing) {
+            // leave it be
+        } else if (_companions_near(ch) > 0) {
+            lonely -= Cfg::SOCIAL_FALL_PER_SEC * dt;              // company soothes
+        } else {
+            // The sociable crave company; loners barely notice being alone.
+            float drive = 0.5f + 1.0f * personality[PERS_SOCIAL_FREQUENCY];
+            lonely += Cfg::SOCIAL_RISE_PER_SEC * drive * dt;
+        }
+        if (lonely < 0.0f) lonely = 0.0f;
+        if (lonely > 1.0f) lonely = 1.0f;
+    }
+
+    // ---- Afterglow: topped up while playing, then decays into a content beat ----
+    if (state == STATE_ZOOMIES) afterglow_ticks = Cfg::AFTERGLOW_TICKS;
+    else if (afterglow_ticks > 0) afterglow_ticks--;
+
+    // ---- Arbiter: loudest active need → intent_need → mood ----
+    intent_need = NEED_COUNT;
+    if (!sleeping) {
+        float best = 0.0f;
+        for (uint8_t n = 0; n < NEED_COUNT; n++) {
+            if (!(Cfg::NEEDS_ACTIVE_MASK & (1 << n))) continue;
+            float s = _need_salience(n, ch);
+            if (s > best) { best = s; intent_need = n; }
+        }
+    }
+
     ConkerMood m = MOOD_CONTENT;
     if (state == STATE_ZOOMIES) {
         m = MOOD_PLAYING;
-    } else if (!sleeping) {
+    } else if (sleeping) {
+        m = MOOD_CONTENT;
+    } else if (afterglow_ticks > 0) {
+        m = MOOD_HAPPY;                          // just had a good time — savour it
+    } else if (intent_need == NEED_REST) {
         float tired = needs[NEED_REST];
+        bool nightish = (g_tod.phase != PHASE_DAY);
+        if (tired >= _nap_threshold()
+                || (tired >= Cfg::TIRED_SLEEP_NIGHT && nightish))
+            m = MOOD_SLEEPY;
+    } else if (intent_need == NEED_BOREDOM) {
         float b = needs[NEED_BOREDOM];
-        if (tired >= Cfg::TIRED_SLEEP_ANY)      m = MOOD_SLEEPY;   // tired beats bored
-        else if (b >= Cfg::BOREDOM_BORED_AT)    m = MOOD_BORED;
+        if (b >= Cfg::BOREDOM_BORED_AT)         m = MOOD_BORED;
         else if (b >= Cfg::BOREDOM_RESTLESS_AT) m = MOOD_RESTLESS;
+    } else if (intent_need == NEED_SOCIAL) {
+        float s = needs[NEED_SOCIAL];
+        if (s >= Cfg::SOCIAL_URGENT_AT)         m = MOOD_LONELY;
+        else if (s >= Cfg::SOCIAL_LONELY_AT)    m = MOOD_RESTLESS;
     }
     mood = static_cast<uint8_t>(m);
+}
+
+// ---- Needs framework helpers (v127) ----
+
+// Context-gated salience for the arbiter. Boredom only matters in the active day;
+// rest and (dormant) social matter whenever they're high.
+float Conker::_need_salience(uint8_t need, Chamber& ch) const {
+    (void)ch;
+    float w = Cfg::NEED_SALIENCE_WEIGHT[need];
+    switch (need) {
+        case NEED_BOREDOM:
+            return (g_tod.phase == PHASE_DAY) ? needs[NEED_BOREDOM] * w : 0.0f;
+        case NEED_REST:   return needs[NEED_REST]   * w;
+        case NEED_SOCIAL: return needs[NEED_SOCIAL] * w;
+        default:          return 0.0f;
+    }
+}
+
+// Chronotype: dozy conkers (low hardiness/tempo) nod off at a lower tiredness —
+// so they take daytime naps — while hardy ones hold out toward night. Centred so
+// an average conker keeps the default any-time sleep threshold.
+float Conker::_nap_threshold() const {
+    float nappiness = 0.6f * (0.5f - personality[PERS_HARDINESS])
+                    + 0.4f * (0.5f - personality[PERS_WORK_TEMPO]);   // -0.5..+0.5
+    return Cfg::TIRED_SLEEP_ANY - Cfg::CHRONO_NAP_RANGE * nappiness;  // 0.55..0.85
+}
+
+// Personality-flavoured response to a need. Routing hook for the arbiter — the
+// boredom/rest styles are reachable now; social is scaffolded for when it's lit.
+uint8_t Conker::_response_style(uint8_t need) const {
+    switch (need) {
+        case NEED_BOREDOM: {
+            float social  = personality[PERS_SOCIAL_FREQUENCY];
+            float explore = personality[PERS_EXPLORATION];
+            if (social > 0.6f && social >= explore) return RESP_PLAY_SOCIAL;
+            if (explore > 0.45f)                    return RESP_PLAY_SOLO;
+            return RESP_FIDGET;
+        }
+        case NEED_REST:   return RESP_SLEEP;
+        case NEED_SOCIAL: return RESP_SEEK_COMPANY;
+        default:          return RESP_NONE;
+    }
+}
+
+// Count awake neighbours within companion range (social need; dormant).
+int Conker::_companions_near(Chamber& ch) const {
+    int n = 0;
+    float r2 = Cfg::SOCIAL_COMPANION_DIST * Cfg::SOCIAL_COMPANION_DIST;
+    for (int i = 0; i < ch.conker_count; i++) {
+        const Conker& o = ch.conkers[i];
+        if (&o == this || !o.alive || o.sleeping) continue;
+        float dx = o.x - x, dy = o.y - y;
+        if (dx * dx + dy * dy <= r2) n++;
+    }
+    return n;
 }
 
 void Conker::_pick_idle_microstate(Chamber& ch) {

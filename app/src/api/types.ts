@@ -108,7 +108,7 @@ export interface LilGuySummary {
 }
 
 // Readable summary of a conker's loudest unmet need (firmware ConkerMood)
-export type ConkerMood = 'content' | 'restless' | 'bored' | 'playing' | 'sleepy';
+export type ConkerMood = 'content' | 'restless' | 'bored' | 'playing' | 'sleepy' | 'happy' | 'lonely';
 
 // ---- LilGuy detail (queen LAN: GET /api/v1/lilguys/:id) ----
 

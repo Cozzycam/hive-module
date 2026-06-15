@@ -18,7 +18,7 @@ static const char* TRAIT_STRINGS[] = {
 };
 
 // Keep in lockstep with ConkerMood (conker.h)
-static const char* MOOD_STRINGS[] = { "content", "restless", "bored", "playing", "sleepy" };
+static const char* MOOD_STRINGS[] = { "content", "restless", "bored", "playing", "sleepy", "happy", "lonely" };
 
 static void add_traits_array(JsonArray& arr, uint32_t traits) {
     for (int i = 0; i < 7; i++) {
@@ -159,7 +159,7 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
             }
             lg["x"] = px;
             lg["y"] = py;
-            lg["mood"] = MOOD_STRINGS[mood < 5 ? mood : 0];
+            lg["mood"] = MOOD_STRINGS[mood < 7 ? mood : 0];
             JsonObject needs = lg["needs"].to<JsonObject>();
             needs["boredom"] = boredom;
             needs["tiredness"] = tiredness;

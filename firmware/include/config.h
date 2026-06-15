@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 126;
+constexpr uint32_t FW_VERSION = 128;
 
 namespace Cfg {
 
@@ -282,6 +282,36 @@ constexpr float TIRED_FALL_PER_SEC   = 1.0f / (10.0f * 3600.0f);  // ~a night's 
 constexpr float TIRED_SLEEP_NIGHT    = 0.45f;  // dusk→dawn: sleep once this tired
 constexpr float TIRED_SLEEP_ANY      = 0.70f;  // any time of day: sleep if this tired
 constexpr float TIRED_RESTED_WAKE    = 0.15f;  // wake naturally once rested to here
+
+// ---- Needs framework: arbiter + chronotype + afterglow (v127) ----
+// All built; only the needs in NEEDS_ACTIVE_MASK actually drive behaviour.
+//
+// Salience arbiter: each active need's salience = level × weight (× context gate
+// in code). The loudest becomes the conker's intent_need → mood. Rest outweighs
+// boredom so a tired conker reads sleepy even when also bored (matches the old
+// "tired beats bored" rule).
+// Indexed by NeedDim (conker.h): [0]=boredom, [1]=social, [2]=rest. Sized as a
+// literal because NeedDim isn't visible here (conker.h includes config.h).
+constexpr float NEED_SALIENCE_WEIGHT[3] = {
+    1.0f,   // NEED_BOREDOM
+    1.0f,   // NEED_SOCIAL
+    1.4f,   // NEED_REST  (wins ties)
+};
+// Chronotype: dozy conkers (low hardiness/tempo) nod off sooner — even by day.
+// nap_threshold = TIRED_SLEEP_ANY − CHRONO_NAP_RANGE × nappiness  (→ 0.40..0.70).
+constexpr float CHRONO_NAP_RANGE     = 0.30f;
+// Afterglow: a satisfied beat after a need is met, before it climbs again.
+constexpr int   AFTERGLOW_TICKS      = 48;     // ~6s at 8 tps (MOOD_HAPPY)
+
+// ---- Need #3: SOCIAL (companionship) — BUILT, DORMANT (mask bit1 off) ----
+// Rises while no companion is within reach (loners climb slower), drains near
+// others. A lonely conker seeks the nearest companion (response = seek company).
+constexpr float SOCIAL_RISE_PER_SEC   = 1.0f / 2400.0f;  // ~40 min alone → maxed
+constexpr float SOCIAL_FALL_PER_SEC   = 1.0f / 300.0f;   // company soothes in ~5 min
+constexpr float SOCIAL_COMPANION_DIST = 3.0f;            // cells: a neighbour this close = company
+constexpr float SOCIAL_LONELY_AT      = 0.55f;           // mood: content → restless
+constexpr float SOCIAL_URGENT_AT      = 0.85f;           // mood: restless → lonely
+constexpr float SOCIAL_BOOP_RELIEF    = 0.4f;            // a player tap is a bit of company
 
 // ---- Critters (visiting bugs to discover) ----
 // A beetle/butterfly/worm wanders in, drifts toward the colony, and the first

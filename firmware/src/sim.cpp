@@ -83,9 +83,15 @@ void Sim::handle_touch() {
         // Tapped a conker — select it
         auto& c = ch.conkers[best];
         selected_conker_id = c.id;
-        // A boop perks them up — attention relieves boredom.
+        // A boop perks them up — attention relieves boredom + leaves them happy.
         c.needs[NEED_BOREDOM] -= Cfg::BOREDOM_BOOP_RELIEF;
         if (c.needs[NEED_BOREDOM] < 0.0f) c.needs[NEED_BOREDOM] = 0.0f;
+        c.afterglow_ticks = Cfg::AFTERGLOW_TICKS;
+        // If social is ever lit, a boop is a bit of company too.
+        if (Cfg::NEEDS_ACTIVE_MASK & (1 << NEED_SOCIAL)) {
+            c.needs[NEED_SOCIAL] -= Cfg::SOCIAL_BOOP_RELIEF;
+            if (c.needs[NEED_SOCIAL] < 0.0f) c.needs[NEED_SOCIAL] = 0.0f;
+        }
         // A boop also rouses a sleeper — the one thing (besides famine) that
         // wakes them. Knock tiredness below the sleep threshold so they don't
         // flop straight back down — a boop earns a little awake time.

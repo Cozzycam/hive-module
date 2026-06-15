@@ -95,6 +95,8 @@ const MOOD_EMOJI: Record<ConkerMood, string> = {
   bored: '\u{1F611}',     // expressionless
   playing: '\u{2728}',    // sparkles
   sleepy: '\u{1F971}',    // yawning
+  happy: '\u{1F60A}',     // smiling — afterglow
+  lonely: '\u{1F97A}',    // pleading — wants company
 };
 
 const MOOD_BLURB: Record<ConkerMood, string> = {
@@ -103,6 +105,8 @@ const MOOD_BLURB: Record<ConkerMood, string> = {
   bored: 'Properly bored. Give them a boop, or watch them go looking for fun.',
   playing: 'Having a great time!',
   sleepy: 'Worn out — heading for bed. A boop will rouse them if you must.',
+  happy: 'Just had a lovely time — content and glowing.',
+  lonely: 'Feeling a bit alone — would love some company.',
 };
 
 function buildCharactersFromEvents(events: ColonyEvent[]): Map<number, CharacterInfo> {

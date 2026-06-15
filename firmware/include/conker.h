@@ -53,6 +53,21 @@ enum ConkerMood : uint8_t {
     MOOD_BORED    = 2,   // a need is urgent
     MOOD_PLAYING  = 3,   // actively relieving it
     MOOD_SLEEPY   = 4,   // tired — heading for bed
+    MOOD_HAPPY    = 5,   // afterglow — a need was just met (active)
+    MOOD_LONELY   = 6,   // social need urgent (dormant until NEED_SOCIAL lit)
+    MOOD_COUNT    = 7,
+};
+
+// How a conker chooses to act on its loudest need. The arbiter picks the need;
+// this picks the flavour of response, coloured by personality. Built whole;
+// only the boredom/rest styles are reachable while those needs are the live ones.
+enum ResponseStyle : uint8_t {
+    RESP_NONE         = 0,
+    RESP_PLAY_SOCIAL  = 1,   // bored + sociable → seek a partner, parade
+    RESP_PLAY_SOLO    = 2,   // bored + loner/explorer → solo zoomie / wander
+    RESP_FIDGET       = 3,   // bored + placid → twirl/potter in place
+    RESP_SLEEP        = 4,   // tired → bed down (chronotype sets when)
+    RESP_SEEK_COMPANY = 5,   // lonely → drift to nearest companion (dormant)
 };
 
 // Personality dimension indices
@@ -142,6 +157,8 @@ struct Conker {
     // each tick for the renderer + API. See NeedDim / ConkerMood.
     float    needs[NEED_COUNT]    = {};
     uint8_t  mood                 = MOOD_CONTENT;
+    uint8_t  intent_need          = NEED_COUNT;  // loudest need this tick (arbiter); NEED_COUNT = none
+    uint16_t afterglow_ticks      = 0;           // satisfied beat after a need is met
 
     uint8_t  tint_seed            = 0;   // per-worker colour variation (set at init)
     int8_t   arrival_face        = -1;  // face this ant arrived from (-1 = locally spawned)
@@ -179,6 +196,11 @@ struct Conker {
     void _do_tend_queen(Chamber& ch);
     void _do_idle(Chamber& ch);
     void _update_needs(Chamber& ch, float dt);
+    // Needs arbiter helpers (v127 framework)
+    float   _need_salience(uint8_t need, Chamber& ch) const;  // context-gated salience
+    float   _nap_threshold() const;          // chronotype: dozy ones nap sooner (even by day)
+    uint8_t _response_style(uint8_t need) const;  // personality-flavoured response to a need
+    int     _companions_near(Chamber& ch) const; // count neighbours within SOCIAL_COMPANION_DIST
     void _tick_idle(Chamber& ch);
     void _pick_idle_microstate(Chamber& ch);
     float _colony_idle_budget(Chamber& ch);
