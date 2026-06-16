@@ -29,7 +29,7 @@ const TRAIT_INFO: Record<string, { label: string; desc: string }> = {
   survived_cold_snap: { label: 'Cold Snap Survivor', desc: 'Endured a bitter freeze.' },
   survived_drought: { label: 'Drought Survivor', desc: 'Outlasted the hungry, dry days.' },
   survived_storm: { label: 'Storm Survivor', desc: 'Weathered a great storm.' },
-  catcher: { label: 'Bug Hunter', desc: 'Has a knack for spotting and catching visiting critters.' },
+  catcher: { label: 'Bug Hunter', desc: "The colony's reigning critter-catcher — a title that only passes to whoever out-catches the current champion." },
 };
 
 function traitLabel(t: string): string {

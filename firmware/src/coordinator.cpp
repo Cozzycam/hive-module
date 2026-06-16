@@ -2213,9 +2213,10 @@ void Coordinator::_trait_tick(uint32_t tick_num) {
             if (!any_above) rec->traits &= ~TRAIT_BONDED;
         }
 
-        // Catcher ("Bug Hunter"): caught 5 visiting critters (cumulative, persisted).
+        // Catcher ("Bug Hunter"): keep the persisted catch count in step with
+        // the live conker. The badge itself is a single colony-wide title,
+        // resolved across all conkers in _catcher_resolve() after this loop.
         if (w.catches != rec->catches) { rec->catches = w.catches; rec->dirty = true; }
-        if (w.catches >= 5) rec->traits |= TRAIT_CATCHER;
 
         // Emit trait_earned for newly set bits
         uint32_t new_bits = rec->traits & ~prev_traits;
@@ -2234,6 +2235,76 @@ void Coordinator::_trait_tick(uint32_t tick_num) {
         }
         // Persist clears too (bonded hysteresis, elder self-heal)
         if (rec->traits != prev_traits) rec->dirty = true;
+    }
+
+    _catcher_resolve(tick_num);
+}
+
+// "Bug Hunter" is a single, colony-wide title that scales in steps of 25
+// catches. The first conker to reach 25 wins it; to take it from the holder a
+// challenger must reach the next 25-multiple ABOVE what the holder has banked
+// (50, then 75, 100, ...). The holder defends automatically — every time their
+// own catch count crosses a 25-step the bar rises with them, so a rival always
+// has to out-catch the reigning champion, not merely re-hit 25. Only living
+// conkers compete for the live title; a deceased champion keeps the badge on
+// their record as a keepsake (same as Bonded).
+void Coordinator::_catcher_resolve(uint32_t tick_num) {
+    // Identify the current living holder (heal any duplicates by keeping the
+    // strongest — there should only ever be one).
+    int holder_idx = -1;
+    uint8_t holder_catches = 0;
+    for (int i = 0; i < chamber.conker_count; i++) {
+        Conker& w = chamber.conkers[i];
+        if (w.id == 0 || !w.alive) continue;
+        IdentityRecord* rec = registry.get(w.id);
+        if (!rec || !(rec->traits & TRAIT_CATCHER)) continue;
+        if (holder_idx < 0 || w.catches > holder_catches) {
+            holder_idx = i;
+            holder_catches = w.catches;
+        }
+    }
+
+    // The bar is the next 25-multiple strictly above the holder's banked
+    // catches (so the holder never qualifies as their own challenger), or 25
+    // when the title is currently vacant.
+    uint16_t bar = (holder_idx >= 0) ? (uint16_t)((holder_catches / 25 + 1) * 25) : 25;
+
+    // Strongest living challenger that has reached the bar.
+    int best_idx = -1;
+    uint8_t best_catches = 0;
+    for (int i = 0; i < chamber.conker_count; i++) {
+        Conker& w = chamber.conkers[i];
+        if (w.id == 0 || !w.alive) continue;
+        if (w.catches < bar) continue;
+        if (best_idx < 0 || w.catches > best_catches) {
+            best_idx = i;
+            best_catches = w.catches;
+        }
+    }
+
+    if (best_idx < 0 || best_idx == holder_idx) return;  // title unchanged
+
+    // Hand the badge over: strip it from the previous living holder, award the
+    // challenger, and announce it in the journal.
+    if (holder_idx >= 0) {
+        IdentityRecord* old = registry.get(chamber.conkers[holder_idx].id);
+        if (old && (old->traits & TRAIT_CATCHER)) {
+            old->traits &= ~TRAIT_CATCHER;
+            old->dirty = true;
+        }
+    }
+    Conker& champ = chamber.conkers[best_idx];
+    IdentityRecord* rec = registry.get(champ.id);
+    if (rec) {
+        rec->traits |= TRAIT_CATCHER;
+        rec->dirty = true;
+        JournalEntry je = {};
+        je.tick = tick_num;
+        je.unix_time = g_tod.unix_time;
+        je.type = JEVT_TRAIT_EARNED;
+        je.lilguy_id = champ.id;
+        je.trait.trait_bit = TRAIT_CATCHER;
+        journal.emit(je);
     }
 }
 

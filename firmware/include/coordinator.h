@@ -160,6 +160,7 @@ private:
     uint32_t _trait_check_tick = 0;
     void _world_tick();
     void _trait_tick(uint32_t tick_num);
+    void _catcher_resolve(uint32_t tick_num);   // single colony-wide "Bug Hunter" title
 
     // Persistence (internal)
     uint32_t _last_persist_flush_ms = 0;

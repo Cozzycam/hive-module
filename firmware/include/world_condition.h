@@ -36,7 +36,7 @@ enum TraitBit : uint32_t {
     TRAIT_SURVIVED_COLD_SNAP = (1 << 4),
     TRAIT_SURVIVED_DROUGHT   = (1 << 5),
     TRAIT_SURVIVED_STORM     = (1 << 6),
-    TRAIT_CATCHER            = (1 << 7),   // caught a visiting critter ("Bug Hunter")
+    TRAIT_CATCHER            = (1 << 7),   // colony's reigning critter-catcher ("Bug Hunter", 25-step single-holder title)
     // Bits 8-31 reserved for future traits
 };
 
