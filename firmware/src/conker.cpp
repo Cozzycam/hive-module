@@ -1176,6 +1176,7 @@ void Conker::_do_zoomies(Chamber& ch) {
             needs[NEED_BOREDOM] -= Cfg::DISCOVERY_BOREDOM_RELIEF;
             if (needs[NEED_BOREDOM] < 0.0f) needs[NEED_BOREDOM] = 0.0f;
             afterglow_ticks = Cfg::AFTERGLOW_TICKS;   // a find is a delight
+            if (catches < 255) catches++;             // earns the Catcher trait
             Event fev;
             fev.type = EVT_DISCOVERY;
             fev.tick = ch.tick_num;

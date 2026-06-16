@@ -1924,6 +1924,8 @@ void Coordinator::_persist_restore_from_disk() {
         // Restore tint_seed (init randomizes it — override with persisted value)
         if (r.tint_seed > 0)
             chamber.conkers[idx].tint_seed = r.tint_seed;
+        // Restore cumulative catch count (Catcher trait progress)
+        chamber.conkers[idx].catches = r.catches;
         // Restore name from registry. Heal the RECORD if it has no name (a
         // partial/malformed write — same family as the zero-lifespan records):
         // otherwise the conker renders "???" forever, and _persist_tick won't
@@ -2209,10 +2211,14 @@ void Coordinator::_trait_tick(uint32_t tick_num) {
             if (!any_above) rec->traits &= ~TRAIT_BONDED;
         }
 
+        // Catcher ("Bug Hunter"): caught 5 visiting critters (cumulative, persisted).
+        if (w.catches != rec->catches) { rec->catches = w.catches; rec->dirty = true; }
+        if (w.catches >= 5) rec->traits |= TRAIT_CATCHER;
+
         // Emit trait_earned for newly set bits
         uint32_t new_bits = rec->traits & ~prev_traits;
         if (new_bits) {
-            for (int bit = 0; bit < 7; bit++) {
+            for (int bit = 0; bit < 8; bit++) {
                 if (new_bits & (1u << bit)) {
                     JournalEntry je = {};
                     je.tick = tick_num;

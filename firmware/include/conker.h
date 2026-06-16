@@ -159,6 +159,7 @@ struct Conker {
     uint8_t  mood                 = MOOD_CONTENT;
     uint8_t  intent_need          = NEED_COUNT;  // loudest need this tick (arbiter); NEED_COUNT = none
     uint16_t afterglow_ticks      = 0;           // satisfied beat after a need is met
+    uint8_t  catches              = 0;           // critters caught — earns the Catcher trait
 
     uint8_t  tint_seed            = 0;   // per-worker colour variation (set at init)
     int8_t   arrival_face        = -1;  // face this ant arrived from (-1 = locally spawned)

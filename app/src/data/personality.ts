@@ -81,20 +81,27 @@ export function deriveRoleTag(
   role: string,
   traits: string[],
 ): string {
-  if (traits.includes('Pioneer')) return 'Pioneer';
-  if (traits.includes('Elder')) return 'Elder';
+  if (traits.includes('pioneer')) return 'Pioneer';
+  if (traits.includes('elder')) return 'Elder';
 
   if (!p) return capitalize(role);
 
-  if (p.social_frequency > 0.7 && p.work_tempo < 0.4) return 'The social one';
-  if (p.exploration > 0.7 && p.route_stickiness < 0.3) return 'The explorer';
-  if (p.work_tempo > 0.7 && p.food_preference > 0.6) return 'The forager';
-  if (p.work_tempo > 0.7 && p.route_stickiness > 0.6) return 'The grafter';
-  if (p.hardiness > 0.7) return 'The tough one';
-  if (p.social_frequency > 0.6 && p.learning_rate > 0.6) return 'The carer';
-  if (p.exploration < 0.3 && p.route_stickiness > 0.6) return 'The homebody';
-
-  return capitalize(role);
+  // Tag a conker by its single most-pronounced trait — so everyone gets a name
+  // that fires as readily as "The tough one", not just the rare double-extreme.
+  const dims: Array<[number, string]> = [
+    [p.hardiness, 'The tough one'],
+    [p.work_tempo, 'The grafter'],
+    [p.exploration, 'The explorer'],
+    [p.social_frequency, 'The social one'],
+    [p.food_preference, 'The forager'],
+    [p.route_stickiness, 'The homebody'],
+    [p.learning_rate, 'The clever one'],
+  ];
+  let best = dims[0];
+  for (const d of dims) if (d[0] > best[0]) best = d;
+  // Only fall back to "all-rounder" for a genuinely flat personality.
+  if (best[0] >= 0.55) return best[1];
+  return 'The all-rounder';
 }
 
 function capitalize(s: string): string {

@@ -26,7 +26,8 @@ static const char* CHALLENGE_NAMES[] = {
 
 static const char* TRAIT_NAMES[] = {
     "pioneer", "elder", "bonded",
-    "survived_heatwave", "survived_cold_snap", "survived_drought", "survived_storm"
+    "survived_heatwave", "survived_cold_snap", "survived_drought", "survived_storm",
+    "catcher"
 };
 
 static const char* DEATH_CAUSE[] = { "old_age", "starvation" };
@@ -122,7 +123,7 @@ void EventJournal::_serialize_entry(const JournalEntry& e, char* buf, size_t buf
         // Find trait name from bit
         uint32_t bit = e.trait.trait_bit;
         const char* name = "unknown";
-        for (int i = 0; i < 7; i++) {
+        for (int i = 0; i < 8; i++) {
             if (bit == (1u << i)) { name = TRAIT_NAMES[i]; break; }
         }
         data["trait"] = name;

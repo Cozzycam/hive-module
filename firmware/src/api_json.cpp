@@ -12,16 +12,19 @@
 
 // ---- Trait bit to string helpers ----
 
+// Lowercase snake_case ids — the app maps these to friendly labels (TRAIT_INFO).
+// Kept in lockstep with journal TRAIT_NAMES and TraitBit (world_condition.h).
 static const char* TRAIT_STRINGS[] = {
-    "Pioneer", "Elder", "Bonded",
-    "Survived Heatwave", "Survived Cold Snap", "Survived Drought", "Survived Storm"
+    "pioneer", "elder", "bonded",
+    "survived_heatwave", "survived_cold_snap", "survived_drought", "survived_storm",
+    "catcher"
 };
 
 // Keep in lockstep with ConkerMood (conker.h)
 static const char* MOOD_STRINGS[] = { "content", "restless", "bored", "playing", "sleepy", "happy", "lonely" };
 
 static void add_traits_array(JsonArray& arr, uint32_t traits) {
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < 8; i++) {
         if (traits & (1u << i)) arr.add(TRAIT_STRINGS[i]);
     }
 }
