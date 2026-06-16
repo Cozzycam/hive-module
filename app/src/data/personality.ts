@@ -86,22 +86,23 @@ export function deriveRoleTag(
 
   if (!p) return capitalize(role);
 
-  // Tag a conker by its single most-pronounced trait — so everyone gets a name
-  // that fires as readily as "The tough one", not just the rare double-extreme.
-  const dims: Array<[number, string]> = [
-    [p.hardiness, 'The tough one'],
-    [p.work_tempo, 'The grafter'],
-    [p.exploration, 'The explorer'],
-    [p.social_frequency, 'The social one'],
-    [p.food_preference, 'The forager'],
-    [p.route_stickiness, 'The homebody'],
-    [p.learning_rate, 'The clever one'],
+  // Compound tag: NOUN from the strongest trait, ADJECTIVE from the second
+  // strongest. ~42 combinations, so three high-homebody conkers read as
+  // "The hungry homebody" / "The sociable homebody" / "The tough homebody"
+  // instead of three identical "The homebody" — distinct AND accurate.
+  const dims: Array<{ v: number; noun: string; adj: string }> = [
+    { v: p.work_tempo,       noun: 'grafter',   adj: 'busy' },
+    { v: p.exploration,      noun: 'explorer',  adj: 'curious' },
+    { v: p.route_stickiness, noun: 'homebody',  adj: 'homely' },
+    { v: p.social_frequency, noun: 'socialite', adj: 'sociable' },
+    { v: p.food_preference,  noun: 'forager',   adj: 'hungry' },
+    { v: p.hardiness,        noun: 'tough nut',  adj: 'tough' },
+    { v: p.learning_rate,    noun: 'thinker',   adj: 'clever' },
   ];
-  let best = dims[0];
-  for (const d of dims) if (d[0] > best[0]) best = d;
-  // Only fall back to "all-rounder" for a genuinely flat personality.
-  if (best[0] >= 0.55) return best[1];
-  return 'The all-rounder';
+  const ranked = dims.slice().sort((a, b) => b.v - a.v);
+  // Genuinely flat personality → no standout trait.
+  if (ranked[0].v < 0.55) return 'The all-rounder';
+  return `The ${ranked[1].adj} ${ranked[0].noun}`;
 }
 
 function capitalize(s: string): string {
