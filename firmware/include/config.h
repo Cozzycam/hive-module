@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 129;
+constexpr uint32_t FW_VERSION = 130;
 
 namespace Cfg {
 
@@ -281,7 +281,9 @@ constexpr float TIRED_RISE_PER_SEC   = 1.0f / (16.0f * 3600.0f);  // ~16h awake 
 constexpr float TIRED_FALL_PER_SEC   = 1.0f / (10.0f * 3600.0f);  // ~a night's sleep restores
 constexpr float TIRED_SLEEP_NIGHT    = 0.45f;  // dusk→dawn: sleep once this tired
 constexpr float TIRED_SLEEP_ANY      = 0.70f;  // any time of day: sleep if this tired
-constexpr float TIRED_RESTED_WAKE    = 0.15f;  // wake naturally once rested to here
+constexpr float TIRED_RESTED_WAKE    = 0.15f;  // deep wake: fully rested (night sleep / daytime nap)
+constexpr float TIRED_MORNING_WAKE   = 0.45f;  // dawn/day: night-sleepers get up once rested to here,
+                                               // so they don't oversleep into the morning
 
 // ---- Needs framework: arbiter + chronotype + afterglow (v127) ----
 // All built; only the needs in NEEDS_ACTIVE_MASK actually drive behaviour.

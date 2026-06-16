@@ -48,7 +48,9 @@ void Conker::init(int8_t px, int8_t py, Role c, bool pioneer) {
     sleep_until_ms = 0;
     sleep_cooldown_ms = 0;
     needs[NEED_BOREDOM] = 0.0f;
-    needs[NEED_REST]    = g_tod.night_factor;  // seed: as tired as it is "night"
+    // Seed tiredness from time of day, jittered per conker so a night reboot
+    // doesn't bunch everyone at identical max-tired (they wake staggered).
+    needs[NEED_REST]    = g_tod.night_factor * (0.8f + 0.2f * g_rng.rand_float());
     zoomie_target = -1;
     zoomie_ticks = 0;
     flair_kind = 0;
@@ -260,7 +262,10 @@ void Conker::tick(Chamber& ch, float dt) {
             if (sleeping) {
                 // Wake only once rested, or roused by famine / personal starving
                 // (a player boop wakes them directly, in sim.cpp).
+                bool morning = (g_tod.phase == PHASE_DAWN || g_tod.phase == PHASE_DAY);
                 bool swake = (needs[NEED_REST] <= Cfg::TIRED_RESTED_WAKE)
+                          || (!daytime_nap && morning
+                              && needs[NEED_REST] <= Cfg::TIRED_MORNING_WAKE)
                           || ch.colony->food_pressure() > Cfg::FAMINE_SLOWDOWN_PRESSURE
                           || hunger > 60.0f;
                 if (swake) {
@@ -301,7 +306,10 @@ void Conker::tick(Chamber& ch, float dt) {
     if (sleeping) {
         // Stay down until rested; rouse on famine or personal starving
         // (a player boop wakes them directly, in sim.cpp).
+        bool morning = (g_tod.phase == PHASE_DAWN || g_tod.phase == PHASE_DAY);
         bool wake = (needs[NEED_REST] <= Cfg::TIRED_RESTED_WAKE)
+                 || (!daytime_nap && morning
+                     && needs[NEED_REST] <= Cfg::TIRED_MORNING_WAKE)
                  || ch.colony->food_pressure() > Cfg::FAMINE_SLOWDOWN_PRESSURE
                  || hunger > 60.0f;
         if (wake) {
@@ -527,6 +535,9 @@ void Conker::_pick_task(Chamber& ch) {
                 && pressure <= Cfg::FAMINE_SLOWDOWN_PRESSURE) {
             stack_on = was_stacked;
             sleeping = true;
+            // A sleep that begins in the day is a nap (keeps its full restorative
+            // wake); one that begins at dusk/night gets the morning wake instead.
+            daytime_nap = (g_tod.phase == PHASE_DAY);
             anim_type = LG_ANIM_SNOOZE;
             state = STATE_IDLE;
             has_target = false;
