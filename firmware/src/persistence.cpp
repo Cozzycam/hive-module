@@ -432,10 +432,38 @@ void ConkerRegistry::_move_to_corrupt(const char* path, const char* subdir) {
     Serial.printf("[persist] moved corrupt file to %s\r\n", dest);
 }
 
-// ---- Clean stale .tmp files from previous interrupted writes ----
+// ---- Recover / clean .tmp files from previous interrupted writes ----
+
+// _atomic_write() does: write <x>.tmp (verified) -> remove <x> -> rename tmp to <x>.
+// A reset between the remove and the rename leaves only <x>.tmp — but that tmp is
+// the complete, verified new record. So on boot, if the real file is MISSING we
+// PROMOTE the orphaned tmp (recovering the interrupted commit) rather than deleting
+// it; only a tmp whose real file still exists is genuinely stale. This closes the
+// window that could otherwise lose a record entirely (no record, no death event).
+static void _recover_or_clean_tmp(const char* tmp_path) {
+    char main_path[128];
+    strlcpy(main_path, tmp_path, sizeof(main_path));
+    char* suffix = strstr(main_path, ".tmp");
+    if (!suffix) return;
+    *suffix = '\0';  // strip ".tmp" -> the real record path
+
+    if (SD_MMC.exists(main_path)) {
+        SD_MMC.remove(tmp_path);
+        Serial.printf("[persist] cleaned stale tmp: %s\r\n", tmp_path);
+    } else if (SD_MMC.rename(tmp_path, main_path)) {
+        Serial.printf("[persist] RECOVERED interrupted write: %s\r\n", main_path);
+    } else {
+        SD_MMC.remove(tmp_path);
+    }
+}
 
 void ConkerRegistry::_clean_tmp_files() {
-    // Walk lilguys shards
+    // Collect tmp paths first, then process — avoids mutating a directory while
+    // its iterator is open.
+    char tmps[32][128];
+    int n = 0;
+
+    // lilguys (sharded)
     File root = SD_MMC.open("/colony/lilguys");
     if (root && root.isDirectory()) {
         File shard = root.openNextFile();
@@ -443,15 +471,9 @@ void ConkerRegistry::_clean_tmp_files() {
             if (shard.isDirectory() && shard.name()[0] != '.') {
                 File entry = shard.openNextFile();
                 while (entry) {
-                    if (strstr(entry.name(), ".tmp")) {
-                        char p[128];
-                        strlcpy(p, entry.path(), sizeof(p));
-                        entry.close();
-                        SD_MMC.remove(p);
-                        Serial.printf("[persist] cleaned stale tmp: %s\r\n", p);
-                    } else {
-                        entry.close();
-                    }
+                    if (!entry.isDirectory() && strstr(entry.name(), ".tmp") && n < 32)
+                        strlcpy(tmps[n++], entry.path(), 128);
+                    entry.close();
                     entry = shard.openNextFile();
                 }
             }
@@ -460,6 +482,25 @@ void ConkerRegistry::_clean_tmp_files() {
         }
         root.close();
     }
+
+    // brood (flat dir) — same atomic-write window applies
+    File broot = SD_MMC.open("/colony/brood");
+    if (broot && broot.isDirectory()) {
+        File entry = broot.openNextFile();
+        while (entry) {
+            if (!entry.isDirectory() && strstr(entry.name(), ".tmp") && n < 32)
+                strlcpy(tmps[n++], entry.path(), 128);
+            entry.close();
+            entry = broot.openNextFile();
+        }
+        broot.close();
+    }
+
+    for (int i = 0; i < n; i++) _recover_or_clean_tmp(tmps[i]);
+
+    // manifest is a single file
+    if (SD_MMC.exists("/colony/manifest.json.tmp"))
+        _recover_or_clean_tmp("/colony/manifest.json.tmp");
 }
 
 // ---- Public API ----
