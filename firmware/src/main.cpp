@@ -242,6 +242,15 @@ static void process_serial_line(const char* line) {
         ESP.restart();
     } else if (strcmp(line, "ota") == 0) {
         enter_ota_mode();
+    } else if (strcmp(line, "clearbonds") == 0) {
+        // Wipe all friendships (RAM + SD) so they reform cleanly under the
+        // current bonding rules. Lineage bonds re-set on the next hatch.
+        sim.coordinator.bonds.init();
+        if (sd_card_state() == SD_OK) {
+            SD_MMC.remove("/colony/bonds.json");
+            SD_MMC.remove("/colony/bonds.json.tmp");
+        }
+        Serial.println("[bonds] cleared (RAM + SD) — friendships will reform");
     } else if (strcmp(line, "push") == 0) {
         ota_push();
     } else if (strcmp(line, "deaths") == 0) {
