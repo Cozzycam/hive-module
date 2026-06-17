@@ -1,7 +1,7 @@
 /* Bonds — directed relationship strengths between Conkers.
  *
  * Stored in a flat pool. Each entry is owner→target with strength 0.0-1.0.
- * Cap: 16 bonds per owner. Pool cap: 1024 total entries.
+ * Cap: 5 bonds per owner. Pool cap: 1024 total entries.
  * Persisted to /colony/bonds.json every 60s.
  */
 #pragma once
@@ -19,10 +19,11 @@ struct BondEntry {
 class BondStore {
 public:
     static constexpr int POOL_CAP = 1024;
-    static constexpr int PER_OWNER_CAP = 16;
+    static constexpr int PER_OWNER_CAP = 5;         // a meaningful close circle, not friends-with-everyone
     static constexpr float FORM_THRESHOLD = 0.1f;   // emit bond_formed
     static constexpr float BREAK_THRESHOLD = 0.05f; // emit bond_broken / remove
-    static constexpr float DECAY_FACTOR = 0.997f;   // per 1000 ticks (~2 min)
+    static constexpr float DECAY_FACTOR = 0.999f;   // per 1000 ticks (~2 min) — gentle, so a maintained
+                                                    // friendship lasts days; only long separation fades it
     static constexpr int   DECAY_INTERVAL = 1000;   // ticks between decay passes
 
     void init();

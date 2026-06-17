@@ -2007,6 +2007,19 @@ void Coordinator::_bond_tick(uint32_t tick_num) {
     }
 }
 
+// How readily a conker forms proximity friendships, by sociability. Below ~0.6
+// social a conker keeps to itself — no organic bonds, only lineage ones — so
+// friendships stay selective and meaningful instead of everyone befriending
+// everyone they happen to huddle beside. The genuinely sociable bond fastest.
+// Directed: each side of a pair scales by its OWN sociability, so a butterfly
+// can adore a quiet neighbour who never reciprocates.
+static inline float _bond_social_factor(const Conker& c) {
+    float f = (c.personality[PERS_SOCIAL_FREQUENCY] - 0.6f) * 2.5f;
+    if (f < 0.0f) f = 0.0f;
+    if (f > 1.0f) f = 1.0f;
+    return f;
+}
+
 void Coordinator::_bond_detect_proximity(uint32_t tick_num) {
     // Scan for worker pairs within 3 cells that are both active (non-idle)
     for (int i = 0; i < chamber.conker_count; i++) {
@@ -2020,29 +2033,33 @@ void Coordinator::_bond_detect_proximity(uint32_t tick_num) {
             int dist = abs(a.cell_x() - b.cell_x()) + abs(a.cell_y() - b.cell_y());
             if (dist > 3) continue;
 
-            float increment = 0.0f;
+            // Base accrual for the kind of time they're sharing. Sociability
+            // (applied per-direction below) gates how much of it actually sticks,
+            // and gentle decay lets a real friendship last for days.
+            float base = 0.0f;
 
             // Co-tending: both in TEND_BROOD targeting same cell
             if (a.state == STATE_TEND_BROOD && b.state == STATE_TEND_BROOD
                 && a.target_x == b.target_x && a.target_y == b.target_y) {
-                increment = 0.06f;
+                base = 0.04f;
             }
             // Co-foraging: both in TO_FOOD or TO_HOME (actively working)
             else if ((a.state == STATE_TO_FOOD || a.state == STATE_TO_HOME)
                   && (b.state == STATE_TO_FOOD || b.state == STATE_TO_HOME)) {
-                increment = 0.03f;
+                base = 0.02f;
             }
             // Idle proximity — includes conkers asleep in the same huddle
-            // (sleeping carries STATE_IDLE). The colony's nightly cluster is the
-            // main driver of organic friendships, so this is no longer a trickle:
-            // ~a couple of minutes side by side crosses FORM_THRESHOLD.
+            // (sleeping carries STATE_IDLE). The nightly cluster is the main
+            // driver of organic friendships among the sociable.
             else if (a.state == STATE_IDLE && b.state == STATE_IDLE) {
-                increment = 0.02f;
+                base = 0.01f;
             }
 
-            if (increment > 0) {
-                bool formed_ab = bonds.increment(a.id, b.id, increment);
-                bool formed_ba = bonds.increment(b.id, a.id, increment);
+            if (base > 0.0f) {
+                float inc_ab = base * _bond_social_factor(a);
+                float inc_ba = base * _bond_social_factor(b);
+                bool formed_ab = (inc_ab > 0.0f) && bonds.increment(a.id, b.id, inc_ab);
+                bool formed_ba = (inc_ba > 0.0f) && bonds.increment(b.id, a.id, inc_ba);
 
                 if (formed_ab) {
                     JournalEntry je = {};
