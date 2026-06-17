@@ -337,6 +337,32 @@ static void process_serial_line(const char* line) {
                 (unsigned long)b.id, st, pct, remain_h,
                 b.food_invested, b.hunger, b.x, b.y);
         }
+    } else if (strcmp(line, "hatchall") == 0) {
+        // Admin: insta-hatch every live brood (rides the normal hatch pipeline
+        // on the next tick) and lay one fresh egg beside the queen.
+        auto& cham = sim.coordinator.chamber;
+        int forced = 0;
+        for (int i = 0; i < cham.brood_count; i++) {
+            Brood& b = cham.brood[i];
+            if (!b.alive()) continue;
+            uint32_t seed_dur = (b.total_duration_ms > 0)
+                ? (b.total_duration_ms - b.total_duration_ms / 3)
+                : (uint32_t)(Cfg::SEED_DURATION_DAYS * Cfg::SECS_PER_DAY * 1000.0f);
+            b.stage          = STAGE_SEED;
+            b.food_invested  = Cfg::SEED_TOTAL_FOOD;   // satisfy the food gate
+            b.hunger         = 0.0f;
+            b.stage_start_ms = millis() - seed_dur - 1000;  // elapsed just past full term
+            forced++;
+        }
+        bool laid = false;
+        if (cham.has_queen && cham.queen_obj.alive && cham.brood_count < Cfg::MAX_BROOD) {
+            int ex = cham.queen_obj.x + 3, ey = cham.queen_obj.y + 2;
+            if (ex > Cfg::GRID_WIDTH  - 3) ex = Cfg::GRID_WIDTH  - 3;
+            if (ey > Cfg::GRID_HEIGHT - 3) ey = Cfg::GRID_HEIGHT - 3;
+            if (cham.in_bounds(ex, ey)) { cham.add_brood(ex, ey); laid = true; }
+        }
+        Serial.printf("[hatchall] %d brood set to hatch next tick, fresh egg laid: %s\r\n",
+                      forced, laid ? "yes" : "no");
     } else if (strcmp(line, "dump health") == 0) {
         char buf[256];
         api_health_json(sim.coordinator, buf, sizeof(buf));
