@@ -142,7 +142,7 @@ function buildCharactersFromEvents(events: ColonyEvent[]): Map<number, Character
       case 'bond_formed': {
         const targetId = (ev.data as { target_id?: number }).target_id;
         if (targetId && !c.bonds.some(b => b.to.id === targetId)) {
-          c.bonds.push({ to: { id: targetId, name: nameFromId(targetId) }, strength: 0.5 });
+          c.bonds.push({ to: { id: targetId, name: nameFromId(targetId) }, strength: 0.5, fromHistory: true });
         }
         break;
       }
@@ -235,6 +235,10 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
           break;
         }
         case 'bond_formed': {
+          // The snapshot carries living conkers' real bonds (strength +
+          // reciprocated); don't paper over them with placeholder event bonds.
+          // Events only reconstruct friendships for the deceased.
+          if (rosterIds.has(id)) break;
           const { target_id: targetId, target_name: targetName } =
             ev.data as { target_id?: number; target_name?: string };
           if (targetId && !c.bonds.some(b => b.to.id === targetId)) {
@@ -244,11 +248,13 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
             c.bonds.push({
               to: { id: targetId, name: partner?.name ?? targetName ?? nameFromId(targetId) },
               strength: 0.5,
+              fromHistory: true,
             });
           }
           break;
         }
         case 'bond_broken': {
+          if (rosterIds.has(id)) break;  // snapshot is authoritative for the living
           const targetId = (ev.data as { target_id?: number }).target_id;
           if (targetId) c.bonds = c.bonds.filter(b => b.to.id !== targetId);
           break;
@@ -622,7 +628,8 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
                   {b.to.name}
                 </span>
                 <span style={{ fontSize: SIZES.xs, color: palette.dimText }}>
-                  {b.reciprocated ? 'best friends' : 'has a soft spot for'} · {Math.round(b.strength * 100)}%
+                  {b.reciprocated ? 'best friends' : 'has a soft spot for'}
+                  {!b.fromHistory && ` · ${Math.round(b.strength * 100)}%`}
                 </span>
               </div>
             ))}

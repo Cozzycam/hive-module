@@ -145,6 +145,9 @@ export interface Bond {
   // True when the other conker has bonded back — a mutual best-friendship.
   // Absent/false means this is a one-way soft spot that isn't returned (yet).
   reciprocated?: boolean;
+  // True when reconstructed from a diary event (a deceased conker, no live
+  // snapshot): the strength is a placeholder, so don't show a precise %.
+  fromHistory?: boolean;
 }
 
 // ---- Events (GET /api/v1/colonies/:id/events) ----

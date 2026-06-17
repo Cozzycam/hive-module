@@ -2307,6 +2307,22 @@ void Coordinator::_catcher_resolve(uint32_t tick_num) {
         }
     }
 
+    // Enforce the single-holder invariant: clear the badge from every other
+    // living conker. Heals the pre-v131 legacy where Bug Hunter was handed to
+    // anyone with >=5 catches, so a whole colony could carry it. The rightful
+    // champion is the strongest living holder; deceased champions keep theirs
+    // as a keepsake (they're not in this living-only scan).
+    for (int i = 0; i < chamber.conker_count; i++) {
+        if (i == holder_idx) continue;
+        Conker& w = chamber.conkers[i];
+        if (w.id == 0 || !w.alive) continue;
+        IdentityRecord* rec = registry.get(w.id);
+        if (rec && (rec->traits & TRAIT_CATCHER)) {
+            rec->traits &= ~TRAIT_CATCHER;
+            rec->dirty = true;
+        }
+    }
+
     // The bar is the next 25-multiple strictly above the holder's banked
     // catches (so the holder never qualifies as their own challenger), or 25
     // when the title is currently vacant.
