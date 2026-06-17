@@ -260,15 +260,7 @@ void Conker::tick(Chamber& ch, float dt) {
             // Sleeping ants show snooze sprite, skip grooming
             // Wake on famine or personal hunger crisis
             if (sleeping) {
-                // Wake only once rested, or roused by famine / personal starving
-                // (a player boop wakes them directly, in sim.cpp).
-                bool morning = (g_tod.phase == PHASE_DAWN || g_tod.phase == PHASE_DAY);
-                bool swake = (needs[NEED_REST] <= Cfg::TIRED_RESTED_WAKE)
-                          || (!daytime_nap && morning
-                              && needs[NEED_REST] <= Cfg::TIRED_MORNING_WAKE)
-                          || ch.colony->food_pressure() > Cfg::FAMINE_SLOWDOWN_PRESSURE
-                          || hunger > 60.0f;
-                if (swake) {
+                if (_should_wake(ch)) {
                     sleeping = false;
                     anim_type = LG_ANIM_NONE;
                     stack_on = -1;  // unstack to go hustle
@@ -304,15 +296,7 @@ void Conker::tick(Chamber& ch, float dt) {
     // Sleeping: stay put, skip normal behavior until wake time
     // Wake up early during famine or if starving
     if (sleeping) {
-        // Stay down until rested; rouse on famine or personal starving
-        // (a player boop wakes them directly, in sim.cpp).
-        bool morning = (g_tod.phase == PHASE_DAWN || g_tod.phase == PHASE_DAY);
-        bool wake = (needs[NEED_REST] <= Cfg::TIRED_RESTED_WAKE)
-                 || (!daytime_nap && morning
-                     && needs[NEED_REST] <= Cfg::TIRED_MORNING_WAKE)
-                 || ch.colony->food_pressure() > Cfg::FAMINE_SLOWDOWN_PRESSURE
-                 || hunger > 60.0f;
-        if (wake) {
+        if (_should_wake(ch)) {
             sleeping = false;
             anim_type = LG_ANIM_NONE;
         } else {
@@ -535,9 +519,12 @@ void Conker::_pick_task(Chamber& ch) {
                 && pressure <= Cfg::FAMINE_SLOWDOWN_PRESSURE) {
             stack_on = was_stacked;
             sleeping = true;
-            // A sleep that begins in the day is a nap (keeps its full restorative
-            // wake); one that begins at dusk/night gets the morning wake instead.
+            // A sleep that begins in the day is a nap — a short top-up that wakes
+            // once it's restored TIRED_NAP_RESTORE, then back to work. One that
+            // begins at dusk/night is a night sleep that holds through to dawn.
             daytime_nap = (g_tod.phase == PHASE_DAY);
+            if (daytime_nap)
+                nap_wake_target = tired - Cfg::TIRED_NAP_RESTORE;
             anim_type = LG_ANIM_SNOOZE;
             state = STATE_IDLE;
             has_target = false;
@@ -1473,6 +1460,21 @@ float Conker::_nap_threshold() const {
     float nappiness = 0.6f * (0.5f - personality[PERS_HARDINESS])
                     + 0.4f * (0.5f - personality[PERS_WORK_TEMPO]);   // -0.5..+0.5
     return Cfg::TIRED_SLEEP_ANY - Cfg::CHRONO_NAP_RANGE * nappiness;  // 0.55..0.85
+}
+
+// Should a sleeping conker wake this tick? Famine/hunger always rouses (a player
+// boop wakes directly, in sim.cpp). A NIGHT sleep holds through the dark — it
+// never pops awake at 3am — and gets up at dawn once rested, or is forced up by
+// full day. A daytime NAP is a short top-up: up once it's restored to its target,
+// not drained to empty like a night's sleep.
+bool Conker::_should_wake(Chamber& ch) const {
+    if (ch.colony->food_pressure() > Cfg::FAMINE_SLOWDOWN_PRESSURE || hunger > 60.0f)
+        return true;
+    if (daytime_nap)
+        return needs[NEED_REST] <= nap_wake_target;
+    if (g_tod.phase == PHASE_DAY) return true;   // never sleep through the working day
+    return (g_tod.phase == PHASE_DAWN
+            && needs[NEED_REST] <= Cfg::TIRED_MORNING_WAKE);
 }
 
 // Personality-flavoured response to a need. Routing hook for the arbiter — the

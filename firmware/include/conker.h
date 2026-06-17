@@ -161,6 +161,7 @@ struct Conker {
     uint16_t afterglow_ticks      = 0;           // satisfied beat after a need is met
     uint8_t  catches              = 0;           // critters caught — earns the Catcher trait
     bool     daytime_nap          = false;       // this sleep began in the day (a nap, not a night's sleep)
+    float    nap_wake_target      = 0.0f;        // tiredness a daytime nap restores down to (short top-up, not drained to empty)
 
     uint8_t  tint_seed            = 0;   // per-worker colour variation (set at init)
     int8_t   arrival_face        = -1;  // face this ant arrived from (-1 = locally spawned)
@@ -201,6 +202,7 @@ struct Conker {
     // Needs arbiter helpers (v127 framework)
     float   _need_salience(uint8_t need, Chamber& ch) const;  // context-gated salience
     float   _nap_threshold() const;          // chronotype: dozy ones nap sooner (even by day)
+    bool    _should_wake(Chamber& ch) const; // night sleeps hold to morning; naps are a short top-up
     uint8_t _response_style(uint8_t need) const;  // personality-flavoured response to a need
     int     _companions_near(Chamber& ch) const; // count neighbours within SOCIAL_COMPANION_DIST
     void _tick_idle(Chamber& ch);
