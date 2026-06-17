@@ -204,7 +204,10 @@ struct Conker {
     float   _nap_threshold() const;          // chronotype: dozy ones nap sooner (even by day)
     bool    _should_wake(Chamber& ch) const; // night sleeps hold to morning; naps are a short top-up
     uint8_t _response_style(uint8_t need) const;  // personality-flavoured response to a need
-    int     _companions_near(Chamber& ch) const; // count neighbours within SOCIAL_COMPANION_DIST
+    float   _companions_near(Chamber& ch) const; // company score within SOCIAL_COMPANION_DIST (friends weigh more)
+    bool    _is_friend(Chamber& ch, uint32_t other_id) const;       // I've bonded to them (one-way ok)
+    bool    _is_best_friend(Chamber& ch, uint32_t other_id) const;  // bond is mutual
+    bool    _forage_follow_friend(Chamber& ch);   // tag along with a foraging friend (shared trails)
     void _tick_idle(Chamber& ch);
     void _pick_idle_microstate(Chamber& ch);
     float _colony_idle_budget(Chamber& ch);

@@ -76,6 +76,7 @@ void Coordinator::init() {
     bool queen = is_queen();
     colony = ColonyState();
     chamber.init(&colony, queen);  // sets food_total for queen
+    chamber.bonds = &bonds;        // let behaviour read friendships
 }
 
 void Coordinator::set_role_nvs(ModuleRole r) {
@@ -1670,7 +1671,11 @@ void Coordinator::_persist_process_deaths() {
                     w.target_x = hx; w.target_y = hy;
                     w.has_target = true;
                     w.has_target_cell = false;
-                    w.zoomie_ticks = Cfg::MOURN_DURATION_TICKS;
+                    // Best friends (the bond was mutual) hold a full vigil; a
+                    // one-way attachment grieves only briefly.
+                    bool mutual = bonds.is_formed(w.id, id);
+                    w.zoomie_ticks = mutual ? Cfg::MOURN_DURATION_TICKS
+                                            : Cfg::MOURN_ONEWAY_TICKS;
                     w.zoomie_target = -1;
                     w.sleeping = false;
                     w.stack_on = -1;

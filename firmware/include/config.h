@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 136;
+constexpr uint32_t FW_VERSION = 137;
 
 namespace Cfg {
 
@@ -213,9 +213,18 @@ constexpr float FIREFLY_CHASE_SPEED_MULT  = 2.0f;   // night dash (vs zoomies 4x
 // ---- Mourning & elders ----
 constexpr float MOURN_MIN_BOND        = 0.25f;  // bond strength to grieve
 constexpr int   MOURN_MAX_PARTNERS    = 3;      // closest bonds only
-constexpr int   MOURN_DURATION_TICKS  = 240;    // ~30s vigil at the husk
+constexpr int   MOURN_DURATION_TICKS  = 300;    // ~37s vigil for a best friend (reciprocated)
+constexpr int   MOURN_ONEWAY_TICKS    = 100;    // ~12s — a one-way bond grieves only briefly
 constexpr int   ELDER_HUDDLE_PULL     = 4;      // idlers prefer huddling near elders
                                                 // (distance bias, cells)
+
+// ---- Friendship behaviour (bonds pull on everyday life) ----
+constexpr int   FRIEND_HUDDLE_PULL    = 6;      // idlers prefer huddling near friends
+                                                // (best friends pull 2x this), cells
+constexpr float BOND_PLAY_JOIN_MULT   = 3.0f;   // friends are likelier to join a friend's game
+constexpr float BOND_PLAY_PAIR_MULT   = 2.5f;   // friends are likelier to kick off a game together
+constexpr float BOND_FORAGE_FOLLOW    = 0.18f;  // chance/step a wandering forager drifts toward
+                                                // a foraging friend (shared trails)
 
 // ---- Zoomies (daytime chase behavior) ----
 constexpr float ZOOMIE_CHANCE              = 0.03f;  // per proximity pair per tick
@@ -257,7 +266,7 @@ constexpr int   MAX_CONCURRENT_PLAY    = 2;      // solo launches wait their tur
 // The needs framework is wired up whole, but NEEDS_ACTIVE_MASK gates which
 // drives actually evolve so each can be activated and tuned on its own.
 // bit0 = boredom (first need). Others stay dormant at 0 until lit.
-constexpr uint8_t NEEDS_ACTIVE_MASK        = 0x05;  // bit0 boredom + bit2 rest
+constexpr uint8_t NEEDS_ACTIVE_MASK        = 0x07;  // bit0 boredom + bit1 social + bit2 rest
 // Boredom (stimulation): rises while idle/rote, drains while playing. The
 // personality drive (tempo+exploration+social) scales the rise, so a busy
 // curious social conker reaches full in ~12-15 min while a placid loner

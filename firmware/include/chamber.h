@@ -8,6 +8,8 @@
 #include "queen.h"
 #include "events.h"
 
+class BondStore;  // friendships — set by Coordinator so behaviour can read them
+
 struct FoodPile {
     int8_t x, y;
     float  amount;
@@ -50,6 +52,7 @@ struct Critter {
 class Chamber {
 public:
     ColonyState* colony;
+    BondStore*   bonds = nullptr;   // friendships (owned by Coordinator); may be null on satellites
     PheromoneGrid pheromones;
     EventBus*    event_bus = nullptr;   // transient, set per-tick by Sim
     uint32_t     tick_num  = 0;         // transient, set per-tick by Sim

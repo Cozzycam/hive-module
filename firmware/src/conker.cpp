@@ -1,6 +1,7 @@
 /* Worker conker -- full behavior port with smooth sub-cell movement. */
 #include "conker.h"
 #include "chamber.h"
+#include "bonds.h"
 #include "rng.h"
 #include "time_of_day.h"
 #include <Arduino.h>
@@ -778,10 +779,10 @@ void Conker::_do_to_food(Chamber& ch) {
         if (_sample_markers(ch, true, dx, dy)) {
             int mcx = cell_x(), mcy = cell_y();
             _set_target_cell(mcx + dx, mcy + dy, ch);
-        } else {
+        } else if (!_forage_follow_friend(ch)) {
             _explore_with_flair(ch);
         }
-    } else {
+    } else if (!_forage_follow_friend(ch)) {
         _explore_with_flair(ch);
     }
 
@@ -1040,6 +1041,9 @@ void Conker::_do_idle(Chamber& ch) {
                 int ox = other.cell_x(), oy = other.cell_y();
                 int d = abs(ox - cx) + abs(oy - cy);
                 if (other.is_elder()) d -= Cfg::ELDER_HUDDLE_PULL;
+                // Gravitate to friends — best friends most of all.
+                if (_is_best_friend(ch, other.id))  d -= 2 * Cfg::FRIEND_HUDDLE_PULL;
+                else if (_is_friend(ch, other.id))  d -= Cfg::FRIEND_HUDDLE_PULL;
                 if (d > 0 && d < best_dist) {
                     best_dist = d;
                     tx = ox; ty = oy;
@@ -1381,13 +1385,15 @@ void Conker::_update_needs(Chamber& ch, float dt) {
         if (tired > 1.0f) tired = 1.0f;
     }
 
-    // ---- Social (companionship) — BUILT, dormant until mask bit1 is lit ----
+    // ---- Social (companionship) ----
     if (Cfg::NEEDS_ACTIVE_MASK & (1 << NEED_SOCIAL)) {
         float& lonely = needs[NEED_SOCIAL];
+        float company = _companions_near(ch);  // friend-weighted
         if (sleeping || departing) {
             // leave it be
-        } else if (_companions_near(ch) > 0) {
-            lonely -= Cfg::SOCIAL_FALL_PER_SEC * dt;              // company soothes
+        } else if (company > 0.0f) {
+            // Company soothes — a friend's company more than a stranger's.
+            lonely -= Cfg::SOCIAL_FALL_PER_SEC * dt * fminf(company, 3.0f);
         } else {
             // The sociable crave company; loners barely notice being alone.
             float drive = 0.5f + 1.0f * personality[PERS_SOCIAL_FREQUENCY];
@@ -1494,17 +1500,51 @@ uint8_t Conker::_response_style(uint8_t need) const {
     }
 }
 
-// Count awake neighbours within companion range (social need; dormant).
-int Conker::_companions_near(Chamber& ch) const {
-    int n = 0;
+// I've bonded to this conker (one-way is enough). Best friend = mutual.
+bool Conker::_is_friend(Chamber& ch, uint32_t other_id) const {
+    return ch.bonds && ch.bonds->is_formed(id, other_id);
+}
+bool Conker::_is_best_friend(Chamber& ch, uint32_t other_id) const {
+    return ch.bonds && ch.bonds->is_formed(id, other_id)
+                    && ch.bonds->is_formed(other_id, id);
+}
+
+// While casting about for food, a forager sometimes drifts toward a friend who's
+// also out foraging — so friends end up working the same patch and reinforcing
+// the same scent trails together. Returns true if it took over the step.
+bool Conker::_forage_follow_friend(Chamber& ch) {
+    if (!ch.bonds) return false;
+    if (g_rng.rand_float() >= Cfg::BOND_FORAGE_FOLLOW) return false;
+    int cx = cell_x(), cy = cell_y();
+    int best = 999, tx = -1, ty = -1;
+    for (int i = 0; i < ch.conker_count; i++) {
+        const Conker& o = ch.conkers[i];
+        if (&o == this || !o.alive || o.state != STATE_TO_FOOD) continue;
+        if (!_is_friend(ch, o.id)) continue;
+        int d = abs(o.cell_x() - cx) + abs(o.cell_y() - cy);
+        if (d > 1 && d < best) { best = d; tx = o.cell_x(); ty = o.cell_y(); }
+    }
+    if (tx < 0) return false;
+    _step_toward_cell(tx, ty, ch);
+    return true;
+}
+
+// Company score from awake neighbours in range — a friend is worth more than a
+// stranger, a best friend more still, so loneliness is soothed by WHO is near,
+// not just how many.
+float Conker::_companions_near(Chamber& ch) const {
+    float score = 0.0f;
     float r2 = Cfg::SOCIAL_COMPANION_DIST * Cfg::SOCIAL_COMPANION_DIST;
     for (int i = 0; i < ch.conker_count; i++) {
         const Conker& o = ch.conkers[i];
         if (&o == this || !o.alive || o.sleeping) continue;
         float dx = o.x - x, dy = o.y - y;
-        if (dx * dx + dy * dy <= r2) n++;
+        if (dx * dx + dy * dy > r2) continue;
+        score += _is_best_friend(ch, o.id) ? 3.0f
+               : _is_friend(ch, o.id)      ? 2.0f
+                                           : 1.0f;
     }
-    return n;
+    return score;
 }
 
 void Conker::_pick_idle_microstate(Chamber& ch) {
@@ -1528,7 +1568,10 @@ void Conker::_pick_idle_microstate(Chamber& ch) {
     // should show in what they choose to do)
     float hold_w   = Cfg::IDLE_HOLD_WEIGHT   * (1.5f - personality[PERS_WORK_TEMPO]);
     float drift_w  = Cfg::IDLE_DRIFT_WEIGHT  * (0.5f + personality[PERS_EXPLORATION]);
-    float huddle_w = Cfg::IDLE_HUDDLE_WEIGHT * (0.5f + personality[PERS_SOCIAL_FREQUENCY]);
+    // Loneliness pushes toward huddling — and the huddle drift seeks out friends
+    // (see _tick_idle microstate 3), so a lonely conker goes looking for company.
+    float huddle_w = Cfg::IDLE_HUDDLE_WEIGHT
+                   * (0.5f + personality[PERS_SOCIAL_FREQUENCY] + needs[NEED_SOCIAL]);
     float reface_w = 1.0f - (Cfg::IDLE_HOLD_WEIGHT + Cfg::IDLE_DRIFT_WEIGHT
                              + Cfg::IDLE_HUDDLE_WEIGHT);
     float r = g_rng.rand_float() * (hold_w + drift_w + huddle_w + reface_w);

@@ -1,5 +1,6 @@
 /* Chamber — ported from sim/chamber.py. */
 #include "chamber.h"
+#include "bonds.h"
 #include "rng.h"
 #include "time_of_day.h"
 #include <Arduino.h>
@@ -301,11 +302,15 @@ void Chamber::_detect_proximity_interactions() {
                         auto& joiner = a_playing ? b : a;
                         int runner_idx = a_playing ? ai : bi;
                         int joiner_idx = a_playing ? bi : ai;
+                        // Friends are far likelier to pile into a friend's game.
+                        float join_chance = Cfg::ZOOMIE_JOIN_CHANCE;
+                        if (bonds && bonds->is_formed(joiner.id, runner.id))
+                            join_chance = fminf(join_chance * Cfg::BOND_PLAY_JOIN_MULT, 1.0f);
                         if (joiner.state == STATE_IDLE && !joiner.sleeping
                                 && !in_stack[joiner_idx]
                                 && joiner.zoomie_ticks <= 0
                                 && runner.zoomie_ticks > 8
-                                && g_rng.rand_float() < Cfg::ZOOMIE_JOIN_CHANCE) {
+                                && g_rng.rand_float() < join_chance) {
                             joiner.state = STATE_ZOOMIES;
                             joiner.zoomie_target = runner_idx;
                             joiner.zoomie_style = runner.zoomie_style;
@@ -328,12 +333,16 @@ void Chamber::_detect_proximity_interactions() {
                 // (the hands freed from foraging) and sometimes turns the
                 // chase into a follow-the-leader parade.
                 float surplus = colony->play_surplus();
+                float pair_chance = Cfg::ZOOMIE_CHANCE
+                                  * (1.0f + Cfg::ZOOMIE_SURPLUS_BOOST * surplus);
+                // Friends are quicker to start a game together.
+                if (bonds && bonds->is_formed(a.id, b.id))
+                    pair_chance *= Cfg::BOND_PLAY_PAIR_MULT;
                 if (g_tod.phase == PHASE_DAY
                         && a.state == STATE_IDLE && b.state == STATE_IDLE
                         && !in_stack[ai] && !in_stack[bi]
                         && a.zoomie_ticks <= 0 && b.zoomie_ticks <= 0
-                        && g_rng.rand_float() < Cfg::ZOOMIE_CHANCE
-                                * (1.0f + Cfg::ZOOMIE_SURPLUS_BOOST * surplus)) {
+                        && g_rng.rand_float() < pair_chance) {
                     bool parade = surplus >= Cfg::PARADE_MIN_SURPLUS
                                && g_rng.rand_float() < Cfg::PARADE_CHANCE;
                     int duration = parade
@@ -379,7 +388,10 @@ void Chamber::_detect_proximity_interactions() {
                             if (in_stack[ci] || c.anim_remaining_ticks > 0) continue;
                             if (c.interaction_cooldown > 0 || c.zoomie_ticks > 0) continue;
                             int d = abs(c.cell_x() - acx) + abs(c.cell_y() - acy);
-                            if (d <= radius) {
+                            // A friend of the leader will come from further off.
+                            int reach = radius;
+                            if (bonds && bonds->is_formed(c.id, a.id)) reach += 4;
+                            if (d <= reach) {
                                 c.state = STATE_ZOOMIES;
                                 c.zoomie_target = tail;  // each follows the one before
                                 c.zoomie_style = style;
