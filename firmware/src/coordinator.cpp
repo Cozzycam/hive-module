@@ -1352,15 +1352,18 @@ void Coordinator::_persist_sync_brood() {
     for (int i = 0; i < chamber.brood_count; i++) {
         Brood& b = chamber.brood[i];
         if (b.id == 0) continue;  // not yet assigned a record this tick
+        if (!b.alive()) continue;
         BroodRecord* rec = registry.get_brood(b.id);
         if (!rec) continue;
 
-        bool changed = (rec->stage != static_cast<uint8_t>(b.stage))
-                    || (rec->stage_start_ms != b.stage_start_ms)
-                    || (fabsf(rec->food_invested - b.food_invested) > 0.25f)
-                    || (fabsf(rec->hunger - b.hunger) > 0.05f);
-        if (!changed) continue;
-
+        // Re-persist every live brood on the cadence — do NOT gate on a
+        // material change. The on-disk stage_elapsed_ms is recomputed at write
+        // time, and in a steady stage (an egg incubating, or a fully-fed larva
+        // waiting out its timer) NONE of stage/stage_start_ms/hunger/food change,
+        // so a change-gate would never refresh the elapsed. The record would
+        // keep its lay-time value (~0) and the stage clock would reset to the
+        // start on every reboot — which stranded COM4's egg at the egg stage for
+        // days, since that module reboots within the ~16h egg window.
         BroodRecord updated = *rec;
         updated.stage          = static_cast<uint8_t>(b.stage);
         updated.stage_start_ms = b.stage_start_ms;
