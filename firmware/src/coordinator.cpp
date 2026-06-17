@@ -2025,16 +2025,19 @@ void Coordinator::_bond_detect_proximity(uint32_t tick_num) {
             // Co-tending: both in TEND_BROOD targeting same cell
             if (a.state == STATE_TEND_BROOD && b.state == STATE_TEND_BROOD
                 && a.target_x == b.target_x && a.target_y == b.target_y) {
-                increment = 0.04f;
+                increment = 0.06f;
             }
             // Co-foraging: both in TO_FOOD or TO_HOME (actively working)
             else if ((a.state == STATE_TO_FOOD || a.state == STATE_TO_HOME)
                   && (b.state == STATE_TO_FOOD || b.state == STATE_TO_HOME)) {
-                increment = 0.01f;
+                increment = 0.03f;
             }
-            // Idle proximity
+            // Idle proximity — includes conkers asleep in the same huddle
+            // (sleeping carries STATE_IDLE). The colony's nightly cluster is the
+            // main driver of organic friendships, so this is no longer a trickle:
+            // ~a couple of minutes side by side crosses FORM_THRESHOLD.
             else if (a.state == STATE_IDLE && b.state == STATE_IDLE) {
-                increment = 0.003f;
+                increment = 0.02f;
             }
 
             if (increment > 0) {
