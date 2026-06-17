@@ -486,6 +486,38 @@ static void process_serial_line(const char* line) {
         else
             Serial.printf("[revive] could not revive id=%lu (already alive, or no record on SD)\r\n",
                           (unsigned long)id);
+    } else if (strncmp(line, "hatch ", 6) == 0) {
+        // Insta-hatch ONE brood by id (rides the normal hatch pipeline next tick)
+        // and lay a single replacement egg, keeping the brood pipeline going.
+        uint32_t id = strtoul(line + 6, nullptr, 10);
+        auto& cham = sim.coordinator.chamber;
+        bool found = false;
+        for (int i = 0; i < cham.brood_count; i++) {
+            Brood& b = cham.brood[i];
+            if (b.id != id || !b.alive()) continue;
+            uint32_t seed_dur = (b.total_duration_ms > 0)
+                ? (b.total_duration_ms - b.total_duration_ms / 3)
+                : (uint32_t)(Cfg::SEED_DURATION_DAYS * Cfg::SECS_PER_DAY * 1000.0f);
+            b.stage          = STAGE_SEED;
+            b.food_invested  = Cfg::SEED_TOTAL_FOOD;
+            b.hunger         = 0.0f;
+            b.stage_start_ms = millis() - seed_dur - 1000;
+            found = true;
+            break;
+        }
+        if (!found) {
+            Serial.printf("[hatch] no live brood id=%lu\r\n", (unsigned long)id);
+        } else {
+            bool laid = false;
+            if (cham.has_queen && cham.queen_obj.alive && cham.brood_count < Cfg::MAX_BROOD) {
+                int ex = cham.queen_obj.x + 3, ey = cham.queen_obj.y + 2;
+                if (ex > Cfg::GRID_WIDTH  - 3) ex = Cfg::GRID_WIDTH  - 3;
+                if (ey > Cfg::GRID_HEIGHT - 3) ey = Cfg::GRID_HEIGHT - 3;
+                if (cham.in_bounds(ex, ey)) { cham.add_brood(ex, ey); laid = true; }
+            }
+            Serial.printf("[hatch] id=%lu hatching next tick; replacement egg laid: %s\r\n",
+                          (unsigned long)id, laid ? "yes" : "no");
+        }
     } else if (strcmp(line, "vps status") == 0) {
         vps_push_status();
     } else if (strncmp(line, "vps secret ", 11) == 0) {
