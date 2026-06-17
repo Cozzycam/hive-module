@@ -76,7 +76,7 @@ export function computeDigest(
         foodTotal += (data.amount as number) || 0;
         if (ev.lilguy) foragerTrips.set(ev.lilguy, (foragerTrips.get(ev.lilguy) || 0) + 1);
         break;
-      case 'bond_formed':
+      case 'became_best_friends':
         newBonds.push({
           a: evName,
           b: (data.target_name as string)
@@ -160,7 +160,7 @@ export function digestLines(d: Digest): { icon: string; text: string }[] {
   }
 
   for (const bond of d.newBonds.slice(0, 3)) {
-    lines.push({ icon: '\u{1F91D}', text: `${bond.a} and ${bond.b} became friends.` });
+    lines.push({ icon: '\u{2B50}', text: `${bond.a} and ${bond.b} became best friends.` });
   }
   if (d.newBonds.length > 3) {
     lines.push({ icon: '\u{1F91D}', text: `…and ${d.newBonds.length - 3} more new friendships.` });

@@ -1,7 +1,8 @@
 /* Bonds — directed relationship strengths between Conkers.
  *
  * Stored in a flat pool. Each entry is owner→target with strength 0.0-1.0.
- * Cap: 5 bonds per owner. Pool cap: 1024 total entries.
+ * Cap: 12 bonds per owner (a butterfly can feel bonded to lots). Pool cap: 1024.
+ * A bond is one-way; when both directions have formed, the pair are best friends.
  * Persisted to /colony/bonds.json every 60s.
  */
 #pragma once
@@ -19,7 +20,7 @@ struct BondEntry {
 class BondStore {
 public:
     static constexpr int POOL_CAP = 1024;
-    static constexpr int PER_OWNER_CAP = 5;         // a meaningful close circle, not friends-with-everyone
+    static constexpr int PER_OWNER_CAP = 12;        // a butterfly can feel bonded to lots (one-way)
     static constexpr float FORM_THRESHOLD = 0.1f;   // emit bond_formed
     static constexpr float BREAK_THRESHOLD = 0.05f; // emit bond_broken / remove
     static constexpr float DECAY_FACTOR = 0.999f;   // per 1000 ticks (~2 min) — gentle, so a maintained
@@ -44,6 +45,10 @@ public:
 
     // Get bonds for an owner. Returns count, fills out array.
     int get_bonds(uint32_t owner, BondEntry* out, int max_out) const;
+
+    // True if owner→target exists and has crossed FORM_THRESHOLD. Used to test
+    // reciprocation: a pair are best friends when both directions are formed.
+    bool is_formed(uint32_t owner, uint32_t target) const;
 
     // Access for persistence
     int count() const { return _count; }

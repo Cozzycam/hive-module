@@ -118,6 +118,11 @@ int BondStore::get_bonds(uint32_t owner, BondEntry* out, int max_out) const {
     return n;
 }
 
+bool BondStore::is_formed(uint32_t owner, uint32_t target) const {
+    int idx = _find(owner, target);
+    return idx >= 0 && _pool[idx].formed;
+}
+
 void BondStore::load(const BondEntry* entries, int n) {
     _count = (n > POOL_CAP) ? POOL_CAP : n;
     memcpy(_pool, entries, _count * sizeof(BondEntry));

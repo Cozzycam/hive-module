@@ -201,6 +201,8 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
                 bo["id"] = bonds[b].target;
                 bo["name"] = other->name;
                 bo["strength"] = bonds[b].strength;
+                // Reciprocated (best friends) when the other side has formed too
+                bo["reciprocated"] = coord.bonds.is_formed(bonds[b].target, r.id);
             }
         }
     }
@@ -376,6 +378,7 @@ size_t api_lilguy_detail_json(Coordinator& coord, uint32_t id,
         name_from_id(worker_bonds[i].target, name_buf, sizeof(name_buf));
         to["name"] = name_buf;
         b["strength"] = worker_bonds[i].strength;
+        b["reciprocated"] = coord.bonds.is_formed(worker_bonds[i].target, id);
     }
 
     // Position

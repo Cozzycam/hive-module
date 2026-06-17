@@ -12,7 +12,7 @@ const EVENT_CATEGORIES: { label: string; types: EventType[] }[] = [
   { label: 'Births', types: ['hatch'] },
   { label: 'Deaths', types: ['death'] },
   { label: 'Milestones', types: ['milestone', 'colony_event'] },
-  { label: 'Social', types: ['bond_formed', 'bond_broken', 'tended_by_assigned', 'play'] },
+  { label: 'Social', types: ['bond_formed', 'became_best_friends', 'bond_broken', 'tended_by_assigned', 'play'] },
   { label: 'Discoveries', types: ['discovery'] },
   { label: 'Challenges', types: ['challenge_start', 'challenge_end'] },
   { label: 'Traits', types: ['trait_earned', 'role_change'] },
@@ -207,7 +207,12 @@ function formatEvent(ev: ColonyEvent, rosterNames: Map<number, string>): { icon:
     case 'bond_formed':
       return {
         icon: '\u{1F91D}',
-        description: `${name} formed a bond with ${targetName(data.target_id)}.`,
+        description: `${name} took a shine to ${targetName(data.target_id)}.`,
+      };
+    case 'became_best_friends':
+      return {
+        icon: '\u{2B50}',
+        description: `${name} and ${targetName(data.target_id)} became best friends.`,
       };
     case 'bond_broken':
       return {

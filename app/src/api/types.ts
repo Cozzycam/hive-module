@@ -98,7 +98,7 @@ export interface LilGuySummary {
   scale_factor?: number;
   tint_seed?: number;
   // Formed friendships, strongest first (added v107 — older snapshots omit)
-  bonds?: { id: number; name: string; strength: number }[];
+  bonds?: { id: number; name: string; strength: number; reciprocated?: boolean }[];
   // Live position in nest cells (added v110 — older snapshots omit)
   x?: number;
   y?: number;
@@ -142,6 +142,9 @@ export interface Personality {
 export interface Bond {
   to: { id: number; name: string };
   strength: number;
+  // True when the other conker has bonded back — a mutual best-friendship.
+  // Absent/false means this is a one-way soft spot that isn't returned (yet).
+  reciprocated?: boolean;
 }
 
 // ---- Events (GET /api/v1/colonies/:id/events) ----
@@ -158,7 +161,7 @@ export type EventType =
   | 'chamber_crossing' | 'milestone' | 'colony_event'
   | 'tended_by_assigned' | 'bond_formed' | 'bond_broken'
   | 'challenge_start' | 'challenge_end' | 'trait_earned'
-  | 'mourning' | 'play' | 'discovery';
+  | 'mourning' | 'play' | 'discovery' | 'became_best_friends';
 
 export interface ColonyEvent {
   tick: number;

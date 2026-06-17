@@ -2007,16 +2007,17 @@ void Coordinator::_bond_tick(uint32_t tick_num) {
     }
 }
 
-// How readily a conker forms proximity friendships, by sociability. Below ~0.6
-// social a conker keeps to itself — no organic bonds, only lineage ones — so
-// friendships stay selective and meaningful instead of everyone befriending
-// everyone they happen to huddle beside. The genuinely sociable bond fastest.
+// How readily a conker forms proximity friendships, by sociability. Almost
+// everyone makes friends — only the rare loner (bottom ~10%, social < 0.22 on
+// the 0.5-centred triangular spread) keeps entirely to itself. Above that the
+// factor scales how QUICKLY a friendship forms: the more sociable, the faster.
 // Directed: each side of a pair scales by its OWN sociability, so a butterfly
-// can adore a quiet neighbour who never reciprocates.
+// bonds fast to a quiet neighbour who's slow (or never) to reciprocate — and a
+// bond only becomes a best-friendship once it's mutual.
 static inline float _bond_social_factor(const Conker& c) {
-    float f = (c.personality[PERS_SOCIAL_FREQUENCY] - 0.6f) * 2.5f;
+    float f = (c.personality[PERS_SOCIAL_FREQUENCY] - 0.22f) * 1.7f;
     if (f < 0.0f) f = 0.0f;
-    if (f > 1.0f) f = 1.0f;
+    if (f > 1.5f) f = 1.5f;
     return f;
 }
 
@@ -2081,6 +2082,23 @@ void Coordinator::_bond_detect_proximity(uint32_t tick_num) {
                     strlcpy(je.who, b.name, sizeof(je.who));
                     je.bond.target_id = a.id;
                     strlcpy(je.bond.target_name, a.name, sizeof(je.bond.target_name));
+                    journal.emit(je);
+                }
+
+                // Reciprocation: the moment both directions are formed, the pair
+                // become best friends. Fires once, on the tick the second side
+                // crosses (one of formed_ab/formed_ba is what completed it).
+                if ((formed_ab || formed_ba)
+                        && bonds.is_formed(a.id, b.id)
+                        && bonds.is_formed(b.id, a.id)) {
+                    JournalEntry je = {};
+                    je.tick = tick_num;
+                    je.unix_time = g_tod.unix_time;
+                    je.type = JEVT_BOND_MUTUAL;
+                    je.lilguy_id = a.id;
+                    strlcpy(je.who, a.name, sizeof(je.who));
+                    je.bond.target_id = b.id;
+                    strlcpy(je.bond.target_name, b.name, sizeof(je.bond.target_name));
                     journal.emit(je);
                 }
             }

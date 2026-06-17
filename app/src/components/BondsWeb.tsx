@@ -31,7 +31,8 @@ export function BondsWeb({ name, bonds, size = 200 }: Props) {
 
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      {/* Lines from center to each bonded lil guy */}
+      {/* Lines from center to each bonded lil guy. Mutual (best friends) draw
+          solid + bold; a one-way soft spot is faint and dashed. */}
       {nodes.map((n, i) => (
         <line
           key={i}
@@ -39,7 +40,8 @@ export function BondsWeb({ name, bonds, size = 200 }: Props) {
           x2={n.x} y2={n.y}
           stroke={HIVE.accent}
           strokeWidth={Math.max(1, n.bond.strength * 3)}
-          opacity={0.3 + n.bond.strength * 0.5}
+          strokeDasharray={n.bond.reciprocated ? undefined : '3 3'}
+          opacity={n.bond.reciprocated ? 0.4 + n.bond.strength * 0.5 : 0.2 + n.bond.strength * 0.3}
         />
       ))}
 
@@ -71,7 +73,7 @@ export function BondsWeb({ name, bonds, size = 200 }: Props) {
             fontSize={9}
             fill={HIVE.dimText}
           >
-            {n.bond.to.name}
+            {n.bond.reciprocated ? `⭐ ${n.bond.to.name}` : n.bond.to.name}
           </text>
         </g>
       ))}

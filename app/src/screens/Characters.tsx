@@ -185,6 +185,7 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
           traits: l.traits || [],
           bonds: (l.bonds || []).map(b => ({
             to: { id: b.id, name: b.name }, strength: b.strength,
+            reciprocated: b.reciprocated,
           })),
           personality: l.personality,
           scale_factor: l.scale_factor,
@@ -614,11 +615,14 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
             <BondsWeb name={char.name} bonds={bonds} />
           </div>
           <div style={{ marginTop: 8 }}>
-            {bonds.map((b, i) => (
+            {[...bonds].sort((a, b) => Number(b.reciprocated) - Number(a.reciprocated) || b.strength - a.strength).map((b, i) => (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0' }}>
-                <span style={{ fontSize: SIZES.sm, color: palette.text, fontWeight: 500 }}>{b.to.name}</span>
+                <span style={{ fontSize: SIZES.sm, color: palette.text, fontWeight: 500 }}>
+                  {b.reciprocated && <span title="best friends" style={{ marginRight: 4 }}>⭐</span>}
+                  {b.to.name}
+                </span>
                 <span style={{ fontSize: SIZES.xs, color: palette.dimText }}>
-                  {Math.round(b.strength * 100)}%
+                  {b.reciprocated ? 'best friends' : 'has a soft spot for'} · {Math.round(b.strength * 100)}%
                 </span>
               </div>
             ))}
