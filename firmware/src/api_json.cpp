@@ -149,7 +149,7 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
         {
             float px = r.last_x, py = r.last_y;
             uint8_t mood = MOOD_CONTENT;
-            float boredom = 0.0f, tiredness = 0.0f;
+            float boredom = 0.0f, tiredness = 0.0f, loneliness = 0.0f;
             for (int c = 0; c < coord.chamber.conker_count; c++) {
                 if (coord.chamber.conkers[c].id == r.id) {
                     px = coord.chamber.conkers[c].x;
@@ -157,6 +157,7 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
                     mood = coord.chamber.conkers[c].mood;
                     boredom = coord.chamber.conkers[c].needs[NEED_BOREDOM];
                     tiredness = coord.chamber.conkers[c].needs[NEED_REST];
+                    loneliness = coord.chamber.conkers[c].needs[NEED_SOCIAL];
                     break;
                 }
             }
@@ -166,6 +167,7 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
             JsonObject needs = lg["needs"].to<JsonObject>();
             needs["boredom"] = boredom;
             needs["tiredness"] = tiredness;
+            needs["loneliness"] = loneliness;
         }
         lg["age_days"] = (r.born_unix > 0 && g_tod.unix_time > r.born_unix)
             ? (g_tod.unix_time - r.born_unix) / 86400.0f

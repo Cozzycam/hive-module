@@ -104,7 +104,7 @@ export interface LilGuySummary {
   y?: number;
   // Mood + needs (added v115 — live conkers only; older snapshots omit)
   mood?: ConkerMood;
-  needs?: { boredom?: number; tiredness?: number };
+  needs?: { boredom?: number; tiredness?: number; loneliness?: number };
 }
 
 // Readable summary of a conker's loudest unmet need (firmware ConkerMood)

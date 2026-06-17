@@ -86,7 +86,7 @@ interface CharacterInfo {
   scale_factor?: number;
   tint_seed?: number;
   mood?: ConkerMood;
-  needs?: { boredom?: number; tiredness?: number };
+  needs?: { boredom?: number; tiredness?: number; loneliness?: number };
   deathCause?: string;
 }
 
@@ -531,6 +531,24 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
                   width: `${Math.round(Math.min(1, char.needs.tiredness) * 100)}%`,
                   height: '100%',
                   background: char.needs.tiredness >= 0.7 ? HIVE.sky : HIVE.bark,
+                }} />
+              </div>
+            </div>
+          )}
+          {typeof char.needs?.loneliness === 'number' && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between',
+                            fontSize: SIZES.xs, color: palette.dimText, marginBottom: 3 }}>
+                <span>Loneliness</span>
+                <span>{Math.round(char.needs.loneliness * 100)}%</span>
+              </div>
+              <div style={{ height: 6, borderRadius: 3, background: HIVE.parchment, overflow: 'hidden' }}>
+                <div style={{
+                  width: `${Math.round(Math.min(1, char.needs.loneliness) * 100)}%`,
+                  height: '100%',
+                  background: char.needs.loneliness >= 0.85 ? HIVE.alert
+                            : char.needs.loneliness >= 0.55 ? HIVE.accent
+                            : HIVE.leafGreen,
                 }} />
               </div>
             </div>
