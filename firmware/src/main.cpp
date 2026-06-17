@@ -313,6 +313,30 @@ static void process_serial_line(const char* line) {
             else Serial.printf("[api] lilguy %lu not found\r\n", (unsigned long)id);
             free(buf);
         }
+    } else if (strcmp(line, "brood") == 0) {
+        auto& cham = sim.coordinator.chamber;
+        Serial.printf("[brood] %d in nest\r\n", cham.brood_count);
+        for (int i = 0; i < cham.brood_count; i++) {
+            Brood& b = cham.brood[i];
+            if (!b.alive()) continue;
+            uint32_t egg_dur, seed_dur;
+            if (b.total_duration_ms > 0) {
+                egg_dur  = b.total_duration_ms / 3;
+                seed_dur = b.total_duration_ms - egg_dur;
+            } else {
+                egg_dur  = (uint32_t)(Cfg::EGG_DURATION_DAYS  * Cfg::SECS_PER_DAY * 1000.0f);
+                seed_dur = (uint32_t)(Cfg::SEED_DURATION_DAYS * Cfg::SECS_PER_DAY * 1000.0f);
+            }
+            uint32_t elapsed = millis() - b.stage_start_ms;
+            uint32_t dur = (b.stage == STAGE_EGG) ? egg_dur : seed_dur;
+            float pct = dur ? (100.0f * elapsed / dur) : 0.0f;
+            if (pct > 100.0f) pct = 100.0f;
+            float remain_h = (dur > elapsed) ? (dur - elapsed) / 3600000.0f : 0.0f;
+            const char* st = (b.stage == STAGE_EGG) ? "EGG" : "SEED/larva";
+            Serial.printf("  id=%-3lu %-10s %.1f%% through stage (%.1fh left)  food=%.1f  hunger=%.2f  @(%d,%d)\r\n",
+                (unsigned long)b.id, st, pct, remain_h,
+                b.food_invested, b.hunger, b.x, b.y);
+        }
     } else if (strcmp(line, "dump health") == 0) {
         char buf[256];
         api_health_json(sim.coordinator, buf, sizeof(buf));
