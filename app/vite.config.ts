@@ -7,9 +7,12 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      // 'prompt': a waiting service worker surfaces an in-app update toast
-      // instead of silently lagging one version behind (cache-lag confusion)
-      registerType: 'prompt',
+      // 'autoUpdate': a fresh build is fetched and applied automatically on the
+      // next launch/poll — no tap-to-update toast. Switched from 'prompt' because
+      // iOS PWAs were silently lagging when the toast was missed/flaky, leaving
+      // phones stuck on an old bundle (e.g. missing the Bonds section).
+      // NB: this is the APP service worker only — firmware OTA stays prompt-based.
+      registerType: 'autoUpdate',
       includeAssets: ['icon-192.png', 'icon-512.png', 'apple-touch-icon.png'],
       manifest: {
         name: 'Hive Companion',
