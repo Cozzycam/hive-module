@@ -34,6 +34,19 @@ int BondStore::_weakest_for_owner(uint32_t owner) const {
     return weakest;
 }
 
+int BondStore::_weakest_unformed_for_owner(uint32_t owner) const {
+    int weakest = -1;
+    float min_str = 2.0f;
+    for (int i = 0; i < _count; i++) {
+        if (_pool[i].owner == owner && !_pool[i].formed
+                && _pool[i].strength < min_str) {
+            min_str = _pool[i].strength;
+            weakest = i;
+        }
+    }
+    return weakest;
+}
+
 void BondStore::_remove_at(int idx) {
     if (idx < 0 || idx >= _count) return;
     _pool[idx] = _pool[_count - 1];
@@ -48,6 +61,7 @@ bool BondStore::increment(uint32_t owner, uint32_t target, float amount) {
         float prev = _pool[idx].strength;
         _pool[idx].strength += amount;
         if (_pool[idx].strength > 1.0f) _pool[idx].strength = 1.0f;
+        _pool[idx].touched = true;  // reinforced this window — spared from the wipe
         bool crossed = (prev < FORM_THRESHOLD && _pool[idx].strength >= FORM_THRESHOLD);
         if (crossed) _pool[idx].formed = true;
         return crossed;
@@ -56,12 +70,15 @@ bool BondStore::increment(uint32_t owner, uint32_t target, float amount) {
     // New bond — check caps
     if (_count >= POOL_CAP) return false;
     if (_count_for_owner(owner) >= PER_OWNER_CAP) {
-        int w = _weakest_for_owner(owner);
+        // Full: make room by evicting the weakest UNFORMED bond. Never sacrifice
+        // a formed friendship for a nascent one — if all slots are formed, the
+        // conker is legitimately full and this new pairing is dropped.
+        int w = _weakest_unformed_for_owner(owner);
         if (w >= 0) _remove_at(w);
         else return false;
     }
 
-    _pool[_count++] = {owner, target, amount, amount >= FORM_THRESHOLD};
+    _pool[_count++] = {owner, target, amount, amount >= FORM_THRESHOLD, true};
     return (amount >= FORM_THRESHOLD);
 }
 
@@ -77,7 +94,8 @@ void BondStore::set(uint32_t owner, uint32_t target, float strength) {
 
     if (_count >= POOL_CAP) return;
     if (_count_for_owner(owner) >= PER_OWNER_CAP) {
-        int w = _weakest_for_owner(owner);
+        // Same rule as increment(): only ever evict a nascent (unformed) bond.
+        int w = _weakest_unformed_for_owner(owner);
         if (w >= 0) _remove_at(w);
         else return;
     }
@@ -90,6 +108,12 @@ void BondStore::decay(uint32_t* broken_owners, uint32_t* broken_targets,
     for (int i = _count - 1; i >= 0; i--) {
         _pool[i].strength *= DECAY_FACTOR;
         if (_pool[i].strength < BREAK_THRESHOLD) {
+            // An unformed bond reinforced this window is still actively growing —
+            // keep it so it can mature, instead of resetting it to zero every
+            // cycle (the bug that locked all but the most sociable conkers out of
+            // ever forming a bond). Formed bonds aren't guarded: they survive by
+            // magnitude and a formed bond that has truly faded should still break.
+            if (!_pool[i].formed && _pool[i].touched) continue;
             // Only announce breaks for bonds that actually formed —
             // sub-threshold flings fade without a diary entry
             if (_pool[i].formed && broken_count < max_broken) {
@@ -100,6 +124,9 @@ void BondStore::decay(uint32_t* broken_owners, uint32_t* broken_targets,
             _remove_at(i);
         }
     }
+    // touched is a per-window transient: clear it so the next window starts fresh
+    // and a bond that stops being reinforced becomes eligible to fade away.
+    for (int i = 0; i < _count; i++) _pool[i].touched = false;
 }
 
 void BondStore::remove_owner(uint32_t owner) {

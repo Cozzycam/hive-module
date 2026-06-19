@@ -313,6 +313,26 @@ static void process_serial_line(const char* line) {
             else Serial.printf("[api] lilguy %lu not found\r\n", (unsigned long)id);
             free(buf);
         }
+    } else if (strcmp(line, "dump bonds") == 0) {
+        // Read-only diagnostic: every bond in the pool, INCLUDING the
+        // sub-threshold (unformed) ones the snapshot/API hide. Lets us see who's
+        // accruing affinity but hasn't crossed FORM_THRESHOLD (0.1) yet vs. who
+        // never started at all. Columns: owner -> target  strength  F(ormed) R(ecip).
+        auto& bs = sim.coordinator.bonds;
+        auto& reg = sim.coordinator.registry;
+        const auto* pool = bs.pool();
+        int n = bs.count();
+        Serial.printf("[bonds] %d entries  (owner -> target  strength  F R)\r\n", n);
+        for (int i = 0; i < n; i++) {
+            const auto& e = pool[i];
+            auto* ro = reg.get(e.owner);
+            auto* rt = reg.get(e.target);
+            bool recip = bs.is_formed(e.target, e.owner);
+            Serial.printf("  %-12s(%lu) -> %-12s(%lu)  %.3f  %c %c\r\n",
+                ro ? ro->name : "?", (unsigned long)e.owner,
+                rt ? rt->name : "?", (unsigned long)e.target,
+                e.strength, e.formed ? 'F' : '.', recip ? 'R' : '.');
+        }
     } else if (strcmp(line, "brood") == 0) {
         auto& cham = sim.coordinator.chamber;
         Serial.printf("[brood] %d in nest\r\n", cham.brood_count);

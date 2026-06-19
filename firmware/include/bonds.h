@@ -15,6 +15,11 @@ struct BondEntry {
     // True once strength has crossed FORM_THRESHOLD — only formed bonds
     // announce bond_broken (passing acquaintances fade silently)
     bool     formed = false;
+    // Set when the bond is reinforced during a decay window; an unformed bond
+    // that was touched is still actively growing, so decay() spares it from the
+    // sub-threshold wipe (lets slow accruers mature instead of resetting each
+    // cycle). Runtime-only transient — never serialized; reset every decay pass.
+    bool     touched = false;
 };
 
 class BondStore {
@@ -22,7 +27,11 @@ public:
     static constexpr int POOL_CAP = 1024;
     static constexpr int PER_OWNER_CAP = 12;        // a butterfly can feel bonded to lots (one-way)
     static constexpr float FORM_THRESHOLD = 0.1f;   // emit bond_formed
-    static constexpr float BREAK_THRESHOLD = 0.05f; // emit bond_broken / remove
+    static constexpr float BREAK_THRESHOLD = 0.01f; // emit bond_broken / remove
+                                                    // (low floor so intermittent-contact bonds
+                                                    // survive the gaps between encounters and
+                                                    // accumulate cumulatively, instead of being
+                                                    // reset to zero before they can mature)
     static constexpr float DECAY_FACTOR = 0.999f;   // per 1000 ticks (~2 min) — gentle, so a maintained
                                                     // friendship lasts days; only long separation fades it
     static constexpr int   DECAY_INTERVAL = 1000;   // ticks between decay passes
@@ -64,5 +73,9 @@ private:
     int _find(uint32_t owner, uint32_t target) const;
     int _count_for_owner(uint32_t owner) const;
     int _weakest_for_owner(uint32_t owner) const;
+    // Weakest UNFORMED bond for an owner, or -1 if every slot is a formed
+    // friendship. Used for cap eviction: never sacrifice a real friendship to
+    // admit a nascent pairing.
+    int _weakest_unformed_for_owner(uint32_t owner) const;
     void _remove_at(int idx);
 };
