@@ -7,10 +7,14 @@ deasserted before open so the ESP32-S3 USB-Serial/JTAG port isn't strapped into
 the ROM bootloader (same guard as bond_dump.py).
 
 Usage:
-    py tools/telemetry_pull.py [PORT] [OUTFILE] [IDLE_TIMEOUT_S]// defaults below
+    py tools/telemetry_pull.py [PORT] [OUTFILE] [STREAM] [IDLE_TIMEOUT_S]
 
-    py tools/telemetry_pull.py COM3 com3_telemetry.csv
-    py tools/telemetry_pull.py COM4 com4_telemetry.csv
+    STREAM is "needs" (default) or "bonds".
+
+    py tools/telemetry_pull.py COM3 com3.csv
+    py tools/telemetry_pull.py COM4 com4.csv
+    py tools/telemetry_pull.py COM3 com3_bonds.csv bonds
+    py tools/telemetry_pull.py COM4 com4_bonds.csv bonds
 
 For a multi-MB file the dump is slow (~10 KB/s over serial) — that's fine for an
 occasional pull. If you want the whole multi-day file fast, just eject the SD
@@ -20,7 +24,10 @@ import sys, time, serial
 
 port    = sys.argv[1] if len(sys.argv) > 1 else "COM3"
 outfile = sys.argv[2] if len(sys.argv) > 2 else f"{port}_telemetry.csv"
-idle_s  = float(sys.argv[3]) if len(sys.argv) > 3 else 8.0
+stream  = sys.argv[3].lower() if len(sys.argv) > 3 else "needs"
+idle_s  = float(sys.argv[4]) if len(sys.argv) > 4 else 8.0
+
+cmd = b"dump telemetry bonds\r\n" if stream == "bonds" else b"dump telemetry\r\n"
 
 ser = serial.Serial()
 ser.port = port
@@ -32,7 +39,7 @@ ser.open()
 
 time.sleep(0.4)
 ser.reset_input_buffer()
-ser.write(b"dump telemetry\r\n")
+ser.write(cmd)
 ser.flush()
 
 buf = b""

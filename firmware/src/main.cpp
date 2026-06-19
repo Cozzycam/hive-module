@@ -397,6 +397,8 @@ static void process_serial_line(const char* line) {
                 (unsigned long)recs[i].id, recs[i].name,
                 recs[i].role, recs[i].is_pioneer);
         }
+    } else if (strcmp(line, "dump telemetry bonds") == 0) {
+        g_telemetry.dump_bonds_today();
     } else if (strcmp(line, "dump telemetry") == 0) {
         g_telemetry.dump_today();
     } else if (strcmp(line, "telemetry on") == 0) {
@@ -982,6 +984,8 @@ void loop() {
     // Temporary tuning telemetry — sample local conkers' mood/needs to SD
     // (self-times to 10s; runs on both queen and satellite).
     g_telemetry.tick(sim.coordinator.chamber, topology_my_id());
+    // Parallel bond-strength stream (self-times to 30s).
+    g_telemetry.tick_bonds(sim.coordinator.bonds, sim.coordinator.registry, topology_my_id());
 
     // Render at ~30fps
     if (now - last_frame_ms >= 33) {
