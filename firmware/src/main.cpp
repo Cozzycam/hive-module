@@ -37,6 +37,7 @@
 #include "sd_card.h"
 #include "world_condition.h"
 #include "api_json.h"
+#include "telemetry.h"
 #include "http_server.h"
 #include "vps_push.h"
 #include "setup_wizard.h"
@@ -396,6 +397,14 @@ static void process_serial_line(const char* line) {
                 (unsigned long)recs[i].id, recs[i].name,
                 recs[i].role, recs[i].is_pioneer);
         }
+    } else if (strcmp(line, "dump telemetry") == 0) {
+        g_telemetry.dump_today();
+    } else if (strcmp(line, "telemetry on") == 0) {
+        g_telemetry.set_enabled(true);
+    } else if (strcmp(line, "telemetry off") == 0) {
+        g_telemetry.set_enabled(false);
+    } else if (strcmp(line, "telemetry") == 0) {
+        g_telemetry.print_status();
     } else if (strcmp(line, "journal") == 0) {
         auto& j = sim.coordinator.journal;
         Serial.printf("[journal] pending: %d, total flushed: %d\r\n",
@@ -788,6 +797,8 @@ void setup() {
 
     hud_battery_init();  // AXP2101 probe — works on both queen and satellite
 
+    g_telemetry.init();  // per-conker mood/needs CSV sampler (both roles, temporary)
+
     bool queen = sim.coordinator.is_queen();
     topology_set_accept_state_sync(!queen);  // queens own their own clock
     if (queen) {
@@ -967,6 +978,10 @@ void loop() {
             }
         }
     }
+
+    // Temporary tuning telemetry — sample local conkers' mood/needs to SD
+    // (self-times to 10s; runs on both queen and satellite).
+    g_telemetry.tick(sim.coordinator.chamber, topology_my_id());
 
     // Render at ~30fps
     if (now - last_frame_ms >= 33) {
