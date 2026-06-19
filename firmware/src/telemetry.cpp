@@ -165,6 +165,31 @@ size_t TelemetryLog::_dump(const char* prefix) {
 size_t TelemetryLog::dump_today()       { return _dump(""); }
 size_t TelemetryLog::dump_bonds_today() { return _dump("bonds-"); }
 
+int TelemetryLog::reset_files() {
+    if (sd_card_state() != SD_OK) { Serial.println("[telemetry] no SD"); return 0; }
+    File dir = SD_MMC.open(TELEM_DIR);
+    if (!dir || !dir.isDirectory()) { Serial.println("[telemetry] no telemetry dir"); return 0; }
+
+    // Collect full paths first, then remove — don't mutate the dir mid-iteration
+    // (same idiom as the colony reset / boot .tmp recovery).
+    char paths[32][48];
+    int n = 0;
+    File e = dir.openNextFile();
+    while (e && n < 32) {
+        if (!e.isDirectory()) strlcpy(paths[n++], e.path(), sizeof(paths[0]));
+        e.close();
+        e = dir.openNextFile();
+    }
+    dir.close();
+
+    int removed = 0;
+    for (int i = 0; i < n; i++) if (SD_MMC.remove(paths[i])) removed++;
+    _last_ms       = millis();   // restart the sample clocks so fresh files
+    _last_bonds_ms = millis();   // (with headers) start a clean interval later
+    Serial.printf("[telemetry] reset — %d file(s) removed\r\n", removed);
+    return removed;
+}
+
 void TelemetryLog::print_status() {
     char path[56];
     Serial.printf("[telemetry] %s, needs 10s, bonds 30s\r\n", _enabled ? "ON" : "OFF");

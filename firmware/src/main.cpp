@@ -252,6 +252,33 @@ static void process_serial_line(const char* line) {
             SD_MMC.remove("/colony/bonds.json.tmp");
         }
         Serial.println("[bonds] cleared (RAM + SD) — friendships will reform");
+    } else if (strcmp(line, "blankslate") == 0) {
+        // Tuning baseline: zero every conker's needs/mood/sleep, wipe bonds
+        // (RAM + SD), and clear the telemetry CSVs — a clean slate for a fresh
+        // observation run. Run on BOTH modules. Hunger is zeroed too (well-fed
+        // start); lineage bonds re-set on the next hatch.
+        auto& cham = sim.coordinator.chamber;
+        int nc = 0;
+        for (int i = 0; i < cham.conker_count; i++) {
+            Conker& c = cham.conkers[i];
+            for (int k = 0; k < NEED_COUNT; k++) c.needs[k] = 0.0f;
+            c.mood            = MOOD_CONTENT;
+            c.intent_need     = NEED_COUNT;
+            c.afterglow_ticks = 0;
+            c.hunger          = 0.0f;
+            c.sleeping        = false;
+            c.sleep_until_ms  = 0;
+            c.daytime_nap     = false;
+            nc++;
+        }
+        sim.coordinator.bonds.init();
+        if (sd_card_state() == SD_OK) {
+            SD_MMC.remove("/colony/bonds.json");
+            SD_MMC.remove("/colony/bonds.json.tmp");
+        }
+        int tf = g_telemetry.reset_files();
+        Serial.printf("[blankslate] %d conkers reset, bonds cleared, %d telemetry file(s) removed\r\n",
+                      nc, tf);
     } else if (strcmp(line, "push") == 0) {
         ota_push();
     } else if (strcmp(line, "deaths") == 0) {
@@ -405,6 +432,8 @@ static void process_serial_line(const char* line) {
         g_telemetry.set_enabled(true);
     } else if (strcmp(line, "telemetry off") == 0) {
         g_telemetry.set_enabled(false);
+    } else if (strcmp(line, "telemetry reset") == 0) {
+        g_telemetry.reset_files();
     } else if (strcmp(line, "telemetry") == 0) {
         g_telemetry.print_status();
     } else if (strcmp(line, "journal") == 0) {

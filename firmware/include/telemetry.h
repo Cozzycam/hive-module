@@ -35,6 +35,7 @@ public:
     size_t dump_today();        // stream today's needs CSV to Serial
     size_t dump_bonds_today();  // stream today's bonds CSV to Serial
     void   print_status();      // file paths + sizes + on/off
+    int    reset_files();       // delete ALL telemetry CSVs; returns count removed
 
 private:
     static constexpr uint32_t TELEMETRY_INTERVAL_MS = 10000;  // 10s needs sampling
