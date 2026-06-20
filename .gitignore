@@ -34,6 +34,8 @@ Thumbs.db
 # Pulled telemetry data (tuning artifacts — the tools live in tools/, data does not)
 /com3*.csv
 /com4*.csv
+/pre-change_*.csv
+/post-change_*.csv
 /journal_dump.txt
 
 # WiFi credentials — never commit
