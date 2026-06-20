@@ -22,6 +22,13 @@ int BondStore::_count_for_owner(uint32_t owner) const {
     return n;
 }
 
+int BondStore::_count_formed_for_owner(uint32_t owner) const {
+    int n = 0;
+    for (int i = 0; i < _count; i++)
+        if (_pool[i].owner == owner && _pool[i].formed) n++;
+    return n;
+}
+
 int BondStore::_weakest_for_owner(uint32_t owner) const {
     int weakest = -1;
     float min_str = 2.0f;
@@ -63,7 +70,18 @@ bool BondStore::increment(uint32_t owner, uint32_t target, float amount) {
         if (_pool[idx].strength > 1.0f) _pool[idx].strength = 1.0f;
         _pool[idx].touched = true;  // reinforced this window — spared from the wipe
         bool crossed = (prev < FORM_THRESHOLD && _pool[idx].strength >= FORM_THRESHOLD);
-        if (crossed) _pool[idx].formed = true;
+        if (crossed) {
+            // Close-friend cap: only let this become a real (formed) friendship if
+            // the owner has room. Otherwise it stays an acquaintance — pinned just
+            // under the line — so friendship stays selective. A slot opens when an
+            // existing close friend decays away.
+            if (_count_formed_for_owner(owner) >= CLOSE_FRIEND_CAP) {
+                _pool[idx].strength = FORM_THRESHOLD - 0.001f;
+                crossed = false;
+            } else {
+                _pool[idx].formed = true;
+            }
+        }
         return crossed;
     }
 

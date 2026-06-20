@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 149;
+constexpr uint32_t FW_VERSION = 150;
 
 namespace Cfg {
 
@@ -271,10 +271,13 @@ constexpr uint8_t NEEDS_ACTIVE_MASK        = 0x07;  // bit0 boredom + bit1 socia
 // personality drive (tempo+exploration+social) scales the rise, so a busy
 // curious social conker reaches full in ~12-15 min while a placid loner
 // barely climbs in an hour. Average personality ≈ full in ~25 min.
-constexpr float BOREDOM_RISE_PER_SEC       = 1.0f / 1800.0f;
+constexpr float BOREDOM_RISE_PER_SEC       = 1.0f / 1500.0f;
 constexpr float BOREDOM_NIGHT_DECAY_PER_SEC = 1.0f / 600.0f;  // winds down by dusk/night
                                                              // so it never competes with sleep
-constexpr float BOREDOM_PLAY_DRAIN_PER_SEC = 0.30f;  // a play bout empties it in ~3s
+constexpr float BOREDOM_PLAY_DRAIN_PER_SEC = 0.06f;  // a play bout is RELIEF, not a reset —
+                                                     // a short zoomie sheds ~0.2-0.4, so boredom
+                                                     // can accumulate across a day and actually bite
+                                                     // (was 0.30 = wiped to 0 instantly, so it never did)
 constexpr float BOREDOM_WORK_RISE_SCALE    = 0.4f;   // rote work is mildly stimulating
 constexpr float BOREDOM_RESTLESS_AT        = 0.55f;  // mood: content → restless
 constexpr float BOREDOM_BORED_AT           = 0.85f;  // mood: restless → bored
@@ -326,6 +329,19 @@ constexpr float SOCIAL_COMPANION_DIST = 3.0f;            // cells: a neighbour t
 constexpr float SOCIAL_LONELY_AT      = 0.55f;           // mood: content → restless
 constexpr float SOCIAL_URGENT_AT      = 0.85f;           // mood: restless → lonely
 constexpr float SOCIAL_BOOP_RELIEF    = 0.4f;            // a player tap is a bit of company
+
+// Night huddle (v150): loneliness keeps rising (gently) through a night sleep when
+// a conker dozes off alone, and a friendly conker will WAKE to go find company —
+// then nestle back down. Loners (social < SOCIAL_WAKE_MIN, the same bottom-~10%
+// floor as proximity bonding) sleep alone all night, untroubled. The friendlier a
+// conker, the LOWER its wake threshold, so butterflies rouse sooner than the
+// quiet ones:  wake_at = SOCIAL_WAKE_BASE − SOCIAL_WAKE_SLOPE × social_personality
+//   social 0.22 → ~0.83 (rarely),  0.5 → ~0.68,  1.0 → 0.40 (readily).
+constexpr float SOCIAL_SLEEP_RISE_SCALE = 0.5f;   // loneliness climbs at half-rate while asleep
+constexpr float SOCIAL_WAKE_MIN         = 0.22f;  // below this sociability, never woken by loneliness
+constexpr float SOCIAL_WAKE_BASE        = 0.95f;
+constexpr float SOCIAL_WAKE_SLOPE       = 0.55f;
+constexpr int   SOCIAL_SEEK_TIMEOUT_TICKS = 1200; // give up groggy-seeking and resettle if no one's reachable
 
 // ---- Critters (visiting bugs to discover) ----
 // A beetle/butterfly/worm wanders in, drifts toward the colony, and the first

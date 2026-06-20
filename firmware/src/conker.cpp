@@ -262,9 +262,14 @@ void Conker::tick(Chamber& ch, float dt) {
             // Wake on famine or personal hunger crisis
             if (sleeping) {
                 if (_should_wake(ch)) {
+                    bool lonely_wake = _wants_company_wake(ch);
                     sleeping = false;
                     anim_type = LG_ANIM_NONE;
                     stack_on = -1;  // unstack to go hustle
+                    if (lonely_wake) {
+                        seeking_company = true;
+                        seek_ticks = Cfg::SOCIAL_SEEK_TIMEOUT_TICKS;
+                    }
                 } else {
                     anim_type = LG_ANIM_SNOOZE;
                 }
@@ -298,8 +303,13 @@ void Conker::tick(Chamber& ch, float dt) {
     // Wake up early during famine or if starving
     if (sleeping) {
         if (_should_wake(ch)) {
+            bool lonely_wake = _wants_company_wake(ch);
             sleeping = false;
             anim_type = LG_ANIM_NONE;
+            if (lonely_wake) {
+                seeking_company = true;
+                seek_ticks = Cfg::SOCIAL_SEEK_TIMEOUT_TICKS;
+            }
         } else {
             anim_type = LG_ANIM_SNOOZE;
             return;
@@ -326,6 +336,13 @@ void Conker::tick(Chamber& ch, float dt) {
             anim_type = LG_ANIM_NONE;
             topple_depth = 0;
         }
+        return;
+    }
+
+    // v150: a conker that woke lonely owns its tick — groggily padding over to a
+    // friend to huddle, then resettling — until it's nestled in or dawn breaks.
+    if (seeking_company) {
+        _tick_seek_company(ch);
         return;
     }
 
@@ -1388,8 +1405,11 @@ void Conker::_update_needs(Chamber& ch, float dt) {
     // ---- Social (companionship) ----
     if (Cfg::NEEDS_ACTIVE_MASK & (1 << NEED_SOCIAL)) {
         float& lonely = needs[NEED_SOCIAL];
-        float company = _companions_near(ch);  // friend-weighted
-        if (sleeping || departing) {
+        // While asleep, count sleeping huddle-mates as company — so a conker
+        // nestled in the pile is soothed, but one dozing off alone keeps getting
+        // lonelier (gently) until it's enough to rouse them. (v150)
+        float company = _companions_near(ch, /*include_sleeping=*/sleeping);
+        if (departing) {
             // leave it be
         } else if (company > 0.0f) {
             // Company soothes — a friend's company more than a stranger's.
@@ -1397,7 +1417,9 @@ void Conker::_update_needs(Chamber& ch, float dt) {
         } else {
             // The sociable crave company; loners barely notice being alone.
             float drive = 0.5f + 1.0f * personality[PERS_SOCIAL_FREQUENCY];
-            lonely += Cfg::SOCIAL_RISE_PER_SEC * drive * dt;
+            float rise = Cfg::SOCIAL_RISE_PER_SEC * drive * dt;
+            if (sleeping) rise *= Cfg::SOCIAL_SLEEP_RISE_SCALE;  // climbs slower in sleep
+            lonely += rise;
         }
         if (lonely < 0.0f) lonely = 0.0f;
         if (lonely > 1.0f) lonely = 1.0f;
@@ -1421,8 +1443,8 @@ void Conker::_update_needs(Chamber& ch, float dt) {
     ConkerMood m = MOOD_CONTENT;
     if (state == STATE_ZOOMIES) {
         m = MOOD_PLAYING;
-    } else if (sleeping) {
-        m = MOOD_CONTENT;
+    } else if (sleeping || seeking_company) {
+        m = MOOD_SLEEPY;   // v150: asleep, or groggily padding over to huddle up
     } else if (afterglow_ticks > 0) {
         m = MOOD_HAPPY;                          // just had a good time — savour it
     } else if (intent_need == NEED_REST) {
@@ -1479,8 +1501,66 @@ bool Conker::_should_wake(Chamber& ch) const {
     if (daytime_nap)
         return needs[NEED_REST] <= nap_wake_target;
     if (g_tod.phase == PHASE_DAY) return true;   // never sleep through the working day
+    if (_wants_company_wake(ch)) return true;    // v150: friendly + lonely + alone → go huddle
     return (g_tod.phase == PHASE_DAWN
             && needs[NEED_REST] <= Cfg::TIRED_MORNING_WAKE);
+}
+
+// v150: would this conker rouse from a night sleep to go find company? Only night
+// sleeps (not naps/day), only the sociable (loners below SOCIAL_WAKE_MIN sleep
+// alone all night untroubled), only when genuinely alone (no one — awake OR
+// asleep — within reach), and only once loneliness clears a personality-scaled
+// bar: the friendlier the conker, the LOWER the bar, so butterflies rouse sooner.
+bool Conker::_wants_company_wake(Chamber& ch) const {
+    if (daytime_nap || g_tod.phase == PHASE_DAY) return false;
+    float social = personality[PERS_SOCIAL_FREQUENCY];
+    if (social < Cfg::SOCIAL_WAKE_MIN) return false;
+    float wake_at = Cfg::SOCIAL_WAKE_BASE - Cfg::SOCIAL_WAKE_SLOPE * social;
+    if (needs[NEED_SOCIAL] < wake_at) return false;
+    return _companions_near(ch, /*include_sleeping=*/true) <= 0.0f;
+}
+
+// v150: a groggy, half-asleep amble toward the nearest friend (else nearest
+// anyone, else the queen). Self-contained: sets a step target and advances, so it
+// doesn't fight the idle state machine. Resettles to sleep on arrival, at dawn,
+// or if it can't reach anyone before the timeout.
+void Conker::_tick_seek_company(Chamber& ch) {
+    state = STATE_IDLE;
+    bool company = _companions_near(ch, /*include_sleeping=*/true) > 0.0f;
+    if (g_tod.phase == PHASE_DAY || company || seek_ticks == 0) {
+        seeking_company = false;
+        has_target_cell = false;
+        if (g_tod.phase != PHASE_DAY) {           // nestle back down for the night
+            sleeping = true;
+            anim_type = LG_ANIM_SNOOZE;
+            idle_ticks_remaining = g_rng.rand_int(Cfg::IDLE_REST_MIN_TICKS,
+                                                  Cfg::IDLE_REST_MAX_TICKS);
+        }
+        return;                                   // (day: fall back to normal next tick)
+    }
+    if (seek_ticks > 0) seek_ticks--;
+    speed = Cfg::IDLE_DRIFT_SPEED;
+
+    int cx = cell_x(), cy = cell_y();
+    int best = 999, tx = -1, ty = -1;
+    bool found_friend = false;
+    for (int i = 0; i < ch.conker_count; i++) {
+        const Conker& o = ch.conkers[i];
+        if (&o == this || !o.alive) continue;
+        bool fr = _is_friend(ch, o.id);
+        if (found_friend && !fr) continue;            // once we've spotted a friend, only friends count
+        if (fr && !found_friend) { found_friend = true; best = 999; }  // restrict ranking to friends
+        int d = abs(o.cell_x() - cx) + abs(o.cell_y() - cy);
+        if (d > 0 && d < best) { best = d; tx = o.cell_x(); ty = o.cell_y(); }
+    }
+    if (tx < 0 && ch.has_queen && ch.queen_obj.alive) { tx = ch.queen_obj.x; ty = ch.queen_obj.y; }
+    if (tx >= 0) {
+        int dx = (tx > cx) ? 1 : ((tx < cx) ? -1 : 0);
+        int dy = (ty > cy) ? 1 : ((ty < cy) ? -1 : 0);
+        if (dx != 0 && dy != 0) { if (g_rng.rand_float() < 0.5f) dy = 0; else dx = 0; }
+        _set_target_cell(cx + dx, cy + dy, ch);
+    }
+    _advance_toward_target(ch);
 }
 
 // Personality-flavoured response to a need. Routing hook for the arbiter — the
@@ -1532,12 +1612,13 @@ bool Conker::_forage_follow_friend(Chamber& ch) {
 // Company score from awake neighbours in range — a friend is worth more than a
 // stranger, a best friend more still, so loneliness is soothed by WHO is near,
 // not just how many.
-float Conker::_companions_near(Chamber& ch) const {
+float Conker::_companions_near(Chamber& ch, bool include_sleeping) const {
     float score = 0.0f;
     float r2 = Cfg::SOCIAL_COMPANION_DIST * Cfg::SOCIAL_COMPANION_DIST;
     for (int i = 0; i < ch.conker_count; i++) {
         const Conker& o = ch.conkers[i];
-        if (&o == this || !o.alive || o.sleeping) continue;
+        if (&o == this || !o.alive) continue;
+        if (o.sleeping && !include_sleeping) continue;
         float dx = o.x - x, dy = o.y - y;
         if (dx * dx + dy * dy > r2) continue;
         score += _is_best_friend(ch, o.id) ? 3.0f

@@ -269,6 +269,8 @@ static void process_serial_line(const char* line) {
             c.sleeping        = false;
             c.sleep_until_ms  = 0;
             c.daytime_nap     = false;
+            c.seeking_company = false;
+            c.seek_ticks      = 0;
             nc++;
         }
         sim.coordinator.bonds.init();

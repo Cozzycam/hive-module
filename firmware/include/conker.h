@@ -142,6 +142,11 @@ struct Conker {
     uint32_t sleep_until_ms       = 0;   // wake time (millis)
     uint32_t sleep_cooldown_ms    = 0;   // can't sleep again until this time
 
+    // Night huddle (v150): woke from a lonely sleep to go find company; transient,
+    // not persisted/handed-off (default false = just awake).
+    bool     seeking_company      = false;
+    uint16_t seek_ticks           = 0;   // groggy-seek give-up countdown
+
     // Zoomies (daytime chase) and parades (follow-the-leader)
     int16_t  zoomie_target        = -1;  // index of conker being chased
     int16_t  zoomie_ticks         = 0;   // countdown to end
@@ -203,8 +208,10 @@ struct Conker {
     float   _need_salience(uint8_t need, Chamber& ch) const;  // context-gated salience
     float   _nap_threshold() const;          // chronotype: dozy ones nap sooner (even by day)
     bool    _should_wake(Chamber& ch) const; // night sleeps hold to morning; naps are a short top-up
+    bool    _wants_company_wake(Chamber& ch) const; // v150: friendly + lonely + alone → rouse to go huddle
+    void    _tick_seek_company(Chamber& ch);        // v150: groggy drift to nearest friend, then resettle
     uint8_t _response_style(uint8_t need) const;  // personality-flavoured response to a need
-    float   _companions_near(Chamber& ch) const; // company score within SOCIAL_COMPANION_DIST (friends weigh more)
+    float   _companions_near(Chamber& ch, bool include_sleeping = false) const; // company score within SOCIAL_COMPANION_DIST (friends weigh more)
     bool    _is_friend(Chamber& ch, uint32_t other_id) const;       // I've bonded to them (one-way ok)
     bool    _is_best_friend(Chamber& ch, uint32_t other_id) const;  // bond is mutual
     bool    _forage_follow_friend(Chamber& ch);   // tag along with a foraging friend (shared trails)

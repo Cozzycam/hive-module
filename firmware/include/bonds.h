@@ -26,14 +26,21 @@ class BondStore {
 public:
     static constexpr int POOL_CAP = 1024;
     static constexpr int PER_OWNER_CAP = 12;        // a butterfly can feel bonded to lots (one-way)
+    static constexpr int CLOSE_FRIEND_CAP = 4;      // v150: a conker can have at most this many FORMED
+                                                    // (close) friends at once. Beyond it, extra bonds stay
+                                                    // capped just under the form line as acquaintances, so
+                                                    // "best friend" is selective instead of a whole-colony
+                                                    // clique. Decay frees slots as old friendships fade.
     static constexpr float FORM_THRESHOLD = 0.1f;   // emit bond_formed
     static constexpr float BREAK_THRESHOLD = 0.01f; // emit bond_broken / remove
                                                     // (low floor so intermittent-contact bonds
                                                     // survive the gaps between encounters and
                                                     // accumulate cumulatively, instead of being
                                                     // reset to zero before they can mature)
-    static constexpr float DECAY_FACTOR = 0.999f;   // per 1000 ticks (~2 min) — gentle, so a maintained
-                                                    // friendship lasts days; only long separation fades it
+    static constexpr float DECAY_FACTOR = 0.997f;   // per 1000 ticks (~2 min) — a maintained friendship
+                                                    // lasts days, but an UNmaintained one now sheds ~66%/day
+                                                    // (was 0.999 ≈ too gentle to ever counter the nightly
+                                                    // huddle, which saturated everyone to best friends)
     static constexpr int   DECAY_INTERVAL = 1000;   // ticks between decay passes
 
     void init();
@@ -72,6 +79,7 @@ private:
 
     int _find(uint32_t owner, uint32_t target) const;
     int _count_for_owner(uint32_t owner) const;
+    int _count_formed_for_owner(uint32_t owner) const;
     int _weakest_for_owner(uint32_t owner) const;
     // Weakest UNFORMED bond for an owner, or -1 if every slot is a formed
     // friendship. Used for cap eviction: never sacrifice a real friendship to

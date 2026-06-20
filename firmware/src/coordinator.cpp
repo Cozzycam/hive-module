@@ -2038,6 +2038,11 @@ void Coordinator::_bond_detect_proximity(uint32_t tick_num) {
         for (int j = i + 1; j < chamber.conker_count; j++) {
             Conker& b = chamber.conkers[j];
             if (b.id == 0 || b.departing || !b.alive) continue;
+            // v150: sleeping together no longer bonds. The all-night huddle used to
+            // be the main driver and it saturated the whole colony to best friends.
+            // Friendship is now earned through shared WAKING activity (co-tend,
+            // co-forage, awake idle); the night is for rest, not networking.
+            if (a.sleeping || b.sleeping) continue;
 
             int dist = abs(a.cell_x() - b.cell_x()) + abs(a.cell_y() - b.cell_y());
             if (dist > 3) continue;
@@ -2057,9 +2062,8 @@ void Coordinator::_bond_detect_proximity(uint32_t tick_num) {
                   && (b.state == STATE_TO_FOOD || b.state == STATE_TO_HOME)) {
                 base = 0.02f;
             }
-            // Idle proximity — includes conkers asleep in the same huddle
-            // (sleeping carries STATE_IDLE). The nightly cluster is the main
-            // driver of organic friendships among the sociable.
+            // Awake idle proximity — lounging near each other by day (sleepers are
+            // already excluded above, so this is genuine waking company now).
             else if (a.state == STATE_IDLE && b.state == STATE_IDLE) {
                 base = 0.01f;
             }
