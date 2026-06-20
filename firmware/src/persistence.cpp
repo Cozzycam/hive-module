@@ -252,8 +252,12 @@ bool ConkerRegistry::_write_record(const IdentityRecord& rec) {
     pos["y"]       = rec.last_y;
 
     doc["last_state"] = rec.last_state;
+    doc["need_b"]  = rec.last_boredom;     // v151: needs persist across reboot
+    doc["need_t"]  = rec.last_tiredness;
+    doc["need_l"]  = rec.last_loneliness;
+    doc["need_h"]  = rec.last_hunger;
 
-    char buf[512];
+    char buf[700];   // headroom for the v151 need fields
     size_t len = serializeJson(doc, buf, sizeof(buf));
     return _atomic_write(path, buf, len);
 }
@@ -350,6 +354,10 @@ bool ConkerRegistry::_load_living_records() {
                         r.last_x     = pos["x"] | 0.0f;
                         r.last_y     = pos["y"] | 0.0f;
                         r.last_state = doc["last_state"] | 0;
+                        r.last_boredom    = doc["need_b"] | 0.0f;
+                        r.last_tiredness  = doc["need_t"] | 0.0f;
+                        r.last_loneliness = doc["need_l"] | 0.0f;
+                        r.last_hunger     = doc["need_h"] | 0.0f;
                         r.dirty      = false;
 
                         _alive_count++;
@@ -647,6 +655,10 @@ bool ConkerRegistry::revive(uint32_t id) {
     r.last_x     = pos["x"] | 0.0f;
     r.last_y     = pos["y"] | 0.0f;
     r.last_state = doc["last_state"] | 0;
+    r.last_boredom    = doc["need_b"] | 0.0f;
+    r.last_tiredness  = doc["need_t"] | 0.0f;
+    r.last_loneliness = doc["need_l"] | 0.0f;
+    r.last_hunger     = doc["need_h"] | 0.0f;
     r.dirty      = false;
     _alive_count++;
 

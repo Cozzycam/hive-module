@@ -1732,6 +1732,12 @@ void Coordinator::_persist_update_positions() {
         IdentityRecord* rec = registry.get(w.id);
         if (rec) {
             rec->lived_ms = w.lived_ms;
+            // v151: snapshot needs so they survive a reboot (piggybacks the
+            // existing 30s dirty-flush — no extra writes). Mood re-derives.
+            rec->last_boredom    = w.needs[NEED_BOREDOM];
+            rec->last_tiredness  = w.needs[NEED_REST];
+            rec->last_loneliness = w.needs[NEED_SOCIAL];
+            rec->last_hunger     = w.hunger;
             if (rec->tint_seed == 0 && w.tint_seed != 0)
                 rec->tint_seed = w.tint_seed;
             rec->dirty = true;
@@ -1950,6 +1956,12 @@ void Coordinator::_persist_restore_from_disk() {
         // Restore personality (init randomizes it — override with persisted value)
         memcpy(chamber.conkers[idx].personality, r.personality,
                sizeof(chamber.conkers[idx].personality));
+        // v151: restore needs so mood/needs survive a reboot (mood re-derives
+        // from these on the first tick).
+        chamber.conkers[idx].needs[NEED_BOREDOM] = r.last_boredom;
+        chamber.conkers[idx].needs[NEED_REST]    = r.last_tiredness;
+        chamber.conkers[idx].needs[NEED_SOCIAL]  = r.last_loneliness;
+        chamber.conkers[idx].hunger              = r.last_hunger;
         chamber.conker_count++;
     }
 

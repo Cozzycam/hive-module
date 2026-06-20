@@ -47,6 +47,11 @@ struct IdentityRecord {
     float    last_x       = 0;
     float    last_y       = 0;
     uint8_t  last_state   = 0;        // AntState enum
+    // v151: needs survive reboot (mood is re-derived from these on the first tick).
+    float    last_boredom    = 0;
+    float    last_tiredness  = 0;
+    float    last_loneliness = 0;
+    float    last_hunger     = 0;
     bool     dirty        = false;    // RAM-only: needs flush to disk
 };
 
