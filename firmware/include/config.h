@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 151;
+constexpr uint32_t FW_VERSION = 152;
 
 namespace Cfg {
 
@@ -226,6 +226,19 @@ constexpr float BOND_PLAY_PAIR_MULT   = 2.5f;   // friends are likelier to kick 
 constexpr float BOND_FORAGE_FOLLOW    = 0.18f;  // chance/step a wandering forager drifts toward
                                                 // a foraging friend (shared trails)
 
+// v152: friendship is activity-led. Sociability gates how fast a conker bonds
+// (shared by the proximity engine and the per-activity bonuses below); loners
+// below the floor never bond, so circles stay small without any hard friend cap.
+constexpr float BOND_LONER_FLOOR      = 0.22f;  // social personality below this → never bonds
+constexpr float BOND_SOCIAL_GAIN      = 1.7f;   // sociability → bond-rate slope (×0..1.5)
+// Doing something fun together is the main way friendships form now — a direct
+// nudge per shared moment (scaled per-conker by sociability). Passive proximity
+// (in _bond_detect_proximity) is now just a slow trickle on top of these.
+constexpr float BOND_ACT_ZOOMIE       = 0.040f; // started a chase/parade together
+constexpr float BOND_ACT_JOIN         = 0.030f; // joined a friend's game
+constexpr float BOND_ACT_STACK        = 0.050f; // climbed into a greeting tower
+constexpr float BOND_ACT_GROOM        = 0.040f; // mutual grooming
+
 // ---- Zoomies (daytime chase behavior) ----
 constexpr float ZOOMIE_CHANCE              = 0.03f;  // per proximity pair per tick
 constexpr float ZOOMIE_THIRD_CHANCE        = 0.30f;  // chance to recruit a 3rd lil guy
@@ -279,8 +292,13 @@ constexpr float BOREDOM_PLAY_DRAIN_PER_SEC = 0.06f;  // a play bout is RELIEF, n
                                                      // can accumulate across a day and actually bite
                                                      // (was 0.30 = wiped to 0 instantly, so it never did)
 constexpr float BOREDOM_WORK_RISE_SCALE    = 0.4f;   // rote work is mildly stimulating
-constexpr float BOREDOM_RESTLESS_AT        = 0.55f;  // mood: content → restless
-constexpr float BOREDOM_BORED_AT           = 0.85f;  // mood: restless → bored
+constexpr float BOREDOM_RESTLESS_AT        = 0.55f;  // legacy fixed mood thresholds — superseded
+constexpr float BOREDOM_BORED_AT           = 0.85f;  // by the per-conker _boredom_act_threshold (v152)
+// v152: curiosity sets WHEN a conker bothers to act on boredom (and reads bored),
+// mirroring how hardiness sets the nap threshold. exploration 0 → only acts when
+// very bored (HIGH); exploration 1 → twitchy, acts early (LOW).
+constexpr float BOREDOM_ACT_HIGH           = 0.80f;  // incurious: lets boredom ride
+constexpr float BOREDOM_ACT_LOW            = 0.20f;  // curious: acts almost immediately
 constexpr float BOREDOM_PLAY_DRIVE         = 2.0f;   // boredom's weight as a play instigator
 constexpr float BOREDOM_BOOP_RELIEF        = 0.5f;   // a player tap perks them up
 

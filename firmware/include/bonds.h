@@ -25,12 +25,10 @@ struct BondEntry {
 class BondStore {
 public:
     static constexpr int POOL_CAP = 1024;
-    static constexpr int PER_OWNER_CAP = 12;        // a butterfly can feel bonded to lots (one-way)
-    static constexpr int CLOSE_FRIEND_CAP = 4;      // v150: a conker can have at most this many FORMED
-                                                    // (close) friends at once. Beyond it, extra bonds stay
-                                                    // capped just under the form line as acquaintances, so
-                                                    // "best friend" is selective instead of a whole-colony
-                                                    // clique. Decay frees slots as old friendships fade.
+    static constexpr int PER_OWNER_CAP = 12;        // memory bound only — a conker can befriend as many
+                                                    // as it likes (v152 removed the close-friend cap;
+                                                    // selectivity now comes from slow, sociability-scaled
+                                                    // formation + decay, not a hard limit)
     static constexpr float FORM_THRESHOLD = 0.1f;   // emit bond_formed
     static constexpr float BREAK_THRESHOLD = 0.01f; // emit bond_broken / remove
                                                     // (low floor so intermittent-contact bonds
@@ -79,7 +77,6 @@ private:
 
     int _find(uint32_t owner, uint32_t target) const;
     int _count_for_owner(uint32_t owner) const;
-    int _count_formed_for_owner(uint32_t owner) const;
     int _weakest_for_owner(uint32_t owner) const;
     // Weakest UNFORMED bond for an owner, or -1 if every slot is a formed
     // friendship. Used for cap eviction: never sacrifice a real friendship to

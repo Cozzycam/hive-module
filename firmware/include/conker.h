@@ -207,6 +207,7 @@ struct Conker {
     // Needs arbiter helpers (v127 framework)
     float   _need_salience(uint8_t need, Chamber& ch) const;  // context-gated salience
     float   _nap_threshold() const;          // chronotype: dozy ones nap sooner (even by day)
+    float   _boredom_act_threshold() const;  // curiosity: curious ones act on boredom sooner (v152)
     bool    _should_wake(Chamber& ch) const; // night sleeps hold to morning; naps are a short top-up
     bool    _wants_company_wake(Chamber& ch) const; // v150: friendly + lonely + alone → rouse to go huddle
     void    _tick_seek_company(Chamber& ch);        // v150: groggy drift to nearest friend, then resettle

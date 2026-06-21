@@ -2035,7 +2035,7 @@ void Coordinator::_bond_tick(uint32_t tick_num) {
 // bonds fast to a quiet neighbour who's slow (or never) to reciprocate — and a
 // bond only becomes a best-friendship once it's mutual.
 static inline float _bond_social_factor(const Conker& c) {
-    float f = (c.personality[PERS_SOCIAL_FREQUENCY] - 0.22f) * 1.7f;
+    float f = (c.personality[PERS_SOCIAL_FREQUENCY] - Cfg::BOND_LONER_FLOOR) * Cfg::BOND_SOCIAL_GAIN;
     if (f < 0.0f) f = 0.0f;
     if (f > 1.5f) f = 1.5f;
     return f;
@@ -2064,20 +2064,24 @@ void Coordinator::_bond_detect_proximity(uint32_t tick_num) {
             // and gentle decay lets a real friendship last for days.
             float base = 0.0f;
 
+            // v152: passive proximity is now just a slow trickle — friendships
+            // are mostly made by DOING things together (the activity bonuses in
+            // chamber.cpp). These values are ~1/3 of the old ones so co-presence
+            // alone no longer saturates the colony into one big clique.
             // Co-tending: both in TEND_BROOD targeting same cell
             if (a.state == STATE_TEND_BROOD && b.state == STATE_TEND_BROOD
                 && a.target_x == b.target_x && a.target_y == b.target_y) {
-                base = 0.04f;
+                base = 0.012f;
             }
             // Co-foraging: both in TO_FOOD or TO_HOME (actively working)
             else if ((a.state == STATE_TO_FOOD || a.state == STATE_TO_HOME)
                   && (b.state == STATE_TO_FOOD || b.state == STATE_TO_HOME)) {
-                base = 0.02f;
+                base = 0.006f;
             }
             // Awake idle proximity — lounging near each other by day (sleepers are
             // already excluded above, so this is genuine waking company now).
             else if (a.state == STATE_IDLE && b.state == STATE_IDLE) {
-                base = 0.01f;
+                base = 0.003f;
             }
 
             if (base > 0.0f) {

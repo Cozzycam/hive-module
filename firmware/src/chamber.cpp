@@ -7,6 +7,20 @@
 #include <cstring>
 #include <cmath>
 
+// v152: friendship is activity-led — a shared moment of fun (zoomie, stack,
+// groom) nudges the bond both ways, each direction scaled by that conker's OWN
+// sociability (same rule as the proximity engine; loners barely bond). No-op on
+// satellites (bonds == nullptr).
+static inline float _bond_social_factor(const Conker& c) {
+    float f = (c.personality[PERS_SOCIAL_FREQUENCY] - Cfg::BOND_LONER_FLOOR) * Cfg::BOND_SOCIAL_GAIN;
+    return f < 0.0f ? 0.0f : (f > 1.5f ? 1.5f : f);
+}
+static inline void _bond_activity(Chamber& ch, const Conker& a, const Conker& b, float base) {
+    if (!ch.bonds) return;
+    ch.bonds->increment(a.id, b.id, base * _bond_social_factor(a));
+    ch.bonds->increment(b.id, a.id, base * _bond_social_factor(b));
+}
+
 void Chamber::init(ColonyState* col, bool with_queen) {
     colony = col;
     conker_count = 0;
@@ -321,6 +335,7 @@ void Chamber::_detect_proximity_interactions() {
                             joiner.has_target = false;
                             joiner.has_target_cell = false;
                             joiner.idle_ticks_remaining = 0;
+                            _bond_activity(*this, joiner, runner, Cfg::BOND_ACT_JOIN);
                             Serial.printf("[zoomies] %s joins %s's game\r\n",
                                           joiner.name, runner.name);
                             return;
@@ -371,6 +386,8 @@ void Chamber::_detect_proximity_interactions() {
                     b.has_target = false;
                     b.has_target_cell = false;
                     b.idle_ticks_remaining = 0;
+
+                    _bond_activity(*this, a, b, Cfg::BOND_ACT_ZOOMIE);
 
                     // Recruit more: a parade chains followers behind the
                     // tail; a chase sometimes picks up a third
@@ -479,6 +496,7 @@ void Chamber::_detect_proximity_interactions() {
                         }
                         b.anim_lean_dx = -a.anim_lean_dx;
                         b.anim_lean_dy = -a.anim_lean_dy;
+                        _bond_activity(*this, a, b, Cfg::BOND_ACT_GROOM);
                         return;
                     }
 
@@ -553,6 +571,7 @@ void Chamber::_detect_proximity_interactions() {
                     hopper.idle_ticks_remaining = g_rng.rand_int(60, 120);
                     hopper.interaction_cooldown = Cfg::INTERACTION_COOLDOWN_TICKS;
                     conkers[mount_on].interaction_cooldown = Cfg::INTERACTION_COOLDOWN_TICKS;
+                    _bond_activity(*this, hopper, conkers[mount_on], Cfg::BOND_ACT_STACK);
 
                     // Walk the full combined stack from true top to true ground
                     int true_top = top_of(hopper_i);

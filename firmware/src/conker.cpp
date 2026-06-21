@@ -1301,8 +1301,11 @@ void Conker::_tick_idle(Chamber& ch) {
             && anim_type == LG_ANIM_NONE && interaction_cooldown == 0) {
         // A full pantry frees time for play — but so does plain boredom: a
         // restless conker takes off even on an empty larder, just to burn it off.
-        float urge = ch.colony->play_surplus()
-                   + needs[NEED_BOREDOM] * Cfg::BOREDOM_PLAY_DRIVE;
+        // v152: boredom only drives play once it crosses the conker's own
+        // curiosity-set threshold (incurious ones let it ride longer).
+        float bored_urge = (needs[NEED_BOREDOM] >= _boredom_act_threshold())
+                         ? needs[NEED_BOREDOM] * Cfg::BOREDOM_PLAY_DRIVE : 0.0f;
+        float urge = ch.colony->play_surplus() + bored_urge;
         if (urge > 0.0f
                 && g_rng.rand_float() < Cfg::JOY_SPRINT_CHANCE * urge
                                         * (0.5f + personality[PERS_EXPLORATION])) {
@@ -1454,9 +1457,13 @@ void Conker::_update_needs(Chamber& ch, float dt) {
                 || (tired >= Cfg::TIRED_SLEEP_NIGHT && nightish))
             m = MOOD_SLEEPY;
     } else if (intent_need == NEED_BOREDOM) {
+        // v152: a conker reads "bored" at ITS OWN action threshold (curiosity-set),
+        // "restless" approaching it — so the mood matches what each one actually
+        // feels, not a one-size-fits-all line.
         float b = needs[NEED_BOREDOM];
-        if (b >= Cfg::BOREDOM_BORED_AT)         m = MOOD_BORED;
-        else if (b >= Cfg::BOREDOM_RESTLESS_AT) m = MOOD_RESTLESS;
+        float act = _boredom_act_threshold();
+        if (b >= act)              m = MOOD_BORED;
+        else if (b >= act * 0.6f)  m = MOOD_RESTLESS;
     } else if (intent_need == NEED_SOCIAL) {
         float s = needs[NEED_SOCIAL];
         if (s >= Cfg::SOCIAL_URGENT_AT)         m = MOOD_LONELY;
@@ -1488,6 +1495,16 @@ float Conker::_nap_threshold() const {
     float nappiness = 0.6f * (0.5f - personality[PERS_HARDINESS])
                     + 0.4f * (0.5f - personality[PERS_WORK_TEMPO]);   // -0.5..+0.5
     return Cfg::TIRED_SLEEP_ANY - Cfg::CHRONO_NAP_RANGE * nappiness;  // 0.55..0.85
+}
+
+// v152: how bored a conker must be before it bothers to act (play it off) — and
+// before it reads "bored". Curiosity is the dial, mirroring how hardiness sets
+// the nap threshold: exploration 0 → only at HIGH (0.80, lets it ride), 1 → LOW
+// (0.20, twitchy). So the incurious visibly stew while the curious keep busy.
+float Conker::_boredom_act_threshold() const {
+    float curiosity = personality[PERS_EXPLORATION];
+    return Cfg::BOREDOM_ACT_HIGH
+         - (Cfg::BOREDOM_ACT_HIGH - Cfg::BOREDOM_ACT_LOW) * curiosity;
 }
 
 // Should a sleeping conker wake this tick? Famine/hunger always rouses (a player
@@ -1632,9 +1649,11 @@ void Conker::_pick_idle_microstate(Chamber& ch) {
     has_target_cell = false;
 
     // Pirouette: a well-fed (or just restless) daytime idler sometimes
-    // twirls. The curious ones most of all.
-    float urge = ch.colony->play_surplus()
-               + needs[NEED_BOREDOM] * Cfg::BOREDOM_PLAY_DRIVE;
+    // twirls. The curious ones most of all. (v152: boredom drives it only past
+    // the conker's own curiosity-set action threshold.)
+    float bored_urge = (needs[NEED_BOREDOM] >= _boredom_act_threshold())
+                     ? needs[NEED_BOREDOM] * Cfg::BOREDOM_PLAY_DRIVE : 0.0f;
+    float urge = ch.colony->play_surplus() + bored_urge;
     if (urge > 0.0f && g_tod.phase == PHASE_DAY && !sleeping
             && g_rng.rand_float() < Cfg::PIROUETTE_CHANCE * urge
                                     * (0.5f + personality[PERS_EXPLORATION])) {
