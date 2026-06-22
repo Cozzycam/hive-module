@@ -37,8 +37,6 @@ const TAB_ICONS: Record<Tab, string> = {
 const GIFT_SEEN_KEY = 'hive_last_gift_seen_unix';
 // localStorage key: unix of the most recent critter discovery the user has seen.
 const DISCOVERY_SEEN_KEY = 'hive_last_discovery_seen_unix';
-// localStorage key: unix of the most recent "eggs dormant / at capacity" notice seen.
-const DORMANT_SEEN_KEY = 'hive_last_dormant_seen_unix';
 
 // Service worker registration. registerType is 'autoUpdate' (vite.config.ts), so
 // a new build activates and reloads on its own — no user-facing update prompt.
@@ -78,9 +76,7 @@ export function App() {
   const [discoverySeenUnix, setDiscoverySeenUnix] = useState<number>(
     () => Number(localStorage.getItem(DISCOVERY_SEEN_KEY) || 0)
   );
-  const [dormantSeenUnix, setDormantSeenUnix] = useState<number>(
-    () => Number(localStorage.getItem(DORMANT_SEEN_KEY) || 0)
-  );
+  const [dormantDismissed, setDormantDismissed] = useState(false);
 
   // Colony state managed here, provided via context
   const [colonyState, setColonyState] = useState<ColonyState>({
@@ -235,32 +231,19 @@ export function App() {
     }
   }, [latestDiscovery]);
 
-  // Newest "eggs lie dormant" event — the colony hit its population cap.
-  const latestDormant = useMemo<ColonyEvent | null>(() => {
-    let best: ColonyEvent | null = null;
-    for (const e of colonyState.events) {
-      if (e.type === 'colony_event' && e.data?.kind === 'eggs_dormant') {
-        if (!best || e.unix > best.unix) best = e;
-      }
-    }
-    return best;
-  }, [colonyState.events]);
+  // "Eggs lie dormant" — driven by the live snapshot flag (the colony is at its
+  // population cap with brood waiting). Using the snapshot rather than the one-shot
+  // colony_event makes this reliable: it shows whenever the colony is full, and
+  // re-arms once a slot frees and it fills again. (The event still drives the
+  // closed-app push + diary entry server-side.)
+  const eggsDormant = colonyState.snapshot?.population?.eggs_dormant ?? false;
 
   useEffect(() => {
-    if (latestDormant && localStorage.getItem(DORMANT_SEEN_KEY) === null) {
-      localStorage.setItem(DORMANT_SEEN_KEY, String(latestDormant.unix));
-      setDormantSeenUnix(latestDormant.unix);
-    }
-  }, [latestDormant]);
+    if (!eggsDormant) setDormantDismissed(false);  // re-arm when there's room again
+  }, [eggsDormant]);
 
-  const showDormantToast = !!latestDormant && latestDormant.unix > dormantSeenUnix;
-
-  const dismissDormant = useCallback(() => {
-    if (latestDormant) {
-      localStorage.setItem(DORMANT_SEEN_KEY, String(latestDormant.unix));
-      setDormantSeenUnix(latestDormant.unix);
-    }
-  }, [latestDormant]);
+  const showDormantToast = eggsDormant && !dormantDismissed;
+  const dismissDormant = useCallback(() => setDormantDismissed(true), []);
 
   // Module firmware: compare the latest published version to what the
   // connected colony reports, and offer a one-tap OTA (the ota_update command).
@@ -404,7 +387,7 @@ export function App() {
               {/* Population cap — eggs lie dormant until there's room */}
               {showDormantToast && (
                 <button
-                  onClick={() => { handleNavigate('diary'); dismissDormant(); }}
+                  onClick={dismissDormant}
                   style={{
                     flexShrink: 0,
                     margin: '0 12px 8px',
