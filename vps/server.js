@@ -298,8 +298,24 @@ app.post('/api/v1/colonies/:colony_id/snapshot', colonyAuth, (req, res) => {
   let parsed;
   try { parsed = JSON.parse(body); } catch { return res.status(400).json({ error: 'invalid json' }); }
 
+  // Detect the colony entering its population cap (eggs_dormant false -> true) by
+  // diffing against the previous snapshot, and push the notice. Snapshots arrive
+  // reliably with a valid clock, so this is robust where the one-shot firmware
+  // colony_event (emitted at boot, before NTP) is not.
+  let wasDormant = false;
+  try {
+    const prev = stmts.getSnapshot.get(colony_id);
+    if (prev && prev.last_snapshot)
+      wasDormant = !!(JSON.parse(prev.last_snapshot).population || {}).eggs_dormant;
+  } catch {}
+  const nowDormant = !!((parsed.population || {}).eggs_dormant);
+
   stmts.upsertColony.run(colony_id, body, parsed.now_unix || 0);
   res.json({ status: 'ok' });
+
+  if (nowDormant && !wasDormant) {
+    sendPushesForEvents(colony_id, [{ type: 'colony_event', data: { kind: 'eggs_dormant' } }]);
+  }
 });
 
 // POST /api/v1/colonies/:colony_id/events
