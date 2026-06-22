@@ -34,6 +34,7 @@ static constexpr uint8_t RTC_ADDR = 0x51;
 
 // ---- Global ----
 TimeOfDay g_tod;
+// g_warp_active is defined in main.cpp (declared extern in time_of_day.h)
 
 static uint32_t _last_ntp_sync_ms  = 0;
 static int      _prev_local_day    = -1;
@@ -862,22 +863,10 @@ void time_of_day_init() {
         g_tod.phase, g_tod.night_factor);
 }
 
-void time_of_day_tick() {
-    // Advance clock
-    if (_simulated_clock) {
-        uint32_t elapsed_ms = millis() - _sim_clock_base_ms;
-        g_tod.unix_time = _sim_clock_epoch + elapsed_ms / 1000;
-    } else if (g_tod.ntp_synced) {
-        // Re-read system time (kept in sync by SNTP) instead of
-        // incrementing — avoids drift from missed ticks.
-        time_t now;
-        time(&now);
-        g_tod.unix_time = (uint32_t)now;
-    } else {
-        g_tod.unix_time++;
-    }
-
-    // Compute local time with BST
+// Recompute local time / day rollover / phase from the current g_tod.unix_time.
+// Shared by the real-time tick and the time-warp advance so both derive the day
+// exactly the same way — only the clock SOURCE differs.
+static void _recompute_from_unix() {
     int y, m, d, h, mi;
     _unix_to_ymd(g_tod.unix_time, y, m, d, h, mi);
     g_tod.year = y;
@@ -897,10 +886,41 @@ void time_of_day_tick() {
         Serial.printf("[tod] day rollover -> %04d-%02d-%02d\r\n", ly, lm, ld);
     }
 
-    // NTP resync
+    _update_phase();
+}
+
+void time_of_day_tick() {
+    // Under time-warp the clock is driven by the tick batch (time_of_day_advance_sim),
+    // so the once-per-real-second tick yields and NTP stays suspended.
+    if (g_warp_active) return;
+
+    // Advance clock
+    if (_simulated_clock) {
+        uint32_t elapsed_ms = millis() - _sim_clock_base_ms;
+        g_tod.unix_time = _sim_clock_epoch + elapsed_ms / 1000;
+    } else if (g_tod.ntp_synced) {
+        // Re-read system time (kept in sync by SNTP) instead of
+        // incrementing — avoids drift from missed ticks.
+        time_t now;
+        time(&now);
+        g_tod.unix_time = (uint32_t)now;
+    } else {
+        g_tod.unix_time++;
+    }
+
+    // NTP resync (before recompute so a corrected clock is reflected this tick)
     if (!_simulated_clock && millis() - _last_ntp_sync_ms > (uint32_t)NTP_RESYNC_HOURS * 3600000UL) {
         _ntp_sync();
     }
 
-    _update_phase();
+    _recompute_from_unix();
+}
+
+void time_of_day_advance_sim(float dt_sec) {
+    // Advance the sim clock by whole seconds, carrying the sub-second remainder so
+    // many fast warp ticks (dt < 1s) still march unix_time forward smoothly.
+    static float frac = 0.0f;
+    frac += dt_sec;
+    while (frac >= 1.0f) { g_tod.unix_time++; frac -= 1.0f; }
+    _recompute_from_unix();
 }

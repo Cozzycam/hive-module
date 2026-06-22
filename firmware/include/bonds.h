@@ -40,6 +40,20 @@ public:
                                                     // (was 0.999 ≈ too gentle to ever counter the nightly
                                                     // huddle, which saturated everyone to best friends)
     static constexpr int   DECAY_INTERVAL = 1000;   // ticks between decay passes
+    // v154: preferential reinforcement. A shared moment adds more to an established
+    // bond than to a near-stranger's — accrual is scaled by (PREF_FLOOR + (1-PREF_FLOOR)*strength).
+    // Strangers gain at the floor rate; best friends gain ~full, so a few friendships pull ahead.
+    static constexpr float PREF_FLOOR = 0.30f;
+    // v157: soft close-friend cap. A conker's first CLOSE_FRIEND_CAP bonds to reach
+    // CLOSE_THRESHOLD lock in as real friends and keep growing to best-friend strength;
+    // once those slots are full, further pairings accrue at OVERCAP_SCALE so they stay
+    // weak acquaintances. This caps how many CLOSE friends a conker has (not how many it
+    // knows) — so a small chamber forms a few real friendships instead of one big clique,
+    // while the chosen few can still reach 1.0. Slots are dynamic: if a friend fades below
+    // the threshold (unmaintained, decays), a slot frees up and a new friendship can rise.
+    static constexpr int   CLOSE_FRIEND_CAP = 3;
+    static constexpr float CLOSE_THRESHOLD  = 0.40f;
+    static constexpr float OVERCAP_SCALE    = 0.08f;
 
     void init();
 
@@ -77,6 +91,7 @@ private:
 
     int _find(uint32_t owner, uint32_t target) const;
     int _count_for_owner(uint32_t owner) const;
+    float _strength_sum_for_owner(uint32_t owner) const;  // total bond mass an owner holds
     int _weakest_for_owner(uint32_t owner) const;
     // Weakest UNFORMED bond for an owner, or -1 if every slot is a formed
     // friendship. Used for cap eviction: never sacrifice a real friendship to

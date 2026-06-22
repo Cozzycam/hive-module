@@ -22,6 +22,13 @@ int BondStore::_count_for_owner(uint32_t owner) const {
     return n;
 }
 
+float BondStore::_strength_sum_for_owner(uint32_t owner) const {
+    float s = 0.0f;
+    for (int i = 0; i < _count; i++)
+        if (_pool[i].owner == owner) s += _pool[i].strength;
+    return s;
+}
+
 int BondStore::_weakest_for_owner(uint32_t owner) const {
     int weakest = -1;
     float min_str = 2.0f;
@@ -57,17 +64,32 @@ bool BondStore::increment(uint32_t owner, uint32_t target, float amount) {
     if (owner == 0 || target == 0 || owner == target) return false;
 
     int idx = _find(owner, target);
+    float prev = (idx >= 0) ? _pool[idx].strength : 0.0f;
+
+    // v157: soft close-friend cap. If this owner's close-friend slots are already
+    // full and this pairing isn't one of them, throttle hard so it stays a weak
+    // acquaintance — the colony forms a few real friendships, not one big clique.
+    float cap_scale = 1.0f;
+    if (prev < CLOSE_THRESHOLD) {
+        int close = 0;
+        for (int i = 0; i < _count; i++)
+            if (_pool[i].owner == owner && _pool[i].target != target
+                    && _pool[i].strength >= CLOSE_THRESHOLD) close++;
+        if (close >= CLOSE_FRIEND_CAP) cap_scale = OVERCAP_SCALE;
+    }
+    // Preferential reinforcement (v154): the same shared moment counts for more
+    // between established friends than near-strangers (see PREF_FLOOR).
+    float eff = amount * (PREF_FLOOR + (1.0f - PREF_FLOOR) * prev) * cap_scale;
+
     if (idx >= 0) {
-        float prev = _pool[idx].strength;
-        _pool[idx].strength += amount;
+        _pool[idx].strength = prev + eff;
         if (_pool[idx].strength > 1.0f) _pool[idx].strength = 1.0f;
         _pool[idx].touched = true;  // reinforced this window — spared from the wipe
         bool crossed = (prev < FORM_THRESHOLD && _pool[idx].strength >= FORM_THRESHOLD);
         if (crossed) _pool[idx].formed = true;
         return crossed;
     }
-
-    // New bond — check caps
+    // New bond (prev == 0).
     if (_count >= POOL_CAP) return false;
     if (_count_for_owner(owner) >= PER_OWNER_CAP) {
         // Full: make room by evicting the weakest UNFORMED bond. Never sacrifice
@@ -78,8 +100,8 @@ bool BondStore::increment(uint32_t owner, uint32_t target, float amount) {
         else return false;
     }
 
-    _pool[_count++] = {owner, target, amount, amount >= FORM_THRESHOLD, true};
-    return (amount >= FORM_THRESHOLD);
+    _pool[_count++] = {owner, target, eff, eff >= FORM_THRESHOLD, true};
+    return (eff >= FORM_THRESHOLD);
 }
 
 void BondStore::set(uint32_t owner, uint32_t target, float strength) {

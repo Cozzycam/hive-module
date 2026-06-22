@@ -36,6 +36,9 @@ Thumbs.db
 /com4*.csv
 /pre-change_*.csv
 /post-change_*.csv
+# Time-warp tuning pulls (warp_run_*, warp_validate_*, v1NN_comX_*)
+/warp_*.csv
+/v1*_com*.csv
 /journal_dump.txt
 
 # WiFi credentials — never commit

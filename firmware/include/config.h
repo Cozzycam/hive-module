@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 152;
+constexpr uint32_t FW_VERSION = 158;
 
 namespace Cfg {
 
@@ -284,13 +284,15 @@ constexpr uint8_t NEEDS_ACTIVE_MASK        = 0x07;  // bit0 boredom + bit1 socia
 // personality drive (tempo+exploration+social) scales the rise, so a busy
 // curious social conker reaches full in ~12-15 min while a placid loner
 // barely climbs in an hour. Average personality ≈ full in ~25 min.
-constexpr float BOREDOM_RISE_PER_SEC       = 1.0f / 1500.0f;
+constexpr float BOREDOM_RISE_PER_SEC       = 1.0f / 1000.0f;  // v158: ~17min uninterrupted to full
 constexpr float BOREDOM_NIGHT_DECAY_PER_SEC = 1.0f / 600.0f;  // winds down by dusk/night
                                                              // so it never competes with sleep
-constexpr float BOREDOM_PLAY_DRAIN_PER_SEC = 0.06f;  // a play bout is RELIEF, not a reset —
-                                                     // a short zoomie sheds ~0.2-0.4, so boredom
-                                                     // can accumulate across a day and actually bite
-                                                     // (was 0.30 = wiped to 0 instantly, so it never did)
+constexpr float BOREDOM_PLAY_DRAIN_PER_SEC = 0.02f;  // v158: a play bout is gentle RELIEF, not a reset.
+                                                     // The colony plays constantly (surplus-driven), and at
+                                                     // 0.06 each bout still crashed boredom to ~0 before it
+                                                     // could build; at 0.02 boredom accumulates between bouts
+                                                     // and climbs past the ~0.45 it needs to win the mood
+                                                     // arbiter vs tiredness, so restless/bored actually show.
 constexpr float BOREDOM_WORK_RISE_SCALE    = 0.4f;   // rote work is mildly stimulating
 constexpr float BOREDOM_RESTLESS_AT        = 0.55f;  // legacy fixed mood thresholds — superseded
 constexpr float BOREDOM_BORED_AT           = 0.85f;  // by the per-conker _boredom_act_threshold (v152)
@@ -456,5 +458,19 @@ constexpr int   INTERACTION_COOLDOWN_TICKS = 40;    // ~5s at 8 tps
 constexpr int MAX_CONKERS  = 200;
 constexpr int MAX_BROOD      = 100;
 constexpr int MAX_FOOD_PILES = 64;
+
+// ---- Time-warp tuning mode (serial: `warp on | warp <hours> | warp off`) ----
+// Runs the sim UNTHROTTLED at a FIXED dt-per-tick equal to the 8 tps reference
+// (WARP_DT), advancing the day/night clock in lockstep. A warped run is therefore
+// byte-identical to a real-time 8 tps run — needs (dt-driven) and bonds/movement
+// (tick-driven) keep the exact same per-sim-day relationship they have at 8 tps,
+// so there is zero distortion; it just finishes in minutes instead of a real day.
+// Telemetry sim-gates (samples every 10 SIM-seconds) so a warped day fills the
+// CSV like a real one. NTP is suspended and brood-stage/WiFi-push clocks (millis-
+// based) do NOT advance under warp — this is a needs/mood/bond tuning instrument.
+constexpr float    WARP_DT             = 1.0f / 8.0f;  // sim-seconds advanced per warp tick (= 8 tps)
+constexpr int      WARP_TICKS_PER_LOOP = 80;           // ~10 sim-s/loop → serial + WDT stay responsive
+constexpr uint32_t WARP_RENDER_MS      = 250;          // throttle the display so SPI isn't the bottleneck
+constexpr float    WARP_DEFAULT_HOURS  = 24.0f;        // `warp on` runs one full day, then auto-stops
 
 } // namespace Cfg

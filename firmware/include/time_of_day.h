@@ -38,6 +38,14 @@ void time_of_day_init();
 // Call once per second from main loop. Updates g_tod.
 void time_of_day_tick();
 
+// Time-warp: advance the sim clock by dt_sec (driven from the tick batch, not
+// wall-clock or NTP). Used by `warp` mode to run a day in minutes.
+void time_of_day_advance_sim(float dt_sec);
+
+// True while a `warp` run is in progress. When set, time_of_day_tick() yields the
+// clock to the warp batch and NTP resync is suspended.
+extern bool g_warp_active;
+
 // Recompute sunrise/sunset for current day. Called internally on
 // day rollover and after NTP sync.
 void time_of_day_recompute_sun();

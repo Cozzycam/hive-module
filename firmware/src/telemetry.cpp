@@ -63,6 +63,14 @@ void TelemetryLog::_dated_path(const char* prefix, char* buf, size_t buflen) {
 void TelemetryLog::tick(const Chamber& ch, uint16_t module_id) {
     if (!_enabled || !_ready) return;
     if (sd_card_state() != SD_OK) return;
+    if (g_warp_active) {
+        // Sim-gate: sample every 10 SIM-seconds so a warped day fills the CSV at
+        // the same density a real day would (wall-clock barely moves under warp).
+        if (g_tod.unix_time - _last_unix < TELEMETRY_INTERVAL_MS / 1000) return;
+        _last_unix = g_tod.unix_time;
+        _sample(ch, module_id);
+        return;
+    }
     uint32_t now = millis();
     if (now - _last_ms < TELEMETRY_INTERVAL_MS) return;
     _last_ms = now;
@@ -72,6 +80,12 @@ void TelemetryLog::tick(const Chamber& ch, uint16_t module_id) {
 void TelemetryLog::tick_bonds(const BondStore& bs, ConkerRegistry& reg, uint16_t module_id) {
     if (!_enabled || !_ready) return;
     if (sd_card_state() != SD_OK) return;
+    if (g_warp_active) {
+        if (g_tod.unix_time - _last_bonds_unix < BONDS_INTERVAL_MS / 1000) return;
+        _last_bonds_unix = g_tod.unix_time;
+        _sample_bonds(bs, reg, module_id);
+        return;
+    }
     uint32_t now = millis();
     if (now - _last_bonds_ms < BONDS_INTERVAL_MS) return;
     _last_bonds_ms = now;

@@ -113,6 +113,10 @@ static unsigned long tick_interval_ms() {
     return 1000 / SPEED_LEVELS[speed_index];
 }
 
+// -- Time-warp tuning mode (see config.h; `warp` serial cmd) ----------
+bool g_warp_active = false;             // declared extern in time_of_day.h
+static uint32_t g_warp_stop_unix = 0;   // sim-time at which warp auto-stops
+
 // -- Timing ----------------------------------------------------------
 
 static unsigned long last_tick_ms = 0;
@@ -425,6 +429,33 @@ static void process_serial_line(const char* line) {
             Serial.printf("  id=%lu %s (role=%d pioneer=%d)\r\n",
                 (unsigned long)recs[i].id, recs[i].name,
                 recs[i].role, recs[i].is_pioneer);
+        }
+    } else if (strncmp(line, "warp", 4) == 0 && (line[4] == '\0' || line[4] == ' ')) {
+        const char* arg = line + 4;
+        while (*arg == ' ') arg++;
+        if (strcmp(arg, "off") == 0) {
+            g_warp_active = false;
+            last_tick_ms = millis();   // resync the wall-clock scheduler
+            last_frame_ms = millis();
+            Serial.printf("[warp] OFF — sim clock at local %02d:%02d (phase=%d)\r\n",
+                          g_tod.local_hour, g_tod.local_minute, g_tod.phase);
+        } else if (*arg == '\0' || strcmp(arg, "status") == 0) {
+            Serial.printf("[warp] %s | sim local %02d:%02d phase=%d nf=%.2f | dt=%.3fs %d ticks/loop\r\n",
+                g_warp_active ? "ON" : "off", g_tod.local_hour, g_tod.local_minute,
+                g_tod.phase, g_tod.night_factor, Cfg::WARP_DT, Cfg::WARP_TICKS_PER_LOOP);
+            if (g_warp_active)
+                Serial.printf("[warp] stops at sim-unix %lu (now %lu, ~%lu sim-min left)\r\n",
+                    (unsigned long)g_warp_stop_unix, (unsigned long)g_tod.unix_time,
+                    (unsigned long)((g_warp_stop_unix - g_tod.unix_time) / 60));
+        } else {
+            float hours = (strcmp(arg, "on") == 0) ? Cfg::WARP_DEFAULT_HOURS : (float)atof(arg);
+            if (hours <= 0.0f) hours = Cfg::WARP_DEFAULT_HOURS;
+            g_warp_stop_unix = g_tod.unix_time + (uint32_t)(hours * 3600.0f);
+            g_warp_active = true;
+            Serial.printf("[warp] ON — warping %.1f sim-hours from local %02d:%02d. "
+                          "Telemetry sim-gated; brood/WiFi-push paused; NTP suspended. "
+                          "`warp off` to stop early.\r\n",
+                          hours, g_tod.local_hour, g_tod.local_minute);
         }
     } else if (strcmp(line, "dump telemetry bonds") == 0) {
         g_telemetry.dump_bonds_today();
@@ -987,39 +1018,70 @@ void loop() {
             _was_gathering = local_hold;
         }
 
-        // Sim ticks — run multiple if at high speed
-        while (now - last_tick_ms >= interval) {
-            last_tick_ms += interval;
-
-            uint32_t sim_now = millis();
-            float dt = (sim_now - last_sim_ms) / 1000.0f;
-            if (dt > 1.0f) dt = 1.0f;  // cap dt to avoid jumps
-            last_sim_ms = sim_now;
-
-            // Wire gather state into chamber before tick
-            sim.coordinator.chamber.gather_active = sim.gathering;
+        // Sim ticks
+        if (g_warp_active) {
+            // Time-warp: a batch of fixed-dt ticks with the day/night clock advanced
+            // in lockstep — identical to an 8 tps real-time run, just unthrottled.
+            // Telemetry runs inside the batch (sim-gated) so it samples every 10
+            // sim-seconds; serial/topology/WDT are serviced once per batch (~10 sim-s).
+            last_tick_ms = now;  // keep the wall-clock scheduler current for warp-off
+            sim.coordinator.chamber.gather_active  = sim.gathering;
             sim.coordinator.chamber.gather_is_exit = sim.gather_is_exit;
-            sim.coordinator.chamber.gather_x = sim.gather_x;
-            sim.coordinator.chamber.gather_y = sim.gather_y;
+            sim.coordinator.chamber.gather_x       = sim.gather_x;
+            sim.coordinator.chamber.gather_y       = sim.gather_y;
+            for (int i = 0; i < Cfg::WARP_TICKS_PER_LOOP; i++) {
+                time_of_day_advance_sim(Cfg::WARP_DT);
+                sim.tick(Cfg::WARP_DT);
+                g_telemetry.tick(sim.coordinator.chamber, topology_my_id());
+                g_telemetry.tick_bonds(sim.coordinator.bonds, sim.coordinator.registry, topology_my_id());
+                if (g_tod.unix_time >= g_warp_stop_unix) {
+                    g_warp_active = false;
+                    last_frame_ms = now;
+                    Serial.printf("[warp] target reached — sim clock at local %02d:%02d, warp OFF\r\n",
+                                  g_tod.local_hour, g_tod.local_minute);
+                    break;
+                }
+            }
+            yield();  // feed the loop-task watchdog between batches
+        } else {
+            // Run multiple ticks if at high speed
+            while (now - last_tick_ms >= interval) {
+                last_tick_ms += interval;
 
-            sim.tick(dt);
+                uint32_t sim_now = millis();
+                float dt = (sim_now - last_sim_ms) / 1000.0f;
+                if (dt > 1.0f) dt = 1.0f;  // cap dt to avoid jumps
+                last_sim_ms = sim_now;
 
-            // Prevent spiral-of-death
-            if (now - last_tick_ms > interval * 4) {
-                last_tick_ms = now;
-                break;
+                // Wire gather state into chamber before tick
+                sim.coordinator.chamber.gather_active  = sim.gathering;
+                sim.coordinator.chamber.gather_is_exit = sim.gather_is_exit;
+                sim.coordinator.chamber.gather_x       = sim.gather_x;
+                sim.coordinator.chamber.gather_y       = sim.gather_y;
+
+                sim.tick(dt);
+
+                // Prevent spiral-of-death
+                if (now - last_tick_ms > interval * 4) {
+                    last_tick_ms = now;
+                    break;
+                }
             }
         }
     }
 
     // Temporary tuning telemetry — sample local conkers' mood/needs to SD
-    // (self-times to 10s; runs on both queen and satellite).
-    g_telemetry.tick(sim.coordinator.chamber, topology_my_id());
-    // Parallel bond-strength stream (self-times to 30s).
-    g_telemetry.tick_bonds(sim.coordinator.bonds, sim.coordinator.registry, topology_my_id());
+    // (self-times to 10s; runs on both queen and satellite). Under warp this is
+    // driven inside the tick batch above (sim-gated), so skip the wall-clock call.
+    if (!g_warp_active) {
+        g_telemetry.tick(sim.coordinator.chamber, topology_my_id());
+        // Parallel bond-strength stream (self-times to 30s).
+        g_telemetry.tick_bonds(sim.coordinator.bonds, sim.coordinator.registry, topology_my_id());
+    }
 
-    // Render at ~30fps
-    if (now - last_frame_ms >= 33) {
+    // Render at ~30fps (throttled harder under warp so the SPI flush isn't the bottleneck)
+    uint32_t frame_iv = g_warp_active ? Cfg::WARP_RENDER_MS : 33;
+    if (now - last_frame_ms >= frame_iv) {
         last_frame_ms = now;
 
         static Event evt_buf[64];

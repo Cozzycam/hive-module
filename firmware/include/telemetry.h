@@ -43,8 +43,10 @@ private:
 
     bool     _enabled       = true;
     bool     _ready         = false;   // SD mounted + dir present
-    uint32_t _last_ms       = 0;
-    uint32_t _last_bonds_ms = 0;
+    uint32_t _last_ms         = 0;
+    uint32_t _last_bonds_ms   = 0;
+    uint32_t _last_unix       = 0;   // sim-time gate under time-warp (needs)
+    uint32_t _last_bonds_unix = 0;   // sim-time gate under time-warp (bonds)
 
     void _dated_path(const char* prefix, char* buf, size_t buflen);
     void _sample(const Chamber& ch, uint16_t module_id);
