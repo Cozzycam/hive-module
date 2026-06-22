@@ -316,6 +316,12 @@ void Conker::tick(Chamber& ch, float dt) {
         }
     }
 
+    // Past the sleeping branches above, this conker is awake. A lingering snooze
+    // sprite here is stale (e.g. blankslate clears `sleeping` but not the anim, or
+    // any wake path that missed it) — drop it so she doesn't sleep-walk. SNOOZE is
+    // a persistent-state anim (no anim_remaining_ticks), so nothing else clears it.
+    if (anim_type == LG_ANIM_SNOOZE) anim_type = LG_ANIM_NONE;
+
     // Animation freeze: skip movement and behavior dispatch while animating
     if (anim_remaining_ticks > 0) {
         anim_remaining_ticks--;
