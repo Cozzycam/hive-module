@@ -37,6 +37,8 @@ const TAB_ICONS: Record<Tab, string> = {
 const GIFT_SEEN_KEY = 'hive_last_gift_seen_unix';
 // localStorage key: unix of the most recent critter discovery the user has seen.
 const DISCOVERY_SEEN_KEY = 'hive_last_discovery_seen_unix';
+// localStorage key: unix of the most recent "eggs dormant / at capacity" notice seen.
+const DORMANT_SEEN_KEY = 'hive_last_dormant_seen_unix';
 
 // Service worker registration. registerType is 'autoUpdate' (vite.config.ts), so
 // a new build activates and reloads on its own — no user-facing update prompt.
@@ -75,6 +77,9 @@ export function App() {
   );
   const [discoverySeenUnix, setDiscoverySeenUnix] = useState<number>(
     () => Number(localStorage.getItem(DISCOVERY_SEEN_KEY) || 0)
+  );
+  const [dormantSeenUnix, setDormantSeenUnix] = useState<number>(
+    () => Number(localStorage.getItem(DORMANT_SEEN_KEY) || 0)
   );
 
   // Colony state managed here, provided via context
@@ -230,6 +235,33 @@ export function App() {
     }
   }, [latestDiscovery]);
 
+  // Newest "eggs lie dormant" event — the colony hit its population cap.
+  const latestDormant = useMemo<ColonyEvent | null>(() => {
+    let best: ColonyEvent | null = null;
+    for (const e of colonyState.events) {
+      if (e.type === 'colony_event' && e.data?.kind === 'eggs_dormant') {
+        if (!best || e.unix > best.unix) best = e;
+      }
+    }
+    return best;
+  }, [colonyState.events]);
+
+  useEffect(() => {
+    if (latestDormant && localStorage.getItem(DORMANT_SEEN_KEY) === null) {
+      localStorage.setItem(DORMANT_SEEN_KEY, String(latestDormant.unix));
+      setDormantSeenUnix(latestDormant.unix);
+    }
+  }, [latestDormant]);
+
+  const showDormantToast = !!latestDormant && latestDormant.unix > dormantSeenUnix;
+
+  const dismissDormant = useCallback(() => {
+    if (latestDormant) {
+      localStorage.setItem(DORMANT_SEEN_KEY, String(latestDormant.unix));
+      setDormantSeenUnix(latestDormant.unix);
+    }
+  }, [latestDormant]);
+
   // Module firmware: compare the latest published version to what the
   // connected colony reports, and offer a one-tap OTA (the ota_update command).
   const [latestFw, setLatestFw] = useState<number | null>(null);
@@ -366,6 +398,29 @@ export function App() {
                   }}
                 >
                   {'\u{1F381}'} A neighbouring kingdom sent a care package! Tap to see it.
+                </button>
+              )}
+
+              {/* Population cap — eggs lie dormant until there's room */}
+              {showDormantToast && (
+                <button
+                  onClick={() => { handleNavigate('diary'); dismissDormant(); }}
+                  style={{
+                    flexShrink: 0,
+                    margin: '0 12px 8px',
+                    padding: '12px 16px',
+                    background: HIVE.accent,
+                    color: HIVE.white,
+                    border: 'none',
+                    borderRadius: 12,
+                    fontSize: SIZES.sm,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                    textAlign: 'left',
+                  }}
+                >
+                  {'\u{1F95A}'} Your eggs lie dormant for now — more space is needed.
                 </button>
               )}
 

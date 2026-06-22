@@ -204,6 +204,33 @@ void Coordinator::_aggregate_colony_stats() {
     colony.brood_larva = seeds;  // legacy alias
     colony.brood_pupa  = 0;
 
+    // Pooled population cap: POP_CAP_PER_MODULE living workers per connected
+    // (non-foreign) module. Only the queen lays/hatches, so this is computed and
+    // enforced here; the chamber gates hatching on colony.population >= pop_cap.
+    int modules = 1;
+#ifdef ARDUINO
+    if (is_queen()) {
+        for (int f = 0; f < FACE_COUNT; f++)
+            if (topology_neighbour(static_cast<Face>(f)).present && !foreign_face[f]) modules++;
+    }
+#endif
+    colony.pop_cap = (uint16_t)(Cfg::POP_CAP_PER_MODULE * modules);
+
+    bool dormant = (colony.population >= colony.pop_cap)
+                && (colony.brood_egg + colony.brood_seed > 0);
+    if (dormant && !colony.eggs_dormant) {
+        // Rising edge — journal a colony event so the app can surface the notice.
+        JournalEntry je = {};
+        je.tick = 0;
+        je.unix_time = g_tod.unix_time;
+        je.type = JEVT_COLONY_EVENT;
+        je.lilguy_id = 0;
+        je.colony_event.kind = COLONY_EGGS_DORMANT;
+        je.colony_event.module_id = 0;
+        journal.emit(je);
+    }
+    colony.eggs_dormant = dormant;
+
     float queen_reserves = 0.0f;
     if (chamber.has_queen && chamber.queen_obj.alive)
         queen_reserves = chamber.queen_obj.reserves;

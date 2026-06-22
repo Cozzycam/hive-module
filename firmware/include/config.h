@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 159;
+constexpr uint32_t FW_VERSION = 160;
 
 namespace Cfg {
 
@@ -455,6 +455,13 @@ constexpr int   FOOD_SHARE_DURATION_TICKS  = 12;   // ~1.5s at 8 tps
 constexpr int   INTERACTION_COOLDOWN_TICKS = 40;    // ~5s at 8 tps
 
 // ---- Pool limits ----
+// ---- Population cap (BREEDING limit — distinct from the render array below) ----
+// The colony stops HATCHING once it reaches POP_CAP_PER_MODULE living workers per
+// connected module (10 solo; +10 per docked module — pooled colony-wide). Ready
+// brood then lie dormant and hatch the moment a slot frees up (a worker dies, or a
+// module is added). On-screen rendering stays uncapped (MAX_CONKERS, below).
+constexpr int POP_CAP_PER_MODULE = 10;
+
 constexpr int MAX_CONKERS  = 200;
 constexpr int MAX_BROOD      = 100;
 constexpr int MAX_FOOD_PILES = 64;

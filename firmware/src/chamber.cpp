@@ -64,6 +64,12 @@ void Chamber::tick(float dt) {
         BroodTransition result = brood[i].tick(dt);
         switch (result) {
         case BROOD_HATCH: {
+            // Pooled population cap: hold the brood dormant if the colony is full
+            // (pop_cap = 10 × connected modules). It stays a tended, ready brood and
+            // hatches the moment a slot frees up (a worker dies, or a module docks).
+            if (colony->population >= colony->pop_cap) {
+                break;  // leave brood in place; re-checked next tick
+            }
             bool founder = colony->total_workers_born < Cfg::FOUNDER_COHORT_SIZE;
             int8_t bx = brood[i].x, by = brood[i].y;
             uint32_t brood_id = brood[i].id;

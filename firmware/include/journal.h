@@ -77,6 +77,7 @@ enum ColonyEventKind : uint8_t {
     COLONY_FOREIGN_QUEEN      = 3,   // met a neighbouring sovereign colony
     COLONY_GIFT_SENT          = 4,   // sent a care package across the border
     COLONY_GIFT_RECEIVED      = 5,   // a care package arrived from next door
+    COLONY_EGGS_DORMANT       = 6,   // hit the population cap — eggs lie dormant
 };
 
 // ---- EventJournal ----

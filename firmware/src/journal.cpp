@@ -41,6 +41,7 @@ static const char* COLONY_EVT_NAMES[] = {
     "founded", "module_connected", "module_disconnected",
     "met_a_neighbouring_kingdom",
     "sent_a_care_package", "care_package_from_neighbours",
+    "eggs_dormant",
 };
 
 // ---- Path helpers ----

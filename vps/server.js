@@ -242,6 +242,9 @@ function notificationFor(ev) {
   if (ev.type === 'colony_event' && ev.data && ev.data.kind === 'care_package_from_neighbours') {
     return { body: 'A neighbouring kingdom sent a care package!', tag: 'gift' };
   }
+  if (ev.type === 'colony_event' && ev.data && ev.data.kind === 'eggs_dormant') {
+    return { body: 'Your eggs lie dormant for now — more space is needed.', tag: 'eggs_dormant' };
+  }
   return null;
 }
 

@@ -115,6 +115,8 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
     JsonObject pop = doc["population"].to<JsonObject>();
     pop["alive"] = coord.colony.population;
     pop["dead_total"] = coord.registry.manifest().total_workers_died;
+    pop["cap"] = coord.colony.pop_cap;                 // 10 × connected modules
+    pop["eggs_dormant"] = coord.colony.eggs_dormant;   // at cap with brood waiting
     JsonObject by_role = pop["by_role"].to<JsonObject>();
     by_role["queen"] = coord.chamber.has_queen ? 1 : 0;
     int conkers_count = coord.registry.living_count();

@@ -47,6 +47,8 @@ export interface Challenge {
 export interface Population {
   alive: number;
   dead_total: number;
+  cap?: number;            // population cap = 10 × connected modules
+  eggs_dormant?: boolean;  // at cap with brood waiting — eggs lie dormant
   by_role: {
     queen: number;
     conker: number;   // total workers = conker; founder is a tag, not a separate count

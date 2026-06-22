@@ -13,6 +13,8 @@ struct ColonyState {
     uint16_t brood_pupa          = 0;   // always 0 (pupa stage removed)
     uint16_t total_workers_born  = 0;
     uint16_t worker_census       = 0;   // authoritative headcount (births - deaths)
+    uint16_t pop_cap             = Cfg::POP_CAP_PER_MODULE;  // 10 × connected modules; hatch gate
+    bool     eggs_dormant        = false;               // at cap with brood waiting (app notice)
     float    peak_pressure       = 0.0f;
     int      recovery_boost_remaining = 0;
 
