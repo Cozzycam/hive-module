@@ -76,10 +76,10 @@ enum PersonalityDim : uint8_t {
     PERS_EXPLORATION = 1,
     PERS_ROUTE_STICKINESS = 2,
     PERS_SOCIAL_FREQUENCY = 3,
-    PERS_FOOD_PREFERENCE = 4,
+    PERS_APPETITE = 4,      // (was food_preference) eats sooner; hoards vs shares food
     PERS_HARDINESS = 5,
-    PERS_LEARNING_RATE = 6,
-    PERS_RESERVE = 7,
+    PERS_PLAYFULNESS = 6,   // (was learning_rate) loves play for its own sake
+    PERS_BRAVERY = 7,       // (was reserve) ventures out & leads vs timid/stays-near-queen
     PERS_COUNT = 8
 };
 
@@ -208,6 +208,7 @@ struct Conker {
     float   _need_salience(uint8_t need, Chamber& ch) const;  // context-gated salience
     float   _nap_threshold() const;          // chronotype: dozy ones nap sooner (even by day)
     float   _boredom_act_threshold() const;  // curiosity: curious ones act on boredom sooner (v152)
+    float   _play_desire(Chamber& ch) const; // unified driven play urge (boredom×playfulness + surplus)
     bool    _should_wake(Chamber& ch) const; // night sleeps hold to morning; naps are a short top-up
     bool    _wants_company_wake(Chamber& ch) const; // v150: friendly + lonely + alone → rouse to go huddle
     void    _tick_seek_company(Chamber& ch);        // v150: groggy drift to nearest friend, then resettle

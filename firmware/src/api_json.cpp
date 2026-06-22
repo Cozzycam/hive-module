@@ -188,9 +188,10 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
         pers["exploration"] = r.personality[1];
         pers["route_stickiness"] = r.personality[2];
         pers["social_frequency"] = r.personality[3];
-        pers["food_preference"] = r.personality[4];
+        pers["appetite"] = r.personality[4];
         pers["hardiness"] = r.personality[5];
-        pers["learning_rate"] = r.personality[6];
+        pers["playfulness"] = r.personality[6];
+        pers["bravery"] = r.personality[7];
         // Formed bonds: who this conker is close to, strongest first
         {
             BondEntry bonds[BondStore::PER_OWNER_CAP];

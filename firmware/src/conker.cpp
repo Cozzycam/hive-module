@@ -68,7 +68,7 @@ void Conker::init(int8_t px, int8_t py, Role c, bool pioneer) {
     // Personality: centred random (triangular distribution around 0.5)
     for (int i = 0; i < PERS_COUNT; i++)
         personality[i] = (g_rng.rand_float() + g_rng.rand_float()) * 0.5f;
-    personality[PERS_RESERVE] = 0.0f;  // reserved for Phase 4+
+    // (all 8 dims now randomized — bravery/playfulness/appetite are live, no reserve)
 
     role = ROLE_CONKER;
     is_pioneer = pioneer;  // legacy, always false for new conkers
@@ -500,10 +500,11 @@ void Conker::_pick_task(Chamber& ch) {
     // ---- Hunger-driven eating ----
     // Probability ramps with hunger level; at 61+ it's top priority
     {
-        float eat_chance = 0.0f;
-        if (hunger > 60.0f)      eat_chance = 1.0f;
-        else if (hunger > 40.0f) eat_chance = 0.60f;
-        else if (hunger > 20.0f) eat_chance = 0.15f;
+        // v161: hunger drives eating, scaled by APPETITE — gluttons eat sooner,
+        // ascetics hold out longer. Driven ramp; the roll is only timing jitter.
+        float eat_floor = 35.0f - 25.0f * personality[PERS_APPETITE];  // ~10 (glutton)..35 (ascetic); avg≈22 ~ old
+        float eat_chance = (hunger - eat_floor) / 40.0f;
+        if (eat_chance > 1.0f) eat_chance = 1.0f;
 
         if (eat_chance > 0.0f && ch.has_queen
                 && col->food_store >= Cfg::WORKER_MEAL_COST
@@ -762,7 +763,7 @@ void Conker::_do_to_food(Chamber& ch) {
                 anim_lean_dx = 0; anim_lean_dy = (bdy > 0) ? 1 : -1;
             }
             // Picky conkers linger over the choice a moment longer
-            int linger = static_cast<int>(personality[PERS_FOOD_PREFERENCE]
+            int linger = static_cast<int>(personality[PERS_APPETITE]
                                           * Cfg::CEREMONY_LINGER_MAX_TICKS);
             if (linger > 0) {
                 flair_kind = 2;
@@ -1287,7 +1288,8 @@ void Conker::_tick_idle(Chamber& ch) {
     if (g_tod.night_factor >= Cfg::FIREFLY_NIGHT_FACTOR_MIN
             && needs[NEED_REST] < Cfg::TIRED_SLEEP_NIGHT
             && !sleeping && stack_on < 0 && anim_type == LG_ANIM_NONE
-            && g_rng.rand_float() < Cfg::FIREFLY_CHASE_CHANCE) {
+            && g_rng.rand_float() < Cfg::FIREFLY_CHASE_CHANCE
+                                    * (0.4f + 1.2f * personality[PERS_BRAVERY])) {
         int fi = ch.nearest_firefly(cell_x(), cell_y(), Cfg::FIREFLY_CHASE_RADIUS);
         if (fi >= 0) {
             state = STATE_ZOOMIES;
@@ -1309,12 +1311,11 @@ void Conker::_tick_idle(Chamber& ch) {
         // restless conker takes off even on an empty larder, just to burn it off.
         // v152: boredom only drives play once it crosses the conker's own
         // curiosity-set threshold (incurious ones let it ride longer).
-        float bored_urge = (needs[NEED_BOREDOM] >= _boredom_act_threshold())
-                         ? needs[NEED_BOREDOM] * Cfg::BOREDOM_PLAY_DRIVE : 0.0f;
-        float urge = ch.colony->play_surplus() + bored_urge;
+        // v161: driven by the unified play desire (boredom×playfulness + surplus),
+        // not a fixed exploration-scaled chance. The roll is only timing jitter.
+        float urge = _play_desire(ch);
         if (urge > 0.0f
-                && g_rng.rand_float() < Cfg::JOY_SPRINT_CHANCE * urge
-                                        * (0.5f + personality[PERS_EXPLORATION])) {
+                && g_rng.rand_float() < Cfg::JOY_SPRINT_CHANCE * urge) {
             // Don't pile on: if a game is already running, watch instead
             int playing = 0;
             for (int i = 0; i < ch.conker_count; i++) {
@@ -1511,6 +1512,18 @@ float Conker::_boredom_act_threshold() const {
     float curiosity = personality[PERS_EXPLORATION];
     return Cfg::BOREDOM_ACT_HIGH
          - (Cfg::BOREDOM_ACT_HIGH - Cfg::BOREDOM_ACT_LOW) * curiosity;
+}
+
+// Unified play desire (0..~3): boredom past the conker's own curiosity threshold,
+// scaled by innate PLAYFULNESS, plus a full-pantry festival bonus. 0 when content.
+// The driven replacement for the old fixed play "chances" — callers multiply this
+// by a small per-tick rate and roll only for timing jitter.
+float Conker::_play_desire(Chamber& ch) const {
+    float bored_urge = (needs[NEED_BOREDOM] >= _boredom_act_threshold())
+                     ? needs[NEED_BOREDOM] : 0.0f;
+    float playful = 0.4f + personality[PERS_PLAYFULNESS];   // 0.4 .. 1.4
+    return bored_urge * playful * Cfg::BOREDOM_PLAY_DRIVE
+         + ch.colony->play_surplus() * (0.3f + personality[PERS_PLAYFULNESS]);
 }
 
 // Should a sleeping conker wake this tick? Famine/hunger always rouses (a player
