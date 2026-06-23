@@ -1,6 +1,6 @@
 import type { Personality } from '../api/types';
 
-// The seven personality dimensions (matching firmware's PersonalityDim enum).
+// The eight personality dimensions (matching firmware's PersonalityDim enum).
 // Language rule (Amber feedback): simple, cute, understandable — and every
 // dimension says what it actually means for how the conker behaves.
 export const PERSONALITY_DIMS = [
@@ -25,9 +25,9 @@ export const PERSONALITY_DIMS = [
     meaning: 'How often they greet, share food and play. The friendly ones make best friends fastest.',
   },
   {
-    key: 'food_preference', label: 'Appetite',
+    key: 'appetite', label: 'Appetite',
     low: 'Light eater', high: 'Big eater',
-    meaning: 'Big eaters snack more often — keep the larder topped up for them.',
+    meaning: 'Big eaters snack sooner and keep food for themselves; light eaters share their load with hungry nestmates.',
   },
   {
     key: 'hardiness', label: 'Toughness',
@@ -35,9 +35,14 @@ export const PERSONALITY_DIMS = [
     meaning: 'Tough nuts shrug off heatwaves, cold snaps and hungry days better than most.',
   },
   {
-    key: 'learning_rate', label: 'Smarts',
-    low: 'Old soul', high: 'Fast learner',
-    meaning: 'Fast learners pick up new routes and tricks quickly; old souls do things the old way.',
+    key: 'playfulness', label: 'Playfulness',
+    low: 'Serious', high: 'Playful',
+    meaning: 'Playful ones romp and zoom for the joy of it; serious ones only play when they get really bored.',
+  },
+  {
+    key: 'bravery', label: 'Bravery',
+    low: 'Timid', high: 'Brave',
+    meaning: 'Brave ones chase fireflies and lead the parades; timid ones keep near the queen and follow along.',
   },
 ] as const;
 
@@ -95,9 +100,10 @@ export function deriveRoleTag(
     { v: p.exploration,      noun: 'explorer',  adj: 'curious' },
     { v: p.route_stickiness, noun: 'homebody',  adj: 'homely' },
     { v: p.social_frequency, noun: 'socialite', adj: 'sociable' },
-    { v: p.food_preference,  noun: 'forager',   adj: 'hungry' },
-    { v: p.hardiness,        noun: 'tough nut',  adj: 'tough' },
-    { v: p.learning_rate,    noun: 'thinker',   adj: 'clever' },
+    { v: p.appetite,         noun: 'forager',   adj: 'hungry' },
+    { v: p.hardiness,        noun: 'tough nut', adj: 'tough' },
+    { v: p.playfulness,      noun: 'joker',     adj: 'playful' },
+    { v: p.bravery,          noun: 'daredevil', adj: 'brave' },
   ];
   const ranked = dims.slice().sort((a, b) => b.v - a.v);
   // Genuinely flat personality → no standout trait.

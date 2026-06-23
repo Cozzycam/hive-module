@@ -136,9 +136,10 @@ export interface Personality {
   exploration: number;
   route_stickiness: number;
   social_frequency: number;
-  food_preference: number;
+  appetite: number;     // (was food_preference) eats sooner; hoards vs shares food
   hardiness: number;
-  learning_rate: number;
+  playfulness: number;  // (was learning_rate) loves play for its own sake
+  bravery: number;      // ventures out & leads vs timid/stays-near-queen
 }
 
 export interface Bond {
