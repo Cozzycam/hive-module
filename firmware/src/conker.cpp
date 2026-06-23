@@ -345,6 +345,14 @@ void Conker::tick(Chamber& ch, float dt) {
         return;
     }
 
+    // v163: an awake, lonely, sociable conker that's alone ambles over to company —
+    // the daytime counterpart of the night huddle-wake. Only when idle, so it never
+    // interrupts foraging/tending.
+    if (!seeking_company && state == STATE_IDLE && anim_type == LG_ANIM_NONE
+            && _wants_company_awake(ch)) {
+        seeking_company = true;
+        seek_ticks = Cfg::SOCIAL_SEEK_TIMEOUT_TICKS;
+    }
     // v150: a conker that woke lonely owns its tick — groggily padding over to a
     // friend to huddle, then resettling — until it's nestled in or dawn breaks.
     if (seeking_company) {
@@ -1565,14 +1573,27 @@ bool Conker::_wants_company_wake(Chamber& ch) const {
     return _companions_near(ch, /*include_sleeping=*/true) <= 0.0f;
 }
 
-// v150: a groggy, half-asleep amble toward the nearest friend (else nearest
-// anyone, else the queen). Self-contained: sets a step target and advances, so it
-// doesn't fight the idle state machine. Resettles to sleep on arrival, at dawn,
-// or if it can't reach anyone before the timeout.
+// v163: the AWAKE counterpart of the night huddle-wake — a lonely, sociable conker
+// that's ended up alone wanders over to company (relieved by proximity), so the
+// loneliness need drives behaviour by day too, not only from night sleep. Same
+// sociability gate + threshold as the night wake. Loners keep to themselves.
+bool Conker::_wants_company_awake(Chamber& ch) const {
+    if (sleeping || departing) return false;
+    float social = personality[PERS_SOCIAL_FREQUENCY];
+    if (social < Cfg::SOCIAL_WAKE_MIN) return false;
+    float seek_at = Cfg::SOCIAL_WAKE_BASE - Cfg::SOCIAL_WAKE_SLOPE * social;
+    if (needs[NEED_SOCIAL] < seek_at) return false;
+    return _companions_near(ch) <= 0.0f;
+}
+
+// v150/v163: an amble toward the nearest friend (else nearest anyone, else the
+// queen). Self-contained: sets a step target and advances, so it doesn't fight the
+// idle state machine. Stops on arrival (got company) or timeout — then a NIGHT
+// seeker nestles back to sleep, while a daytime seeker just returns to normal.
 void Conker::_tick_seek_company(Chamber& ch) {
     state = STATE_IDLE;
     bool company = _companions_near(ch, /*include_sleeping=*/true) > 0.0f;
-    if (g_tod.phase == PHASE_DAY || company || seek_ticks == 0) {
+    if (company || seek_ticks == 0) {             // v163: no longer cancels at day — keep seeking by day too
         seeking_company = false;
         has_target_cell = false;
         if (g_tod.phase != PHASE_DAY) {           // nestle back down for the night

@@ -212,6 +212,7 @@ struct Conker {
     float   _social_desire(Chamber& ch) const; // unified driven social urge (sociability + loneliness need)
     bool    _should_wake(Chamber& ch) const; // night sleeps hold to morning; naps are a short top-up
     bool    _wants_company_wake(Chamber& ch) const; // v150: friendly + lonely + alone → rouse to go huddle
+    bool    _wants_company_awake(Chamber& ch) const; // v163: awake + lonely + alone → amble over to company
     void    _tick_seek_company(Chamber& ch);        // v150: groggy drift to nearest friend, then resettle
     uint8_t _response_style(uint8_t need) const;  // personality-flavoured response to a need
     float   _companions_near(Chamber& ch, bool include_sleeping = false) const; // company score within SOCIAL_COMPANION_DIST (friends weigh more)
