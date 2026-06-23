@@ -1566,6 +1566,9 @@ bool Conker::_should_wake(Chamber& ch) const {
 // bar: the friendlier the conker, the LOWER the bar, so butterflies rouse sooner.
 bool Conker::_wants_company_wake(Chamber& ch) const {
     if (daytime_nap || g_tod.phase == PHASE_DAY) return false;
+    // Survival first: a hunger/famine wake goes to EAT, not to huddle.
+    if (hunger > 60.0f || ch.colony->food_pressure() > Cfg::FAMINE_SLOWDOWN_PRESSURE)
+        return false;
     float social = personality[PERS_SOCIAL_FREQUENCY];
     if (social < Cfg::SOCIAL_WAKE_MIN) return false;
     float wake_at = Cfg::SOCIAL_WAKE_BASE - Cfg::SOCIAL_WAKE_SLOPE * social;
@@ -1579,6 +1582,10 @@ bool Conker::_wants_company_wake(Chamber& ch) const {
 // sociability gate + threshold as the night wake. Loners keep to themselves.
 bool Conker::_wants_company_awake(Chamber& ch) const {
     if (sleeping || departing) return false;
+    // Priority: survival (eat) and rest (sleep) outrank socialising — a hungry or
+    // sleepy conker handles that first (via _pick_task) instead of wandering off.
+    if (hunger > 40.0f) return false;
+    if (needs[NEED_REST] >= _nap_threshold()) return false;
     float social = personality[PERS_SOCIAL_FREQUENCY];
     if (social < Cfg::SOCIAL_WAKE_MIN) return false;
     float seek_at = Cfg::SOCIAL_WAKE_BASE - Cfg::SOCIAL_WAKE_SLOPE * social;
