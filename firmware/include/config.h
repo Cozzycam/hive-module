@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 161;
+constexpr uint32_t FW_VERSION = 162;
 
 namespace Cfg {
 
@@ -450,6 +450,7 @@ constexpr int   PROXIMITY_DETECTION_RADIUS = 1;
 constexpr float BASE_FORAGER_FRACTION      = 0.10f;  // foraging prob at pressure 0.0
 constexpr float PROXIMITY_GREETING_CHANCE  = 0.20f;
 constexpr float PROXIMITY_FOOD_SHARE_CHANCE = 0.08f;
+constexpr float FOOD_SHARE_RELIEF          = 25.0f; // hunger a fed nestmate loses (trophallaxis, v161)
 constexpr int   GREETING_DURATION_TICKS    = 12;   // ~1.5s at 8 tps
 constexpr int   FOOD_SHARE_DURATION_TICKS  = 12;   // ~1.5s at 8 tps
 constexpr int   INTERACTION_COOLDOWN_TICKS = 40;    // ~5s at 8 tps

@@ -322,8 +322,9 @@ void Chamber::_detect_proximity_interactions() {
                         auto& joiner = a_playing ? b : a;
                         int runner_idx = a_playing ? ai : bi;
                         int joiner_idx = a_playing ? bi : ai;
-                        // Friends are far likelier to pile into a friend's game.
-                        float join_chance = Cfg::ZOOMIE_JOIN_CHANCE;
+                        // v161: joining is driven by the joiner's play desire
+                        // (boredom×playfulness + surplus); friends still pile in far more.
+                        float join_chance = Cfg::ZOOMIE_JOIN_CHANCE * joiner._play_desire(*this);
                         if (bonds && bonds->is_formed(joiner.id, runner.id))
                             join_chance = fminf(join_chance * Cfg::BOND_PLAY_JOIN_MULT, 1.0f);
                         if (joiner.state == STATE_IDLE && !joiner.sleeping
@@ -354,8 +355,10 @@ void Chamber::_detect_proximity_interactions() {
                 // (the hands freed from foraging) and sometimes turns the
                 // chase into a follow-the-leader parade.
                 float surplus = colony->play_surplus();
+                // v161: starting a game is driven by the pair's play desire
+                // (boredom×playfulness + surplus), not a flat surplus chance.
                 float pair_chance = Cfg::ZOOMIE_CHANCE
-                                  * (1.0f + Cfg::ZOOMIE_SURPLUS_BOOST * surplus);
+                                  * 0.5f * (a._play_desire(*this) + b._play_desire(*this));
                 // Friends are quicker to start a game together.
                 if (bonds && bonds->is_formed(a.id, b.id))
                     pair_chance *= Cfg::BOND_PLAY_PAIR_MULT;
@@ -364,8 +367,11 @@ void Chamber::_detect_proximity_interactions() {
                         && !in_stack[ai] && !in_stack[bi]
                         && a.zoomie_ticks <= 0 && b.zoomie_ticks <= 0
                         && g_rng.rand_float() < pair_chance) {
+                    // v161: BRAVERY drives leading a showy parade (A is the leader);
+                    // timid pairs just do a quick chase instead.
                     bool parade = surplus >= Cfg::PARADE_MIN_SURPLUS
-                               && g_rng.rand_float() < Cfg::PARADE_CHANCE;
+                               && g_rng.rand_float() < Cfg::PARADE_CHANCE
+                                  * (0.4f + 1.2f * a.personality[PERS_BRAVERY]);
                     int duration = parade
                         ? g_rng.rand_int(Cfg::PARADE_MIN_TICKS, Cfg::PARADE_MAX_TICKS)
                         : g_rng.rand_int(Cfg::ZOOMIE_MIN_TICKS,
@@ -447,15 +453,21 @@ void Chamber::_detect_proximity_interactions() {
                     return;
                 }
 
-                // Food sharing and grooming only between non-stacked ants
+                // Trophallaxis (v161): a forager carrying food pauses to feed a
+                // HUNGRY nestmate. Driven by the giver's generosity (low APPETITE
+                // shares, gluttons hoard) and the receiver's hunger + sociability —
+                // and it actually relieves the receiver's hunger (one fewer trip
+                // to the store), so it's a real behaviour, not just an animation.
                 if (!in_stack[ai] && !in_stack[bi] &&
                     (a.food_carried > 0) != (b.food_carried > 0)) {
-                    // social_frequency biases food share chance
-                    float social = (a.personality[PERS_SOCIAL_FREQUENCY]
-                                  + b.personality[PERS_SOCIAL_FREQUENCY]) * 0.5f;
+                    Conker& giver    = (a.food_carried > 0) ? a : b;
+                    Conker& receiver = (a.food_carried > 0) ? b : a;
+                    float generosity = 1.0f - giver.personality[PERS_APPETITE];   // 0..1
                     float share_chance = Cfg::PROXIMITY_FOOD_SHARE_CHANCE
-                                       * (0.5f + social);  // 0.5x to 1.5x
-                    if (g_rng.rand_float() < share_chance) {
+                                       * generosity
+                                       * (receiver.hunger / 100.0f)
+                                       * (0.5f + giver.personality[PERS_SOCIAL_FREQUENCY]);
+                    if (receiver.hunger > 15.0f && g_rng.rand_float() < share_chance) {
                         uint16_t pid = event_bus->next_pair_id();
                         Event es; es.type = EVT_INTERACTION_STARTED; es.tick = tick_num;
                         es.interaction_started = {pid, INTERACT_FOOD_SHARING,
@@ -465,23 +477,22 @@ void Chamber::_detect_proximity_interactions() {
                         ee.interaction_ended = {pid};
                         emit(ee);
 
-                        bool a_gives = (a.food_carried > 0);
-                        a.anim_type = a_gives ? LG_ANIM_FOOD_SHARE_GIVER : LG_ANIM_FOOD_SHARE_RECEIVER;
-                        b.anim_type = a_gives ? LG_ANIM_FOOD_SHARE_RECEIVER : LG_ANIM_FOOD_SHARE_GIVER;
-                        a.anim_remaining_ticks = Cfg::FOOD_SHARE_DURATION_TICKS;
-                        b.anim_remaining_ticks = Cfg::FOOD_SHARE_DURATION_TICKS;
-                        a.interaction_cooldown = Cfg::INTERACTION_COOLDOWN_TICKS;
-                        b.interaction_cooldown = Cfg::INTERACTION_COOLDOWN_TICKS;
+                        giver.anim_type    = LG_ANIM_FOOD_SHARE_GIVER;
+                        receiver.anim_type = LG_ANIM_FOOD_SHARE_RECEIVER;
+                        giver.anim_remaining_ticks    = Cfg::FOOD_SHARE_DURATION_TICKS;
+                        receiver.anim_remaining_ticks = Cfg::FOOD_SHARE_DURATION_TICKS;
+                        giver.interaction_cooldown    = Cfg::INTERACTION_COOLDOWN_TICKS;
+                        receiver.interaction_cooldown = Cfg::INTERACTION_COOLDOWN_TICKS;
+                        receiver.hunger = fmaxf(0.0f, receiver.hunger - Cfg::FOOD_SHARE_RELIEF);
                         return;
                     }
                 }
 
-                // Greeting → mutual grooming or stacking
-                // social_frequency biases greeting chance
-                float greet_social = (a.personality[PERS_SOCIAL_FREQUENCY]
-                                    + b.personality[PERS_SOCIAL_FREQUENCY]) * 0.5f;
+                // Greeting → mutual grooming or stacking.
+                // v161: driven by the pair's SOCIAL desire (innate sociability +
+                // loneliness need) — lonely & sociable conkers seek contact more.
                 float greet_chance = Cfg::PROXIMITY_GREETING_CHANCE
-                                   * (0.5f + greet_social);
+                                   * 0.5f * (a._social_desire(*this) + b._social_desire(*this));
                 if (g_rng.rand_float() < greet_chance) {
                     // Elders always get the grooming branch — respected, not climbed on
                     bool elder_present = a.is_elder() || b.is_elder();

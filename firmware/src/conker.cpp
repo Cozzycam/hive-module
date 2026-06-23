@@ -1526,6 +1526,15 @@ float Conker::_play_desire(Chamber& ch) const {
          + ch.colony->play_surplus() * (0.3f + personality[PERS_PLAYFULNESS]);
 }
 
+// Unified social desire (0..~2): an innate sociability baseline plus a loneliness-
+// need boost. A lonely social butterfly actively seeks contact; a content loner
+// doesn't bother. Drives the proximity greet/groom/huddle/stack behaviours.
+float Conker::_social_desire(Chamber& ch) const {
+    (void)ch;
+    float social = personality[PERS_SOCIAL_FREQUENCY];
+    return social * 0.6f + needs[NEED_SOCIAL] * (0.3f + social);
+}
+
 // Should a sleeping conker wake this tick? Famine/hunger always rouses (a player
 // boop wakes directly, in sim.cpp). A NIGHT sleep holds through the dark — it
 // never pops awake at 3am — and gets up at dawn once rested, or is forced up by

@@ -209,6 +209,7 @@ struct Conker {
     float   _nap_threshold() const;          // chronotype: dozy ones nap sooner (even by day)
     float   _boredom_act_threshold() const;  // curiosity: curious ones act on boredom sooner (v152)
     float   _play_desire(Chamber& ch) const; // unified driven play urge (boredom×playfulness + surplus)
+    float   _social_desire(Chamber& ch) const; // unified driven social urge (sociability + loneliness need)
     bool    _should_wake(Chamber& ch) const; // night sleeps hold to morning; naps are a short top-up
     bool    _wants_company_wake(Chamber& ch) const; // v150: friendly + lonely + alone → rouse to go huddle
     void    _tick_seek_company(Chamber& ch);        // v150: groggy drift to nearest friend, then resettle
