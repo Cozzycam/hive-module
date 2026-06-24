@@ -1423,10 +1423,11 @@ void Conker::_update_needs(Chamber& ch, float dt) {
     // ---- Social (companionship) ----
     if (Cfg::NEEDS_ACTIVE_MASK & (1 << NEED_SOCIAL)) {
         float& lonely = needs[NEED_SOCIAL];
-        // While asleep, count sleeping huddle-mates as company — so a conker
-        // nestled in the pile is soothed, but one dozing off alone keeps getting
-        // lonelier (gently) until it's enough to rouse them. (v150)
-        float company = _companions_near(ch, /*include_sleeping=*/sleeping);
+        // v165: nearby nestmates soothe loneliness — INCLUDING sleeping ones. A
+        // conker among its dozing huddle-mates isn't alone (awake or asleep); only
+        // one genuinely off by itself keeps getting lonelier. (Was: awake conkers
+        // ignored sleepers, so they stayed maxed-lonely right next to the pile.)
+        float company = _companions_near(ch, /*include_sleeping=*/true);
         if (departing) {
             // leave it be
         } else if (company > 0.0f) {
@@ -1586,11 +1587,14 @@ bool Conker::_wants_company_awake(Chamber& ch) const {
     // sleepy conker handles that first (via _pick_task) instead of wandering off.
     if (hunger > 40.0f) return false;
     if (needs[NEED_REST] >= _nap_threshold()) return false;
+    // v165: no hard loner cutoff — the threshold below already makes low-social
+    // conkers hold out far longer (seek_at ~0.95 at social 0), so even a hermit
+    // ambles over once genuinely maxed, but only then.
     float social = personality[PERS_SOCIAL_FREQUENCY];
-    if (social < Cfg::SOCIAL_WAKE_MIN) return false;
     float seek_at = Cfg::SOCIAL_WAKE_BASE - Cfg::SOCIAL_WAKE_SLOPE * social;
     if (needs[NEED_SOCIAL] < seek_at) return false;
-    return _companions_near(ch) <= 0.0f;
+    // v165: sleepers count as company — don't seek if nestmates are already here.
+    return _companions_near(ch, /*include_sleeping=*/true) <= 0.0f;
 }
 
 // v150/v163: an amble toward the nearest friend (else nearest anyone, else the
