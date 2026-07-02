@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useColony, timeSince } from '../state/colony';
-import { getStoredLanIp, getStoredColonyId, clearConnection, testLanConnection, setStoredLanIp, setStoredColonyId, fetchColonies, enablePushNotifications, pushSupported } from '../api/client';
+import { getStoredLanIp, getStoredColonyId, clearConnection, testLanConnection, setStoredLanIp, setStoredColonyId, fetchColonies, enablePushNotifications, disablePushNotifications, pushSupported } from '../api/client';
 import type { PushResult } from '../api/client';
 import { Card } from '../components/Card';
 import { HIVE, CONNECTION_COLORS } from '../theme/palette';
@@ -23,7 +23,8 @@ function saveNotifPref(pref: NotifPref): void {
   localStorage.setItem(NOTIF_KEY, pref);
 }
 
-// Stub notification manager — wiring real push is deferred to v2
+// Notification pref manager — the pref is sent with the push subscription,
+// so the server tiers what it sends (milestones vs all + evening digest)
 export const notificationManager = {
   getPref: loadNotifPref,
   setPref: saveNotifPref,
@@ -47,15 +48,25 @@ export function Settings({ onBack, onDisconnect, onReconnect }: SettingsProps) {
   const handleEnablePush = async () => {
     if (!colonyId) return;
     setPushState('working');
-    setPushState(await enablePushNotifications(colonyId));
+    setPushState(await enablePushNotifications(
+      colonyId, notifPref === 'milestones' ? 'milestones' : 'all'));
   };
 
   const lanIp = getStoredLanIp();
   const storedColonyId = getStoredColonyId();
 
-  const handleNotifChange = (pref: NotifPref) => {
+  // The pref is real now: it re-registers the subscription server-side so
+  // the VPS knows which tier of pushes (and the 8pm digest) to send here
+  const handleNotifChange = async (pref: NotifPref) => {
     setNotifPref(pref);
     saveNotifPref(pref);
+    if (!colonyId) return;
+    setPushState('working');
+    if (pref === 'off') {
+      setPushState(await disablePushNotifications(colonyId));
+    } else {
+      setPushState(await enablePushNotifications(colonyId, pref));
+    }
   };
 
   const handleDisconnect = () => {

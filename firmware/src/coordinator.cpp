@@ -95,6 +95,7 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
     // Wire transient per-tick state
     chamber.event_bus = &bus;
     chamber.tick_num  = tick_num;
+    chamber.is_garden = (role == MODULE_GARDEN);
     _bus              = &bus;
 
     // Sync topology neighbour state into chamber entries

@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 170;
+constexpr uint32_t FW_VERSION = 171;
 
 namespace Cfg {
 
@@ -88,6 +88,11 @@ constexpr int      WX_CHALLENGE_CLEAR_OBS   = 2;                          // con
 constexpr uint32_t WX_CHALLENGE_MIN_MS      = 15UL * 60UL * 1000UL;       // never end within 15 min
 constexpr uint32_t WX_CHALLENGE_COOLDOWN_MS = 3UL * 60UL * 60UL * 1000UL; // per-type re-trigger gap
 constexpr float    WX_CHALLENGE_BURN_SCALE  = 0.35f;  // burn mult = 1 + scale * severity
+
+// ---- Garden module role ----
+constexpr float GARDEN_CRITTER_MULT  = 3.0f;       // critter spawn bias vs plain chamber
+constexpr float GARDEN_SPROUT_CHANCE = 0.000005f;  // per tick @8tps ≈ 2-3 sprouts/day
+constexpr float GARDEN_SPROUT_AMOUNT = 3.0f;       // food units per wild sprout
 
 // ---- Food rates (per real day) ----
 constexpr float QUEEN_FOOD_PER_DAY    = 3.0f;

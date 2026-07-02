@@ -739,3 +739,69 @@ void ConkerRegistry::flush_manifest() {
     if (sd_card_state() != SD_OK) return;
     _save_manifest();
 }
+
+// ---- Full colony wipe (fresh start / satellite conversion) ----
+// Moved from main.cpp's "reset colony" handler so the reset_to_satellite
+// app command can reuse it.
+#include <Preferences.h>
+
+void colony_reset_wipe() {
+    Serial.println("[reset] wiping colony data...");
+    if (sd_card_state() == SD_OK) {
+        // Walk and remove files — SD_MMC.rmdir only works on empty dirs
+        const char* dirs[] = {"/colony/lilguys", "/colony/brood", "/colony/events"};
+        for (auto base : dirs) {
+            File root = SD_MMC.open(base);
+            if (root && root.isDirectory()) {
+                File shard = root.openNextFile();
+                while (shard) {
+                    if (shard.isDirectory()) {
+                        File entry = shard.openNextFile();
+                        while (entry) {
+                            char p[128];
+                            strlcpy(p, entry.path(), sizeof(p));
+                            entry.close();
+                            SD_MMC.remove(p);
+                            entry = shard.openNextFile();
+                        }
+                        char sp[128];
+                        strlcpy(sp, shard.path(), sizeof(sp));
+                        shard.close();
+                        SD_MMC.rmdir(sp);
+                    } else {
+                        // Direct files (e.g. journal .jsonl files)
+                        char fp[128];
+                        strlcpy(fp, shard.path(), sizeof(fp));
+                        shard.close();
+                        SD_MMC.remove(fp);
+                    }
+                    shard = root.openNextFile();
+                }
+                root.close();
+            }
+            SD_MMC.rmdir(base);
+        }
+        SD_MMC.remove("/colony/manifest.json");
+        SD_MMC.remove("/colony/bonds.json");
+        SD_MMC.remove("/colony/bonds.json.tmp");
+        SD_MMC.rmdir("/colony");
+        Serial.println("[reset] SD colony data removed");
+    }
+    // Clear NVS founding time + VPS push cursors
+    {
+        Preferences prefs;
+        prefs.begin("hive", false);
+        prefs.remove("founded");
+        prefs.remove("founded_ok");
+        prefs.end();
+    }
+    {
+        Preferences prefs;
+        prefs.begin("vps", false);
+        prefs.remove("cursor");
+        prefs.remove("jday");    // journal line cursor — a same-day reset
+        prefs.remove("jlines");  // must not skip the new colony's founding
+        prefs.end();
+    }
+    Serial.println("[reset] NVS cleared (founding + VPS cursor)");
+}

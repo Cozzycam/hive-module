@@ -98,6 +98,10 @@ db.exec(`
   );
 `);
 
+// Migrations for pre-existing databases (idempotent)
+try { db.exec(`ALTER TABLE push_subscriptions ADD COLUMN pref TEXT DEFAULT 'all'`); } catch {}
+try { db.exec(`ALTER TABLE colonies ADD COLUMN digest_sent_day TEXT DEFAULT ''`); } catch {}
+
 // Dedup index: remove duplicates first, then create unique index
 try {
   db.exec(`CREATE UNIQUE INDEX idx_events_dedup ON events(colony_id, tick, unix, type, lilguy)`);
@@ -170,7 +174,7 @@ const stmts = {
 };
 
 // Command types the app may enqueue (queen applies them on her next poll)
-const COMMAND_TYPES = new Set(['name_conker', 'feed_colony', 'set_module_role', 'set_floor_tint', 'gift_care_package', 'ota_update']);
+const COMMAND_TYPES = new Set(['name_conker', 'feed_colony', 'set_module_role', 'set_floor_tint', 'gift_care_package', 'ota_update', 'reset_to_satellite']);
 
 // ---- HMAC verification ----
 function verifyHmac(body, signature) {
@@ -232,20 +236,68 @@ function colonyAuth(req, res, next) {
 
 // ---- Web push ----
 
+const TRAIT_LABELS = {
+  pioneer: 'Pioneer', elder: 'Elder', bonded: 'Bonded',
+  survived_heatwave: 'Heatwave Survivor', survived_cold_snap: 'Cold Snap Survivor',
+  survived_drought: 'Drought Survivor', survived_storm: 'Storm Survivor',
+  catcher: 'Bug Hunter',
+};
+
 // Build a notification for a noteworthy event, or null to skip it.
+// tier: 'milestone' reaches everyone; 'ambient' only reaches pref='all'.
 function notificationFor(ev) {
+  const who = ev.name || 'One of your guys';
+  const data = ev.data || {};
+  if (ev.type === 'hatch') {
+    return { body: `\u{1F331} ${who} hatched!`, tag: 'hatch', tier: 'milestone' };
+  }
+  if (ev.type === 'death') {
+    return { body: `\u{1F342} ${who} passed away.`, tag: 'death', tier: 'milestone' };
+  }
+  if (ev.type === 'became_best_friends') {
+    const target = data.target_name || 'a nestmate';
+    return { body: `\u{2B50} ${who} & ${target} are best friends now!`, tag: 'bff', tier: 'milestone' };
+  }
+  if (ev.type === 'trait_earned') {
+    const label = TRAIT_LABELS[data.trait] || data.trait || 'a title';
+    return { body: `\u{1F3C5} ${who} earned "${label}"!`, tag: 'trait', tier: 'milestone' };
+  }
+  if (ev.type === 'challenge_start') {
+    const kind = String(data.type || 'challenge').replace(/_/g, ' ');
+    return { body: `\u{26A0}\u{FE0F} A ${kind} has hit the colony — they could use a care package.`, tag: 'challenge', tier: 'milestone' };
+  }
+  if (ev.type === 'challenge_end') {
+    const kind = String(data.type || 'challenge').replace(/_/g, ' ');
+    return { body: `\u{2600}\u{FE0F} The ${kind} has passed. The survivors will remember.`, tag: 'challenge_end', tier: 'milestone' };
+  }
   if (ev.type === 'discovery') {
-    const critter = (ev.data && ev.data.critter) || 'critter';
-    const who = ev.name || 'One of your guys';
-    return { body: `${who} found a ${critter}!`, tag: 'discovery' };
+    const critter = data.critter || 'critter';
+    return { body: `${who} found a ${critter}!`, tag: 'discovery', tier: 'ambient' };
   }
-  if (ev.type === 'colony_event' && ev.data && ev.data.kind === 'care_package_from_neighbours') {
-    return { body: 'A neighbouring kingdom sent a care package!', tag: 'gift' };
+  if (ev.type === 'colony_event' && data.kind === 'care_package_from_neighbours') {
+    return { body: 'A neighbouring kingdom sent a care package!', tag: 'gift', tier: 'milestone' };
   }
-  if (ev.type === 'colony_event' && ev.data && ev.data.kind === 'eggs_dormant') {
-    return { body: 'Your eggs lie dormant for now — more space is needed.', tag: 'eggs_dormant' };
+  if (ev.type === 'colony_event' && data.kind === 'eggs_dormant') {
+    return { body: 'Your eggs lie dormant for now — more space is needed.', tag: 'eggs_dormant', tier: 'milestone' };
   }
   return null;
+}
+
+// Send one payload to every subscription of a colony that passes `filter`.
+function sendToSubs(colonyId, payloadObj, filter) {
+  if (!webpush || !VAPID.publicKey) return;
+  const subs = db.prepare(`SELECT id, sub, pref FROM push_subscriptions WHERE colony_id = ?`).all(colonyId);
+  const payload = JSON.stringify(payloadObj);
+  for (const row of subs) {
+    if (filter && !filter(row.pref || 'all')) continue;
+    let sub;
+    try { sub = JSON.parse(row.sub); } catch { continue; }
+    webpush.sendNotification(sub, payload).catch((err) => {
+      if (err.statusCode === 404 || err.statusCode === 410) {
+        db.prepare(`DELETE FROM push_subscriptions WHERE id = ?`).run(row.id);  // dead subscription
+      }
+    });
+  }
 }
 
 // Fire push notifications for a batch of newly-ingested events (best-effort).
@@ -257,36 +309,105 @@ function sendPushesForEvents(colonyId, events) {
     const n = notificationFor(ev);
     if (n && !seen.has(n.tag)) { seen.add(n.tag); notes.push(n); }  // ≤1 per tag per batch
   }
-  if (!notes.length) return;
-  const subs = db.prepare(`SELECT id, sub FROM push_subscriptions WHERE colony_id = ?`).all(colonyId);
-  for (const row of subs) {
-    let sub;
-    try { sub = JSON.parse(row.sub); } catch { continue; }
-    for (const note of notes) {
-      const payload = JSON.stringify({ title: 'Hive', body: note.body, tag: note.tag, url: '/app/' });
-      webpush.sendNotification(sub, payload).catch((err) => {
-        if (err.statusCode === 404 || err.statusCode === 410) {
-          db.prepare(`DELETE FROM push_subscriptions WHERE id = ?`).run(row.id);  // dead subscription
-        }
-      });
-    }
+  for (const note of notes) {
+    sendToSubs(colonyId,
+      { title: 'Hive', body: note.body, tag: note.tag, url: '/app/' },
+      // Milestones reach everyone subscribed; ambient only 'all'
+      (pref) => note.tier === 'milestone' ? pref !== 'off' : pref === 'all');
   }
 }
+
+// ---- Evening digest — "Today in the colony", 8pm local (Europe/London) ----
+
+function londonPart(fmt) {
+  return new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', ...fmt });
+}
+
+function buildDigestBody(colonyId, todayYmd) {
+  const dayFmt = londonPart({ year: 'numeric', month: '2-digit', day: '2-digit' });
+  const rows = db.prepare(
+    `SELECT raw FROM events WHERE colony_id = ? AND unix >= ? ORDER BY unix ASC`
+  ).all(colonyId, Math.floor(Date.now() / 1000) - 86400);
+  const events = [];
+  for (const r of rows) {
+    try {
+      const ev = JSON.parse(r.raw);
+      if (dayFmt.format(new Date(ev.unix * 1000)) === todayYmd) events.push(ev);
+    } catch {}
+  }
+  if (events.length === 0) return null;  // module offline / nothing at all
+
+  const frags = [];
+  const deaths = events.filter(e => e.type === 'death');
+  if (deaths.length) frags.push(`\u{1F342} we said goodbye to ${deaths.map(e => e.name || 'a nestmate').slice(0, 2).join(' & ')}`);
+  const bff = events.find(e => e.type === 'became_best_friends');
+  if (bff) frags.push(`\u{2B50} ${bff.name || 'someone'} & ${(bff.data || {}).target_name || 'a nestmate'} became best friends`);
+  const trait = events.find(e => e.type === 'trait_earned');
+  if (trait) frags.push(`\u{1F3C5} ${trait.name || 'someone'} earned "${TRAIT_LABELS[(trait.data || {}).trait] || 'a title'}"`);
+  const hatches = events.filter(e => e.type === 'hatch');
+  if (hatches.length) frags.push(`\u{1F331} ${hatches.length === 1 ? `${hatches[0].name || 'a little one'} hatched` : `${hatches.length} little ones hatched`}`);
+  const challenge = events.find(e => e.type === 'challenge_start');
+  if (challenge) frags.push(`\u{26A0}\u{FE0F} a ${String((challenge.data || {}).type || 'challenge').replace(/_/g, ' ')} struck`);
+  const finds = events.filter(e => e.type === 'discovery').length;
+  if (frags.length < 3 && finds > 0) frags.push(`\u{1F50D} ${finds} critter${finds === 1 ? '' : 's'} found`);
+  const parades = events.filter(e => e.type === 'play').length;
+  if (frags.length < 3 && parades > 0) frags.push(`\u{1F389} ${parades} parade${parades === 1 ? '' : 's'}`);
+
+  if (frags.length === 0) return 'A quiet, contented day in the colony.';
+  const body = frags.slice(0, 4).join(' · ');
+  return body.charAt(0).toUpperCase() + body.slice(1);
+}
+
+setInterval(() => {
+  try {
+    if (!webpush || !VAPID.publicKey) return;
+    const hour = Number(londonPart({ hour: '2-digit', hour12: false }).format(new Date()));
+    if (hour < 20) return;
+    const todayYmd = londonPart({ year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const colonies = db.prepare(`
+      SELECT DISTINCT c.colony_id, c.digest_sent_day FROM colonies c
+      JOIN push_subscriptions p ON p.colony_id = c.colony_id
+    `).all();
+    for (const c of colonies) {
+      if (c.digest_sent_day === todayYmd) continue;
+      db.prepare(`UPDATE colonies SET digest_sent_day = ? WHERE colony_id = ?`).run(todayYmd, c.colony_id);
+      const body = buildDigestBody(c.colony_id, todayYmd);
+      if (!body) continue;
+      sendToSubs(c.colony_id,
+        { title: `Today in ${c.colony_id}`, body, tag: 'digest', url: '/app/' },
+        (pref) => pref !== 'off');
+    }
+  } catch (e) {
+    console.warn('digest tick failed:', e.message);
+  }
+}, 60 * 1000);
 
 // Public VAPID key for the app to subscribe with
 app.get('/api/v1/push/vapid', (req, res) => {
   res.json({ publicKey: VAPID.publicKey || null });
 });
 
-// Register a browser push subscription against a colony
+// Register a browser push subscription against a colony.
+// Accepts either a bare PushSubscription (legacy) or { sub, pref }.
 app.post('/api/v1/colonies/:colony_id/push/subscribe', (req, res) => {
-  let sub;
-  try { sub = JSON.parse(req.body.toString()); } catch { return res.status(400).json({ error: 'invalid json' }); }
+  let parsed;
+  try { parsed = JSON.parse(req.body.toString()); } catch { return res.status(400).json({ error: 'invalid json' }); }
+  const sub = parsed && parsed.sub ? parsed.sub : parsed;
+  const pref = (parsed && parsed.pref) === 'milestones' ? 'milestones' : 'all';
   if (!sub || !sub.endpoint) return res.status(400).json({ error: 'no endpoint' });
-  db.prepare(`INSERT INTO push_subscriptions (colony_id, endpoint, sub) VALUES (?, ?, ?)
-              ON CONFLICT(endpoint) DO UPDATE SET colony_id = excluded.colony_id, sub = excluded.sub`)
-    .run(req.params.colony_id, sub.endpoint, JSON.stringify(sub));
-  res.json({ status: 'subscribed' });
+  db.prepare(`INSERT INTO push_subscriptions (colony_id, endpoint, sub, pref) VALUES (?, ?, ?, ?)
+              ON CONFLICT(endpoint) DO UPDATE SET colony_id = excluded.colony_id, sub = excluded.sub, pref = excluded.pref`)
+    .run(req.params.colony_id, sub.endpoint, JSON.stringify(sub), pref);
+  res.json({ status: 'subscribed', pref });
+});
+
+// Remove a subscription (pref switched to Off in the app)
+app.post('/api/v1/colonies/:colony_id/push/unsubscribe', (req, res) => {
+  let parsed;
+  try { parsed = JSON.parse(req.body.toString()); } catch { return res.status(400).json({ error: 'invalid json' }); }
+  if (!parsed || !parsed.endpoint) return res.status(400).json({ error: 'no endpoint' });
+  db.prepare(`DELETE FROM push_subscriptions WHERE endpoint = ?`).run(parsed.endpoint);
+  res.json({ status: 'unsubscribed' });
 });
 
 // ---- Queen push endpoints ----

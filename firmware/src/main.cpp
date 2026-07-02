@@ -618,63 +618,7 @@ static void process_serial_line(const char* line) {
     } else if (strncmp(line, "vps endpoint ", 13) == 0) {
         vps_push_set_endpoint(line + 13);
     } else if (strcmp(line, "reset colony") == 0) {
-        Serial.println("[reset] wiping colony data...");
-        // Remove colony directory tree from SD
-        if (sd_card_state() == SD_OK) {
-            // Walk and remove files — SD_MMC.rmdir only works on empty dirs
-            const char* dirs[] = {"/colony/lilguys", "/colony/brood", "/colony/events"};
-            for (auto base : dirs) {
-                File root = SD_MMC.open(base);
-                if (root && root.isDirectory()) {
-                    File shard = root.openNextFile();
-                    while (shard) {
-                        if (shard.isDirectory()) {
-                            File entry = shard.openNextFile();
-                            while (entry) {
-                                char p[128];
-                                strlcpy(p, entry.path(), sizeof(p));
-                                entry.close();
-                                SD_MMC.remove(p);
-                                entry = shard.openNextFile();
-                            }
-                            char sp[128];
-                            strlcpy(sp, shard.path(), sizeof(sp));
-                            shard.close();
-                            SD_MMC.rmdir(sp);
-                        } else {
-                            // Direct files (e.g. journal .jsonl files)
-                            char fp[128];
-                            strlcpy(fp, shard.path(), sizeof(fp));
-                            shard.close();
-                            SD_MMC.remove(fp);
-                        }
-                        shard = root.openNextFile();
-                    }
-                    root.close();
-                }
-                SD_MMC.rmdir(base);
-            }
-            SD_MMC.remove("/colony/manifest.json");
-            SD_MMC.remove("/colony/bonds.json");
-            SD_MMC.remove("/colony/bonds.json.tmp");
-            SD_MMC.rmdir("/colony");
-            Serial.println("[reset] SD colony data removed");
-        }
-        // Clear NVS founding time + VPS push cursor
-        {
-            Preferences prefs;
-            prefs.begin("hive", false);
-            prefs.remove("founded");
-            prefs.remove("founded_ok");
-            prefs.end();
-        }
-        {
-            Preferences prefs;
-            prefs.begin("vps", false);
-            prefs.remove("cursor");
-            prefs.end();
-        }
-        Serial.println("[reset] NVS cleared (founding + VPS cursor)");
+        colony_reset_wipe();
         Serial.println("[reset] rebooting...");
         delay(100);
         ESP.restart();

@@ -274,6 +274,12 @@ void vps_ota_update(Coordinator& coord) {
 
 // ---- Command queue (app -> queen via VPS) ----
 
+// reset_to_satellite is deferred until after the ack POST: once this board
+// wipes and reboots as a satellite it never polls this colony's queue
+// again, so an unacked command would clog it forever.
+static bool    _pending_convert = false;
+static uint8_t _pending_convert_role = 0;
+
 static void _poll_commands(Coordinator& coord) {
     char path[96];
     snprintf(path, sizeof(path), "/api/v1/colonies/%s/commands/pending",
@@ -324,6 +330,16 @@ static void _poll_commands(Coordinator& coord) {
             // until then; after the reboot the manifest reads "already current"
             // so it acks without re-flashing — no loop.
             vps_ota_update(coord);
+        } else if (strcmp(type, "reset_to_satellite") == 0) {
+            // Conversion: this board abandons its sovereign colony and
+            // reboots as a blank satellite (or specialised role), ready to
+            // join whichever queen it's pogo-connected to.
+            const char* role = cmd["payload"]["role"] | "satellite";
+            int r = module_role_from_str(role);
+            if (r >= MODULE_SATELLITE) {   // never convert to queen this way
+                _pending_convert = true;
+                _pending_convert_role = (uint8_t)r;
+            }
         }
         // Always ack — invalid commands must not clog the queue
         if (!first) acks += ",";
@@ -335,7 +351,18 @@ static void _poll_commands(Coordinator& coord) {
     if (!first) {
         snprintf(path, sizeof(path), "/api/v1/colonies/%s/commands/ack",
                  coord.registry.manifest().colony_id);
-        _post(path, acks.c_str(), acks.length());
+        bool acked = _post(path, acks.c_str(), acks.length());
+
+        // Deferred conversion — only after the ack landed
+        if (_pending_convert && acked) {
+            Serial.printf("[vps] converting to %s — wiping colony, rebooting\r\n",
+                          module_role_str(_pending_convert_role));
+            colony_reset_wipe();
+            coord.set_role_nvs((ModuleRole)_pending_convert_role);
+            delay(200);
+            ESP.restart();
+        }
+        _pending_convert = false;
     }
 }
 

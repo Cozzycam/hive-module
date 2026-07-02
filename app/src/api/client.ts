@@ -267,8 +267,13 @@ export async function pushPermission(): Promise<NotificationPermission | 'unsupp
   return Notification.permission;
 }
 
-// Request permission, subscribe, and register the subscription against a colony
-export async function enablePushNotifications(colonyId: string): Promise<PushResult> {
+// Request permission, subscribe, and register the subscription against a
+// colony. pref decides what the server sends: 'milestones' = headline
+// moments + the evening digest; 'all' adds ambient finds.
+export async function enablePushNotifications(
+  colonyId: string,
+  pref: 'milestones' | 'all' = 'all',
+): Promise<PushResult> {
   if (!pushSupported()) return 'unsupported';
   try {
     const perm = await Notification.requestPermission();
@@ -288,9 +293,29 @@ export async function enablePushNotifications(colonyId: string): Promise<PushRes
     const res = await fetch(`${VPS_BASE}/api/v1/colonies/${colonyId}/push/subscribe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(sub),
+      body: JSON.stringify({ sub, pref }),
     });
     return res.ok ? 'ok' : 'error';
+  } catch {
+    return 'error';
+  }
+}
+
+// Unsubscribe this browser and tell the server to forget it (pref = Off)
+export async function disablePushNotifications(colonyId: string): Promise<PushResult> {
+  if (!pushSupported()) return 'unsupported';
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (!sub) return 'ok';  // nothing to disable
+    const endpoint = sub.endpoint;
+    await sub.unsubscribe();
+    await fetch(`${VPS_BASE}/api/v1/colonies/${colonyId}/push/unsubscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint }),
+    });
+    return 'ok';
   } catch {
     return 'error';
   }

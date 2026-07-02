@@ -889,23 +889,42 @@ void Chamber::_tick_critters() {
     bool day = (g_tod.phase == PHASE_DAY || g_tod.phase == PHASE_DUSK
              || g_tod.phase == PHASE_DAWN);
 
+    // Garden: wild food sprouts now and then — the reason to keep one
+    bool foul_wx = g_weather.valid
+                && (g_weather.condition >= WX_RAIN
+                    || g_weather.wind >= WIND_HIGH
+                    || g_weather.temp == TEMP_FREEZING);
+    if (is_garden && day && !foul_wx
+            && g_rng.rand_float() < Cfg::GARDEN_SPROUT_CHANCE) {
+        int sx = g_rng.rand_int(2, Cfg::GRID_WIDTH - 3);
+        int sy = g_rng.rand_int(2, Cfg::GRID_HEIGHT - 3);
+        add_food(sx, sy, Cfg::GARDEN_SPROUT_AMOUNT);
+        Event ev = {};
+        ev.type = EVT_FOOD_DELIVERED;   // reuse: sparkle at the sprout
+        ev.tick = tick_num;
+        ev.food_delivered = {static_cast<int8_t>(sx), static_cast<int8_t>(sy),
+                             Cfg::GARDEN_SPROUT_AMOUNT};
+        emit(ev);
+    }
+
     int active = 0;
     for (int i = 0; i < Cfg::MAX_CRITTERS; i++)
         if (critters[i].active) active++;
+
+    // Gardens draw more visitors and can host two at once
+    int max_active = is_garden ? 2 : 1;
+    float spawn_chance = Cfg::CRITTER_SPAWN_CHANCE
+                       * (is_garden ? Cfg::GARDEN_CRITTER_MULT : 1.0f);
 
     for (int i = 0; i < Cfg::MAX_CRITTERS; i++) {
         Critter& cr = critters[i];
 
         if (!cr.active) {
-            // One visitor wanders in at a time, only in daylight — and not
-            // in foul weather. Nobody visits during a downpour, a gale or a
+            // Visitors wander in only in daylight — and not in foul
+            // weather. Nobody visits during a downpour, a gale or a
             // freeze; their absence is part of how weather reads on-glass.
-            bool foul = g_weather.valid
-                     && (g_weather.condition >= WX_RAIN
-                         || g_weather.wind >= WIND_HIGH
-                         || g_weather.temp == TEMP_FREEZING);
-            if (day && !foul && active == 0 && conker_count > 0
-                    && g_rng.rand_float() < Cfg::CRITTER_SPAWN_CHANCE) {
+            if (day && !foul_wx && active < max_active && conker_count > 0
+                    && g_rng.rand_float() < spawn_chance) {
                 cr.active = true;
                 cr.flee = 0;
                 cr.ttl = static_cast<uint16_t>(

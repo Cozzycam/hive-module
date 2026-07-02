@@ -189,3 +189,9 @@ private:
     void _move_to_corrupt(const char* path, const char* subdir);
     void _clean_tmp_files();
 };
+
+// ---- Full colony wipe (fresh start / satellite conversion) ----
+// Removes the whole /colony tree from SD and clears the founding + VPS
+// journal cursors from NVS. Caller reboots afterwards. Shared by the
+// "reset colony" serial command and the reset_to_satellite app command.
+void colony_reset_wipe();
