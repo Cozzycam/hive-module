@@ -30,6 +30,15 @@ static uint32_t _last_pushed_unix = 0;  // cursor: events after this have been p
 static uint32_t _push_ok_count = 0;
 static uint32_t _push_fail_count = 0;
 
+// Journal line cursor — how many lines of the current day's journal have
+// been pushed. Before this existed, every cycle re-sent the day's file from
+// line 0 into a 16KB String cap: once a busy day's journal outgrew 16KB the
+// reader aborted before reaching anything new and the diary went silent
+// until midnight (Amber's "no diary entries since 04:51" bug). Now each
+// cycle skips what's already pushed and sends up to ~16KB of new lines.
+static uint32_t _pushed_day = 0;    // unix day (unix/86400) the counter refers to
+static uint32_t _pushed_lines = 0;  // journal lines of that day already pushed
+
 // ---- HMAC-SHA256 ----
 
 static void _hmac_sha256(const char* key, int key_len,
@@ -56,6 +65,8 @@ static void _load_config() {
     prefs.getString("secret", _secret, MAX_SECRET_LEN);
     prefs.getString("endpoint", _endpoint, MAX_URL_LEN);
     _last_pushed_unix = prefs.getULong("cursor", 0);
+    _pushed_day = prefs.getULong("jday", 0);
+    _pushed_lines = prefs.getULong("jlines", 0);
     _enrolled = prefs.getBool("enrolled", false);
     prefs.end();
 
@@ -94,6 +105,8 @@ static void _save_cursor() {
     Preferences prefs;
     prefs.begin("vps", false);
     prefs.putULong("cursor", _last_pushed_unix);
+    prefs.putULong("jday", _pushed_day);
+    prefs.putULong("jlines", _pushed_lines);
     prefs.end();
 }
 
@@ -353,30 +366,53 @@ void vps_push_tick(Coordinator& coord) {
         _post(path, buf, len);
     }
 
-    // Push events since last cursor
+    // Push events since the line cursor (16KB of new lines per cycle;
+    // a backlog drains across cycles instead of silently truncating)
     if (_last_pushed_unix > 0 || g_tod.unix_time > 0) {
-        struct EventCtx { String* str; bool has; };
+        uint32_t day = g_tod.unix_time / 86400;
+        if (day != _pushed_day) {
+            _pushed_day = day;      // midnight (or first run): fresh file
+            _pushed_lines = 0;
+        }
+
+        struct EventCtx {
+            String* str;
+            bool has;
+            uint32_t skip;      // lines already pushed
+            uint32_t seen;      // lines encountered this read
+            uint32_t appended;  // new lines added to this batch
+        };
         String events = "{\"events\":[";
-        EventCtx ctx = {&events, false};
+        EventCtx ctx = {&events, false, _pushed_lines, 0, 0};
 
         coord.journal.read_day(g_tod.unix_time,
             [](const char* line, void* raw) -> bool {
                 EventCtx* c = (EventCtx*)raw;
+                c->seen++;
+                if (c->seen <= c->skip) return true;   // already pushed
                 if (c->str->length() > 16000) return false;
                 if (c->has) *c->str += ",";
                 *c->str += line;
                 c->has = true;
+                c->appended++;
                 return true;
             }, &ctx);
 
         events += "]}";
 
-        if (ctx.has) {
+        if (ctx.seen < ctx.skip) {
+            // File has fewer lines than the cursor (SD swapped/reset) —
+            // resync to what exists and let the next cycle push cleanly.
+            // VPS-side dedup makes any overlap harmless.
+            _pushed_lines = ctx.seen;
+            _save_cursor();
+        } else if (ctx.has) {
             char path[80];
             snprintf(path, sizeof(path), "/api/v1/colonies/%s/events",
                      coord.registry.manifest().colony_id);
             if (_post(path, events.c_str(), events.length())) {
                 _last_pushed_unix = g_tod.unix_time;
+                _pushed_lines += ctx.appended;
                 _save_cursor();
             }
         }
