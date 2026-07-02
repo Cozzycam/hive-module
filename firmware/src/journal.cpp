@@ -112,6 +112,7 @@ void EventJournal::_serialize_entry(const JournalEntry& e, char* buf, size_t buf
         break;
     case JEVT_BOND_FORMED:
     case JEVT_BOND_BROKEN:
+    case JEVT_BOND_MUTUAL:   // best friends must name the partner too
         data["target_id"] = e.bond.target_id;
         if (e.bond.target_name[0]) data["target_name"] = e.bond.target_name;
         break;
@@ -133,6 +134,7 @@ void EventJournal::_serialize_entry(const JournalEntry& e, char* buf, size_t buf
     }
     case JEVT_MOURNING:
         data["dead_id"] = e.mourning.dead_id;
+        if (e.mourning.dead_name[0]) data["dead_name"] = e.mourning.dead_name;
         break;
     case JEVT_PLAY:
         data["kind"] = e.play.kind == 0 ? "parade" : "play";

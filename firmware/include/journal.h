@@ -57,7 +57,8 @@ struct JournalEntry {
         struct { uint32_t target_id; char target_name[16]; } bond;  // formed or broken
         struct { uint8_t challenge_type; float severity; } challenge;
         struct { uint32_t trait_bit; } trait;
-        struct { uint32_t dead_id; } mourning;  // lilguy_id grieves for dead_id
+        struct { uint32_t dead_id; char dead_name[16]; } mourning;  // lilguy_id grieves
+            // for dead_id (name rides along — the roster forgets the dead)
         struct { uint8_t kind; uint8_t participants; } play;  // kind 0=parade
         struct { uint8_t critter; } discovery;  // CritterKind found
     };

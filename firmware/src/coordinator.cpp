@@ -1727,6 +1727,8 @@ void Coordinator::_persist_process_deaths() {
                     jm.lilguy_id = w.id;
                     strlcpy(jm.who, w.name, sizeof(jm.who));
                     jm.mourning.dead_id = id;
+                    strlcpy(jm.mourning.dead_name, dead_name,
+                            sizeof(jm.mourning.dead_name));
                     journal.emit(jm);
 
                     // Display bus: vigil banner ("X stands vigil for Y")
