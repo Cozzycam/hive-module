@@ -28,6 +28,9 @@ Thumbs.db
 *.log
 *.tmp
 
+# Per-machine onboarding notes (local-only, not upstream)
+LOCAL_SETUP.md
+
 # PlatformIO
 .pio/
 

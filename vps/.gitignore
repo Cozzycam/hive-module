@@ -1,0 +1,4 @@
+node_modules/
+hive.db
+hive.db-shm
+hive.db-wal
