@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useColony, timeSince } from '../state/colony';
-import { getStoredLanIp, getStoredColonyId, clearConnection, testLanConnection, setStoredLanIp, setStoredColonyId, fetchColonies, enablePushNotifications, disablePushNotifications, pushSupported } from '../api/client';
+import { getStoredLanIp, getStoredColonyId, clearConnection, testLanConnection, setStoredLanIp, setStoredColonyId, fetchColonies, enablePushNotifications, disablePushNotifications, pushSupported, sendTestPush } from '../api/client';
 import type { PushResult } from '../api/client';
 import { Card } from '../components/Card';
 import { HIVE, CONNECTION_COLORS } from '../theme/palette';
@@ -41,9 +41,29 @@ export function Settings({ onBack, onDisconnect, onReconnect }: SettingsProps) {
   const [showConnect, setShowConnect] = useState(false);
   const { snapshot, source, lastFetchMs, colonyId } = useColony();
   const [notifPref, setNotifPref] = useState<NotifPref>(loadNotifPref);
-  const [pushState, setPushState] = useState<'idle' | 'working' | PushResult>(
-    () => (typeof Notification !== 'undefined' && Notification.permission === 'granted' ? 'ok' : 'idle')
-  );
+  // 'ok' only when an actual push subscription exists in this browser —
+  // browser permission alone used to fake "notifications are on"
+  const [pushState, setPushState] = useState<'idle' | 'working' | PushResult>('idle');
+  const [testResult, setTestResult] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!pushSupported() || Notification.permission !== 'granted') return;
+    navigator.serviceWorker.ready
+      .then(reg => reg.pushManager.getSubscription())
+      .then(sub => { if (sub) setPushState('ok'); })
+      .catch(() => {});
+  }, []);
+
+  const handleTestPush = async () => {
+    if (!colonyId) return;
+    setTestResult('Sending…');
+    const n = await sendTestPush(colonyId);
+    setTestResult(n === null
+      ? 'Couldn’t reach the server — try again.'
+      : n === 0
+        ? 'The server has no registered devices — re-pick a preference below.'
+        : `Sent to ${n} device${n === 1 ? '' : 's'} — should buzz any second.`);
+  };
 
   const handleEnablePush = async () => {
     if (!colonyId) return;
@@ -104,8 +124,25 @@ export function Settings({ onBack, onDisconnect, onReconnect }: SettingsProps) {
           from next door — even when the app is closed.
         </div>
         {pushState === 'ok' ? (
-          <div style={{ fontSize: SIZES.sm, color: HIVE.green, fontWeight: 600 }}>
-            ✓ Phone notifications are on
+          <div>
+            <div style={{ fontSize: SIZES.sm, color: HIVE.green, fontWeight: 600 }}>
+              ✓ Phone notifications are on
+            </div>
+            <button
+              onClick={handleTestPush}
+              style={{
+                marginTop: 8, padding: '6px 14px', borderRadius: 10,
+                border: `1.5px solid ${HIVE.accent}`, background: 'none',
+                color: HIVE.accent, fontSize: SIZES.sm, fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              Send a test notification
+            </button>
+            {testResult && (
+              <div style={{ fontSize: SIZES.xs, color: HIVE.dimText, marginTop: 6 }}>
+                {testResult}
+              </div>
+            )}
           </div>
         ) : !pushSupported() ? (
           <div style={{ fontSize: SIZES.sm, color: HIVE.dimText, fontStyle: 'italic' }}>

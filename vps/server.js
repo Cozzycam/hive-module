@@ -401,6 +401,17 @@ app.post('/api/v1/colonies/:colony_id/push/subscribe', (req, res) => {
   res.json({ status: 'subscribed', pref });
 });
 
+// Fire a test push to all of a colony's subscriptions (app Settings button)
+app.post('/api/v1/colonies/:colony_id/push/test', (req, res) => {
+  if (!webpush || !VAPID.publicKey) return res.status(503).json({ error: 'push disabled' });
+  const n = db.prepare(`SELECT COUNT(*) AS c FROM push_subscriptions WHERE colony_id = ?`)
+    .get(req.params.colony_id).c;
+  sendToSubs(req.params.colony_id,
+    { title: 'Hive', body: '\u{1F41C} Test — the colony can reach you!', tag: 'test', url: '/app/' },
+    () => true);
+  res.json({ status: 'sent', subscriptions: n });
+});
+
 // Remove a subscription (pref switched to Off in the app)
 app.post('/api/v1/colonies/:colony_id/push/unsubscribe', (req, res) => {
   let parsed;

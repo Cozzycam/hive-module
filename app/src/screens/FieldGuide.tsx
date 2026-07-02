@@ -44,10 +44,14 @@ interface KindStats {
   lastUnix: number;
 }
 
-export function FieldGuide({ onBack }: { onBack: () => void }) {
+export function FieldGuide({ onBack, initialKind }: {
+  onBack: () => void;
+  initialKind?: string;
+}) {
   const { colonyId, events: liveEvents, snapshot } = useColony();
   const palette = TOD_PALETTES.day;
   const [history, setHistory] = useState<ColonyEvent[] | null>(null);
+  const [selectedKind, setSelectedKind] = useState<string | null>(initialKind ?? null);
 
   // The poller only holds a recent window — pull a deeper slice for the
   // all-time collection (the server caps at 1000 newest).
@@ -91,6 +95,100 @@ export function FieldGuide({ onBack }: { onBack: () => void }) {
   const dateStr = (unix: number) =>
     new Date(unix * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
+  // Critter close-up — big art, catch stats, recent finds
+  // ("this is the butterfly close up... catch time, variant, number caught")
+  if (selectedKind) {
+    const meta = CRITTERS.find(c => c.kind === selectedKind);
+    const s = stats.get(selectedKind);
+    const source = history ?? liveEvents;
+    const recent = source
+      .filter(e => e.type === 'discovery'
+        && String((e.data as { critter?: string }).critter) === selectedKind)
+      .slice(-5)
+      .reverse();
+    const timeStr = (unix: number) =>
+      new Date(unix * 1000).toLocaleString(undefined,
+        { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+    return (
+      <div style={{ background: palette.bg, minHeight: '100%', padding: '0 16px 100px' }}>
+        <div style={{ padding: '16px 0 4px' }}>
+          <button onClick={() => setSelectedKind(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: SIZES.base, color: HIVE.accent, padding: 0 }}>
+            &larr; Field Guide
+          </button>
+        </div>
+
+        <div style={{ textAlign: 'center', padding: '18px 0 6px' }}>
+          <div style={{
+            fontSize: 84, lineHeight: '96px',
+            filter: s ? 'none' : 'grayscale(1) opacity(0.35)',
+          }}>
+            {meta?.emoji ?? '\u{1F50D}'}
+          </div>
+          <h1 style={{ fontSize: SIZES.xl, fontWeight: 700, color: palette.text, margin: '4px 0 2px' }}>
+            {s ? (meta?.name ?? selectedKind) : '???'}
+          </h1>
+          <div style={{ fontSize: SIZES.sm, color: palette.dimText }}>
+            Common visitor {'·'} classic colouring
+          </div>
+        </div>
+
+        {s ? (
+          <>
+            <Card style={{ background: palette.cardBg }}>
+              <div style={{ display: 'flex', justifyContent: 'space-around', textAlign: 'center' }}>
+                <div>
+                  <div style={{ fontSize: SIZES.lg, fontWeight: 700, color: palette.text }}>{s.count}</div>
+                  <div style={{ fontSize: SIZES.xs, color: palette.dimText }}>spotted</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: SIZES.lg, fontWeight: 700, color: palette.text }}>{dateStr(s.firstUnix)}</div>
+                  <div style={{ fontSize: SIZES.xs, color: palette.dimText }}>first seen</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: SIZES.lg, fontWeight: 700, color: palette.text }}>{dateStr(s.lastUnix)}</div>
+                  <div style={{ fontSize: SIZES.xs, color: palette.dimText }}>last seen</div>
+                </div>
+              </div>
+              <div style={{ fontSize: SIZES.sm, color: palette.text, marginTop: 12 }}>
+                {meta?.blurb}
+              </div>
+              <div style={{ fontSize: SIZES.xs, color: palette.dimText, marginTop: 6 }}>
+                First spotted by {s.firstFinder}.
+              </div>
+            </Card>
+
+            {recent.length > 0 && (
+              <Card style={{ background: palette.cardBg }}>
+                <div style={{ fontSize: SIZES.xs, fontWeight: 600, color: palette.dimText, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+                  Recent sightings
+                </div>
+                {recent.map((e, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: SIZES.sm }}>
+                    <span style={{ color: palette.text }}>
+                      {(e as unknown as { name?: string }).name || nameFromId(e.lilguy)}
+                    </span>
+                    <span style={{ color: palette.dimText, fontSize: SIZES.xs }}>{timeStr(e.unix)}</span>
+                  </div>
+                ))}
+              </Card>
+            )}
+          </>
+        ) : (
+          <Card style={{ background: palette.cardBg }}>
+            <div style={{ fontSize: SIZES.sm, color: palette.dimText, fontStyle: 'italic' }}>
+              {meta?.hint ?? 'Not yet spotted.'}
+            </div>
+          </Card>
+        )}
+
+        <div style={{ fontSize: SIZES.xs, color: palette.dimText, textAlign: 'center', padding: '14px 24px 0', fontStyle: 'italic' }}>
+          Variants with rarer colourings are rumoured&hellip;
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ background: palette.bg, minHeight: '100%', padding: '0 16px 100px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 0 4px' }}>
@@ -111,7 +209,7 @@ export function FieldGuide({ onBack }: { onBack: () => void }) {
       {CRITTERS.map(c => {
         const s = stats.get(c.kind);
         return (
-          <Card key={c.kind} style={{ background: palette.cardBg }}>
+          <Card key={c.kind} style={{ background: palette.cardBg }} onClick={() => setSelectedKind(c.kind)}>
             <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
               <div style={{
                 fontSize: 34, lineHeight: '40px', minWidth: 44, textAlign: 'center',

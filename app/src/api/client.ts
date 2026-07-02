@@ -301,6 +301,20 @@ export async function enablePushNotifications(
   }
 }
 
+// Ask the server to fire a test push at this colony's subscriptions.
+// Returns how many subscriptions the server knows about (null on failure) —
+// lets Settings show "registered" truthfully.
+export async function sendTestPush(colonyId: string): Promise<number | null> {
+  try {
+    const res = await fetch(`${VPS_BASE}/api/v1/colonies/${colonyId}/push/test`, { method: 'POST' });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return typeof data.subscriptions === 'number' ? data.subscriptions : null;
+  } catch {
+    return null;
+  }
+}
+
 // Unsubscribe this browser and tell the server to forget it (pref = Off)
 export async function disablePushNotifications(colonyId: string): Promise<PushResult> {
   if (!pushSupported()) return 'unsupported';

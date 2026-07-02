@@ -3,14 +3,14 @@ import { registerSW } from 'virtual:pwa-register';
 import { ColonyContext, ColonyActionsContext, type ColonyState, type ColonyActions } from './state/colony';
 import { PinsProvider } from './state/pins';
 import { Poller } from './api/poller';
-import { getStoredColonyId, setStoredColonyId, fetchEvents, clearConnection, fetchLatestFirmware, sendCommand } from './api/client';
+import { getStoredColonyId, setStoredColonyId, fetchEvents, clearConnection, fetchLatestFirmware, sendCommand, enablePushNotifications } from './api/client';
 import { Home } from './screens/Home';
 import { Characters } from './screens/Characters';
 import { Chambers } from './screens/Chambers';
 import { Diary } from './screens/Diary';
 import { Feedback } from './screens/Feedback';
 import { Empty } from './screens/Empty';
-import { Settings } from './screens/Settings';
+import { Settings, notificationManager } from './screens/Settings';
 import { FieldGuide } from './screens/FieldGuide';
 import { HIVE } from './theme/palette';
 import { SIZES } from './theme/fonts';
@@ -174,6 +174,7 @@ export function App() {
       return;
     }
     if (target === 'fieldguide') {
+      setNavParams(params || {});
       setShowFieldGuide(true);
       return;
     }
@@ -210,6 +211,18 @@ export function App() {
       setGiftSeenUnix(latestGift.unix);
     }
   }, [latestGift]);
+
+  // Self-healing push: if the browser already granted permission and the
+  // keeper wants notifications, silently (re)register the subscription +
+  // pref with the server on every boot. Heals stale-PWA states where the
+  // pref was saved locally but never reached the server.
+  useEffect(() => {
+    if (!colonyId) return;
+    const pref = notificationManager.getPref();
+    if (pref === 'off') return;
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    enablePushNotifications(colonyId, pref === 'milestones' ? 'milestones' : 'all');
+  }, [colonyId]);
 
   // Newest critter discovery ("Dahlia found a beetle"), if any.
   const latestDiscovery = useMemo<ColonyEvent | null>(() => {
@@ -330,7 +343,10 @@ export function App() {
                     onReconnect={(id) => { handleConnect(id); setShowSettings(false); }}
                   />
                 ) : showFieldGuide ? (
-                  <FieldGuide onBack={() => setShowFieldGuide(false)} />
+                  <FieldGuide
+                    onBack={() => setShowFieldGuide(false)}
+                    initialKind={navParams.kind as string | undefined}
+                  />
                 ) : (
                   <>
                     {tab === 'home' && <Home onNavigate={handleNavigate} />}
@@ -350,7 +366,12 @@ export function App() {
               {/* Discovery toast — a conker found a visiting critter */}
               {showDiscoveryToast && (
                 <button
-                  onClick={() => { handleNavigate('diary'); dismissDiscovery(); }}
+                  onClick={() => {
+                    // Straight to the critter's close-up, not the diary
+                    const kind = String((latestDiscovery?.data as Record<string, unknown>)?.critter || '');
+                    handleNavigate('fieldguide', kind ? { kind } : undefined);
+                    dismissDiscovery();
+                  }}
                   style={{
                     flexShrink: 0,
                     margin: '0 12px 8px',
