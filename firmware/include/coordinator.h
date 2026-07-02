@@ -164,7 +164,19 @@ private:
 
     // Traits + WorldCondition
     uint32_t _trait_check_tick = 0;
-    void _world_tick();
+    void _world_tick(uint32_t tick_num);
+
+    // Weather → challenge auto-trigger (queen only). Hysteresis counters:
+    // a challenge starts after START_OBS consecutive matching observations
+    // and ends after CLEAR_OBS calm ones, with a per-type cooldown.
+    uint32_t _wx_last_check_ms = 0;
+    uint8_t  _wx_pending_type = 0;                        // CHALLENGE_NONE
+    uint8_t  _wx_pending_obs = 0;
+    uint8_t  _wx_clear_obs = 0;
+    uint32_t _wx_started_ms = 0;
+    uint32_t _wx_cooldown_until_ms[CHALLENGE_COUNT] = {};
+    uint8_t  _classify_weather_challenge(float* severity_out) const;
+    void _weather_challenge_tick(uint32_t tick_num);
     void _trait_tick(uint32_t tick_num);
     void _catcher_resolve(uint32_t tick_num);   // single colony-wide "Bug Hunter" title
     void _emit_trait_bus(uint32_t id, const char* name, uint32_t trait_bit,

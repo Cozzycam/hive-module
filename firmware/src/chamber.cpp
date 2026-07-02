@@ -3,6 +3,7 @@
 #include "bonds.h"
 #include "rng.h"
 #include "time_of_day.h"
+#include "weather.h"
 #include <Arduino.h>
 #include <cstring>
 #include <cmath>
@@ -896,8 +897,14 @@ void Chamber::_tick_critters() {
         Critter& cr = critters[i];
 
         if (!cr.active) {
-            // One visitor wanders in at a time, only in daylight.
-            if (day && active == 0 && conker_count > 0
+            // One visitor wanders in at a time, only in daylight — and not
+            // in foul weather. Nobody visits during a downpour, a gale or a
+            // freeze; their absence is part of how weather reads on-glass.
+            bool foul = g_weather.valid
+                     && (g_weather.condition >= WX_RAIN
+                         || g_weather.wind >= WIND_HIGH
+                         || g_weather.temp == TEMP_FREEZING);
+            if (day && !foul && active == 0 && conker_count > 0
                     && g_rng.rand_float() < Cfg::CRITTER_SPAWN_CHANCE) {
                 cr.active = true;
                 cr.flee = 0;

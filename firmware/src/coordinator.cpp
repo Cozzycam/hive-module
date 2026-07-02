@@ -145,7 +145,7 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
     if (is_queen()) _reconcile_workers();
 
     // ---- WorldCondition: sync time ----
-    if (is_queen()) _world_tick();
+    if (is_queen()) _world_tick(tick_num);
 
     // ---- Bonds: decay + proximity detection ----
     if (is_queen()) _bond_tick(tick_num);
@@ -2271,7 +2271,7 @@ void Coordinator::_bond_load() {
 //  WorldCondition + Traits + Challenges
 // ================================================================
 
-void Coordinator::_world_tick() {
+void Coordinator::_world_tick(uint32_t tick_num) {
     // Larder cap: the colony can only store so much — excess spoils.
     // Single chokepoint for every food source (taps, packages, restores).
     float larder_cap = colony.daily_burn() * Cfg::LARDER_CAP_DAYS;
@@ -2296,6 +2296,91 @@ void Coordinator::_world_tick() {
     else if (doy >= 152 && doy < 244) world.season = SEASON_SUMMER;   // ~Jun 1 – Aug 31
     else if (doy >= 244 && doy < 335) world.season = SEASON_AUTUMN;   // ~Sep 1 – Nov 30
     else                                world.season = SEASON_WINTER;   // ~Dec 1 – Feb 28
+
+    // Real weather starts/ends survival challenges
+    _weather_challenge_tick(tick_num);
+
+    // Challenges bite: stores burn faster in hard conditions (severity-scaled)
+    float mult = 1.0f;
+    for (int i = 0; i < world.active_count; i++)
+        mult = fmaxf(mult, 1.0f + Cfg::WX_CHALLENGE_BURN_SCALE * world.active[i].severity);
+    colony.challenge_burn_mult = mult;
+}
+
+// Classify current weather into a challenge candidate (or CHALLENGE_NONE).
+uint8_t Coordinator::_classify_weather_challenge(float* sev) const {
+    *sev = 0.0f;
+    if (!g_weather.valid) return CHALLENGE_NONE;
+
+    // Storm: dangerous wind or a thunderstorm overhead
+    if (g_weather.wind >= WIND_HIGH || g_weather.condition == WX_THUNDERSTORM) {
+        float s = (g_weather.wind_speed_kmh - 62.0f) / 60.0f;   // 62..122 km/h → 0..1
+        if (g_weather.condition == WX_THUNDERSTORM && s < 0.7f) s = 0.7f;
+        *sev = fmaxf(0.3f, fminf(1.0f, s));
+        return CHALLENGE_STORM;
+    }
+    if (g_weather.temp >= TEMP_HOT) {
+        *sev = fmaxf(0.3f, fminf(1.0f, (g_weather.temperature_c - 28.0f) / 14.0f));
+        return CHALLENGE_HEATWAVE;
+    }
+    if (g_weather.temp == TEMP_FREEZING) {
+        *sev = fmaxf(0.3f, fminf(1.0f, (0.0f - g_weather.temperature_c) / 12.0f));
+        return CHALLENGE_COLD_SNAP;
+    }
+    // Drought: hot-dry clear spell (rare here — and so all the more storied)
+    if (g_weather.humidity_pct < 30.0f && g_weather.temp >= TEMP_WARM
+            && g_weather.condition <= WX_PARTLY_CLOUDY) {
+        *sev = fmaxf(0.3f, fminf(0.9f, (30.0f - g_weather.humidity_pct) / 25.0f));
+        return CHALLENGE_DROUGHT;
+    }
+    return CHALLENGE_NONE;
+}
+
+void Coordinator::_weather_challenge_tick(uint32_t tick_num) {
+    uint32_t now = millis();
+    if (now - _wx_last_check_ms < Cfg::WX_CHALLENGE_CHECK_MS) return;
+    _wx_last_check_ms = now;
+
+    float sev = 0.0f;
+    uint8_t current = _classify_weather_challenge(&sev);
+
+    // One at a time: while any challenge runs (auto or serial-started),
+    // we only watch for its end
+    if (world.active_count > 0) {
+        uint8_t active_type = world.active[world.active_count - 1].type;
+        if (current == active_type) {
+            _wx_clear_obs = 0;
+        } else if (now - _wx_started_ms >= Cfg::WX_CHALLENGE_MIN_MS) {
+            if (++_wx_clear_obs >= Cfg::WX_CHALLENGE_CLEAR_OBS) {
+                _wx_clear_obs = 0;
+                _wx_cooldown_until_ms[active_type] =
+                    now + Cfg::WX_CHALLENGE_COOLDOWN_MS;
+                challenge_end(tick_num);
+            }
+        }
+        return;
+    }
+
+    if (current == CHALLENGE_NONE) {
+        _wx_pending_type = CHALLENGE_NONE;
+        _wx_pending_obs = 0;
+        return;
+    }
+    if (_wx_cooldown_until_ms[current] != 0
+            && now < _wx_cooldown_until_ms[current]) return;
+
+    if (current == _wx_pending_type) {
+        _wx_pending_obs++;
+    } else {
+        _wx_pending_type = current;
+        _wx_pending_obs = 1;
+    }
+    if (_wx_pending_obs >= Cfg::WX_CHALLENGE_START_OBS) {
+        _wx_pending_type = CHALLENGE_NONE;
+        _wx_pending_obs = 0;
+        _wx_started_ms = now;
+        challenge_start(current, sev, tick_num);
+    }
 }
 
 void Coordinator::_trait_tick(uint32_t tick_num) {
@@ -2496,6 +2581,16 @@ void Coordinator::challenge_start(uint8_t type, float severity, uint32_t tick_nu
     je.challenge.severity = severity;
     journal.emit(je);
 
+    // Display bus: the glass announces the weather turning
+    if (_bus) {
+        Event ev = {};
+        ev.type = EVT_CHALLENGE_STARTED;
+        ev.tick = tick_num;
+        ev.challenge.challenge_type = type;
+        ev.challenge.severity = severity;
+        _bus->emit(ev);
+    }
+
     // Mark all living workers as participants (set challenge bit on traits temporarily)
     // We use the survival trait bit as a "participating" marker;
     // on end, if still alive, they keep it (survived). On death during, it's cleared.
@@ -2521,6 +2616,17 @@ void Coordinator::challenge_end(uint32_t tick_num) {
     je.challenge.challenge_type = ended.type;
     je.challenge.severity = ended.severity;
     journal.emit(je);
+
+    // Display bus first, so the "it passed" banner precedes the survivor
+    // trait banners in the queue
+    if (_bus) {
+        Event ev = {};
+        ev.type = EVT_CHALLENGE_ENDED;
+        ev.tick = tick_num;
+        ev.challenge.challenge_type = ended.type;
+        ev.challenge.severity = ended.severity;
+        _bus->emit(ev);
+    }
 
     // Award survival trait to all currently alive workers
     uint32_t survival_bit = challenge_survival_trait(ended.type);

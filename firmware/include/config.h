@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 169;
+constexpr uint32_t FW_VERSION = 170;
 
 namespace Cfg {
 
@@ -77,6 +77,17 @@ constexpr float CONKER_SCALE_MIN  = 2.2f;
 constexpr float CONKER_SCALE_MAX  = 4.2f;
 // Hatchlings render at 60% and grow to full size over their first day
 constexpr uint32_t GROWTH_JUVENILE_MS = 86400000UL;  // 24h sim-running time
+
+// ---- Weather-driven challenges ----
+// Real local weather (Open-Meteo) auto-starts/ends survival challenges.
+// Hysteresis: N consecutive observations (spaced CHECK_MS apart, weather
+// refetches every 10 min) so a gusty minute doesn't declare a storm.
+constexpr uint32_t WX_CHALLENGE_CHECK_MS    = 5UL * 60UL * 1000UL;       // classify every 5 min
+constexpr int      WX_CHALLENGE_START_OBS   = 2;                          // consecutive obs to start
+constexpr int      WX_CHALLENGE_CLEAR_OBS   = 2;                          // consecutive calm obs to end
+constexpr uint32_t WX_CHALLENGE_MIN_MS      = 15UL * 60UL * 1000UL;       // never end within 15 min
+constexpr uint32_t WX_CHALLENGE_COOLDOWN_MS = 3UL * 60UL * 60UL * 1000UL; // per-type re-trigger gap
+constexpr float    WX_CHALLENGE_BURN_SCALE  = 0.35f;  // burn mult = 1 + scale * severity
 
 // ---- Food rates (per real day) ----
 constexpr float QUEEN_FOOD_PER_DAY    = 3.0f;

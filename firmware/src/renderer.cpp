@@ -15,6 +15,7 @@
 #include "sprites.h"
 #include "time_of_day.h"
 #include "weather.h"
+#include "world_condition.h"
 #include "rng.h"
 #include <pgmspace.h>
 #include <Preferences.h>
@@ -1580,6 +1581,26 @@ void Renderer::receive_events(const Event* events, int count, const Chamber& ch)
                 snprintf(msg, sizeof(msg), "%s stands vigil for a friend",
                          ev.mourning.mourner_name);
             banner(msg);
+            break;
+        }
+
+        case EVT_CHALLENGE_STARTED: {
+            static const char* const START_MSGS[] = {
+                "", "A heatwave bakes the colony!", "A cold snap grips the colony!",
+                "A drought parches the colony!", "A storm batters the colony!",
+            };
+            if (ev.challenge.challenge_type < CHALLENGE_COUNT)
+                banner(START_MSGS[ev.challenge.challenge_type]);
+            break;
+        }
+
+        case EVT_CHALLENGE_ENDED: {
+            static const char* const END_MSGS[] = {
+                "", "The heatwave has broken", "The cold snap has thawed",
+                "The drought has broken", "The storm has passed",
+            };
+            if (ev.challenge.challenge_type < CHALLENGE_COUNT)
+                banner(END_MSGS[ev.challenge.challenge_type]);
             break;
         }
 

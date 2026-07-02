@@ -30,6 +30,8 @@ enum EventType : uint8_t {
     EVT_BOND_MUTUAL         = 14,   // pair became best friends
     EVT_TRAIT_EARNED        = 15,   // a conker earned a trait/title
     EVT_MOURNING            = 16,   // a conker set off to stand vigil
+    EVT_CHALLENGE_STARTED   = 17,   // weather challenge began (banner)
+    EVT_CHALLENGE_ENDED     = 18,   // weather challenge passed (banner)
 };
 
 // ---- Interaction subtypes ----
@@ -108,6 +110,11 @@ struct MourningData {
     char     dead_name[16];
 };
 
+struct ChallengeEventData {
+    uint8_t challenge_type;   // ChallengeType value
+    float   severity;
+};
+
 // ---- Event struct (tagged union) ----
 
 struct Event {
@@ -126,6 +133,7 @@ struct Event {
         BondEventData          bond;      // bond_formed, bond_mutual
         TraitEarnedData        trait;     // trait_earned
         MourningData           mourning;  // mourning
+        ChallengeEventData     challenge; // challenge_started, challenge_ended
     };
 };
 

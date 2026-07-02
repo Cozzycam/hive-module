@@ -17,6 +17,7 @@ struct ColonyState {
     bool     eggs_dormant        = false;               // at cap with brood waiting (app notice)
     float    peak_pressure       = 0.0f;
     int      recovery_boost_remaining = 0;
+    float    challenge_burn_mult = 1.0f;  // >1 during weather challenges (coordinator sets)
 
     float daily_burn() const;
     float food_pressure() const;
