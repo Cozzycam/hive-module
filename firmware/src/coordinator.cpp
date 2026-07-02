@@ -2545,9 +2545,11 @@ void Coordinator::_trait_tick(uint32_t tick_num) {
         }
 
         // Catcher ("Bug Hunter"): keep the persisted catch count in step with
-        // the live conker. The badge itself is a single colony-wide title,
-        // resolved across all conkers in _catcher_resolve() after this loop.
-        if (w.catches != rec->catches) { rec->catches = w.catches; rec->dirty = true; }
+        // the live conker. Sync UP only — a live count below the bank means
+        // the live copy lost history (pre-v179 crossings zeroed it), so
+        // restore from the bank instead of nuking it.
+        if (w.catches > rec->catches) { rec->catches = w.catches; rec->dirty = true; }
+        else if (w.catches < rec->catches) w.catches = rec->catches;
 
         // Emit trait_earned for newly set bits
         uint32_t new_bits = rec->traits & ~prev_traits;
@@ -2604,14 +2606,13 @@ void Coordinator::_emit_trait_bus(uint32_t id, const char* name,
     _bus->emit(ev);
 }
 
-// "Bug Hunter" is a single, colony-wide title that scales in steps of 25
-// catches. The first conker to reach 25 wins it; to take it from the holder a
-// challenger must reach the next 25-multiple ABOVE what the holder has banked
-// (50, then 75, 100, ...). The holder defends automatically — every time their
-// own catch count crosses a 25-step the bar rises with them, so a rival always
-// has to out-catch the reigning champion, not merely re-hit 25. Only living
-// conkers compete for the live title; a deceased champion keeps the badge on
-// their record as a keepsake (same as Bonded).
+// "Bug Hunter" is a single, colony-wide title that scales in steps of 5
+// catches. The first conker to reach 5 wins it; to take it from the holder a
+// challenger must reach the next 5-multiple STRICTLY above the holder's bank
+// (holder at 10 → challenger needs 15, not 11 — beating them by one doesn't
+// unseat a champion). The holder defends automatically: as their own count
+// climbs, the bar climbs with them. Only living conkers compete for the live
+// title; a deceased champion keeps the badge as a keepsake (same as Bonded).
 void Coordinator::_catcher_resolve(uint32_t tick_num) {
     // Identify the current living holder (heal any duplicates by keeping the
     // strongest — there should only ever be one).
@@ -2644,10 +2645,10 @@ void Coordinator::_catcher_resolve(uint32_t tick_num) {
         }
     }
 
-    // The bar is the next 25-multiple strictly above the holder's banked
-    // catches (so the holder never qualifies as their own challenger), or 25
+    // The bar is the next 5-multiple strictly above the holder's banked
+    // catches (so the holder never qualifies as their own challenger), or 5
     // when the title is currently vacant.
-    uint16_t bar = (holder_idx >= 0) ? (uint16_t)((holder_catches / 25 + 1) * 25) : 25;
+    uint16_t bar = (holder_idx >= 0) ? (uint16_t)((holder_catches / 5 + 1) * 5) : 5;
 
     // Strongest living challenger that has reached the bar.
     int best_idx = -1;
