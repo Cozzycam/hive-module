@@ -1136,7 +1136,7 @@ void Coordinator::_respawn_worker(uint32_t id, IdentityRecord* rec) {
     // Heal a nameless record before copying (see restore path) — else the
     // respawned conker renders "???" and never gets named again.
     if (rec->name[0] == '\0') {
-        name_random(rec->name, sizeof(rec->name));
+        registry.pick_unique_name(rec->name, sizeof(rec->name));
         rec->dirty = true;
         Serial.printf("[reconcile] id=%lu record had no name — healed to %s\r\n",
                       (unsigned long)id, rec->name);
@@ -1291,7 +1291,7 @@ void Coordinator::_persist_tick(uint32_t tick_num) {
 
         IdentityRecord rec;
         rec.id = w.id;
-        name_random(rec.name, sizeof(rec.name));
+        registry.pick_unique_name(rec.name, sizeof(rec.name));
         strncpy(w.name, rec.name, sizeof(w.name) - 1);
         rec.role = w.role;
         rec.is_pioneer = w.is_pioneer;
@@ -1431,7 +1431,7 @@ void Coordinator::_persist_process_hatches() {
 
                 IdentityRecord rec;
                 rec.id = id;
-                name_random(rec.name, sizeof(rec.name));
+                registry.pick_unique_name(rec.name, sizeof(rec.name));
                 strncpy(chamber.conkers[i].name, rec.name, sizeof(chamber.conkers[i].name) - 1);
                 rec.role = chamber.conkers[i].role;
                 rec.is_pioneer = chamber.conkers[i].is_pioneer;
@@ -1856,7 +1856,7 @@ void Coordinator::_persist_migrate_live_colony() {
         w.id = registry.allocate_id();
         IdentityRecord rec;
         rec.id = w.id;
-        name_random(rec.name, sizeof(rec.name));
+        registry.pick_unique_name(rec.name, sizeof(rec.name));
         strncpy(w.name, rec.name, sizeof(w.name) - 1);
         rec.role = w.role;
         rec.is_pioneer = w.is_pioneer;
@@ -1995,7 +1995,7 @@ void Coordinator::_persist_restore_from_disk() {
         // otherwise the conker renders "???" forever, and _persist_tick won't
         // fix it because the record exists (only record-LESS conkers get named).
         if (r.name[0] == '\0') {
-            name_random(r.name, sizeof(r.name));
+            registry.pick_unique_name(r.name, sizeof(r.name));
             r.dirty = true;
             Serial.printf("[persist] id=%lu record had no name — healed to %s\r\n",
                           (unsigned long)r.id, r.name);
@@ -2464,6 +2464,24 @@ void Coordinator::_trait_tick(uint32_t tick_num) {
     }
 
     _catcher_resolve(tick_num);
+
+    // Milestone decor unlocks — monotonic during runtime; recomputed from
+    // living records on boot (a keepsake held only by the departed can
+    // lapse across a reboot — manifest persistence can come later)
+    uint8_t mb = _milestone_bits;
+    if (colony.total_workers_born >= 25) mb |= 0x01;
+    constexpr uint32_t SURV = TRAIT_SURVIVED_HEATWAVE | TRAIT_SURVIVED_COLD_SNAP
+                            | TRAIT_SURVIVED_DROUGHT | TRAIT_SURVIVED_STORM;
+    for (int i = 0; i < chamber.conker_count; i++) {
+        const Conker& w = chamber.conkers[i];
+        if (w.id == 0 || !w.alive) continue;
+        const IdentityRecord* rec = registry.get(w.id);
+        if (!rec) continue;
+        if (rec->traits & SURV)          mb |= 0x02;
+        if (rec->traits & TRAIT_BONDED)  mb |= 0x04;
+        if (rec->traits & TRAIT_CATCHER) mb |= 0x08;
+    }
+    _milestone_bits = mb;
 }
 
 // Display-bus mirror of JEVT_TRAIT_EARNED — sparkle + HUD banner on the glass.

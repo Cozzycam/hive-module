@@ -125,6 +125,12 @@ public:
     // ID allocation
     uint32_t allocate_id();
 
+    // Naming — a random plant name no known record (or the queen) already
+    // bears. Plain name_random() gave the colony two Marigolds: esp_random's
+    // early-boot state can repeat across reboots. Uniqueness keeps the
+    // historian legible ("mourned by Marigold" must mean one Marigold).
+    void pick_unique_name(char* buf, size_t buflen);
+
     // Record lifecycle
     bool create(const IdentityRecord& rec);
     bool update(uint32_t id, const IdentityRecord& rec);

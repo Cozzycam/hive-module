@@ -731,6 +731,62 @@ void Renderer::_draw_floor_uncached() {
     _draw_edge_decor_direct();
 }
 
+void Renderer::set_milestone_decor(uint8_t bits) {
+    if (bits == _milestone_decor) return;
+    _milestone_decor = bits;
+    _floor_cache_valid = false;   // decor lives in the cached floor
+    _needs_full_redraw = true;
+}
+
+// Colony achievements as permanent chamber objects — visible, accumulating
+// history on the glass ("even tamagotchi had growth" — now the room itself
+// grows). Drawn into the floor cache alongside the edge pebbles.
+void Renderer::_draw_milestone_decor() {
+    // Mossy stone — 25 workers born: the colony has real history now
+    if (_milestone_decor & 0x01) {
+        int px = SCREEN_W - 120, py = 36;
+        uint8_t pr = _lerp8(150, 85, _nf), pg = _lerp8(148, 84, _nf), pb = _lerp8(140, 90, _nf);
+        uint16_t stone = _rgb565(pr, pg, pb);
+        uint16_t moss  = _rgb565(_lerp8(90, 40, _nf), _lerp8(150, 80, _nf), _lerp8(70, 45, _nf));
+        _gfx->fillRoundRect(px - 6, py - 4, 12, 8, 3, stone);
+        _gfx->drawFastHLine(px - 5, py + 4, 10, _rgb565(pr * 3 / 4, pg * 3 / 4, pb * 3 / 4));
+        _gfx->drawFastHLine(px - 4, py - 4, 7, moss);   // moss cap
+        _gfx->drawPixel(px - 5, py - 3, moss);
+        _gfx->drawPixel(px + 3, py - 3, moss);
+    }
+    // Cairn — the colony weathered its first challenge together
+    if (_milestone_decor & 0x02) {
+        int px = 120, py = SCREEN_H - 28;
+        uint8_t pr = _lerp8(160, 90, _nf), pg = _lerp8(155, 88, _nf), pb = _lerp8(148, 95, _nf);
+        uint16_t c  = _rgb565(pr, pg, pb);
+        uint16_t cd = _rgb565(pr * 3 / 4, pg * 3 / 4, pb * 3 / 4);
+        _gfx->fillRoundRect(px - 5, py,     10, 4, 2, c);    // base
+        _gfx->fillRoundRect(px - 3, py - 3,  7, 3, 1, cd);   // middle
+        _gfx->fillRoundRect(px - 1, py - 5,  4, 2, 1, c);    // top
+    }
+    // Wildflower — the first best friendship blossomed here
+    if (_milestone_decor & 0x04) {
+        int px = 90, py = 30;
+        uint16_t stem  = _rgb565(_lerp8(95, 45, _nf), _lerp8(150, 85, _nf), _lerp8(75, 50, _nf));
+        uint16_t petal = _rgb565(_lerp8(245, 140, _nf), _lerp8(170, 100, _nf), _lerp8(200, 130, _nf));
+        uint16_t heart = _rgb565(_lerp8(250, 150, _nf), _lerp8(220, 130, _nf), _lerp8(120, 80, _nf));
+        _gfx->drawFastVLine(px, py, 5, stem);
+        _gfx->drawPixel(px - 1, py - 1, petal);
+        _gfx->drawPixel(px + 1, py - 1, petal);
+        _gfx->drawPixel(px, py - 2, petal);
+        _gfx->drawPixel(px, py, heart);
+    }
+    // Golden seed — a Bug Hunter has been crowned
+    if (_milestone_decor & 0x08) {
+        int px = SCREEN_W - 26, py = SCREEN_H / 2 - 20;
+        uint16_t gold  = _rgb565(_lerp8(230, 140, _nf), _lerp8(185, 110, _nf), _lerp8(70, 45, _nf));
+        uint16_t glint = _rgb565(_lerp8(255, 170, _nf), _lerp8(235, 150, _nf), _lerp8(160, 90, _nf));
+        _gfx->fillRoundRect(px - 3, py - 2, 7, 5, 2, gold);
+        _gfx->drawPixel(px - 1, py - 1, glint);
+        _gfx->drawPixel(px, py - 2, glint);
+    }
+}
+
 void Renderer::_draw_edge_decor_direct() {
     // Shared pebble palette
     uint8_t pr = _lerp8(160, 90, _nf);
@@ -806,6 +862,8 @@ void Renderer::_draw_edge_decor_direct() {
         _gfx->drawPixel(mx + 4, my + 1, moss_col);
     }
 
+    // Earned milestone objects (drawn last, on top of the ambient decor)
+    _draw_milestone_decor();
 }
 
 // ================================================================

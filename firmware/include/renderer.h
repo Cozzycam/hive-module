@@ -105,6 +105,12 @@ public:
     // best friends"). Queued; each shows ~3.5s. Advisory: drops when full.
     void banner(const char* text);
 
+    // Milestone decor — colony achievements grow permanent objects into
+    // the floor. Bits: 0 = mossy stone (25 workers born), 1 = cairn
+    // (survived a challenge), 2 = wildflower (first best friends),
+    // 3 = golden seed (Bug Hunter crowned). Change invalidates floor cache.
+    void set_milestone_decor(uint8_t bits);
+
     // Boot splash
     void start_boot_splash();
     bool is_splash_active() const { return _boot_splash_active; }
@@ -162,6 +168,8 @@ private:
     // Floor rendering — uncached fallback
     void _draw_floor_uncached();
     void _draw_edge_decor_direct();
+    uint8_t _milestone_decor = 0;
+    void _draw_milestone_decor();
 
     // Boot splash
     bool _tick_boot_splash(const Chamber& ch);

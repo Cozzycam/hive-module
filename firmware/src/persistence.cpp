@@ -805,3 +805,28 @@ void colony_reset_wipe() {
     }
     Serial.println("[reset] NVS cleared (founding + VPS cursor)");
 }
+
+// ---- Unique naming ----
+#include "names.h"
+
+void ConkerRegistry::pick_unique_name(char* buf, size_t buflen) {
+    // Try fresh draws first — 12 attempts is plenty while the wordlist
+    // has room (200 names vs ~20 living conkers)
+    for (int attempt = 0; attempt < 12; attempt++) {
+        name_random(buf, buflen);
+        bool taken = (strcmp(manifest().queen_name, buf) == 0);
+        for (int i = 0; i < _alive_count && !taken; i++)
+            if (strcmp(_alive[i].name, buf) == 0) taken = true;
+        if (!taken) return;
+    }
+    // Crowded (or cursed rolls) — suffix the last draw: "Marigold_2"
+    char base[20];
+    strlcpy(base, buf, sizeof(base));
+    for (uint32_t s = 2; s < 100; s++) {
+        snprintf(buf, buflen, "%s_%lu", base, (unsigned long)s);
+        bool taken = false;
+        for (int i = 0; i < _alive_count && !taken; i++)
+            if (strcmp(_alive[i].name, buf) == 0) taken = true;
+        if (!taken) return;
+    }
+}

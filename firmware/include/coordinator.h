@@ -177,6 +177,14 @@ private:
     uint32_t _wx_cooldown_until_ms[CHALLENGE_COUNT] = {};
     uint8_t  _classify_weather_challenge(float* severity_out) const;
     void _weather_challenge_tick(uint32_t tick_num);
+
+    // Milestone decor bits (renderer reads via getter each frame)
+    uint8_t _milestone_bits = 0;
+
+public:
+    uint8_t milestone_decor_bits() const { return _milestone_bits; }
+
+private:
     void _trait_tick(uint32_t tick_num);
     void _catcher_resolve(uint32_t tick_num);   // single colony-wide "Bug Hunter" title
     void _emit_trait_bus(uint32_t id, const char* name, uint32_t trait_bit,

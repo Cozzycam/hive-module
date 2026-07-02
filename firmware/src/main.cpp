@@ -1042,6 +1042,7 @@ void loop() {
         if (lerp_t < 0.0f) lerp_t = 0.0f;
         if (lerp_t > 1.0f) lerp_t = 1.0f;
 
+        renderer.set_milestone_decor(sim.coordinator.milestone_decor_bits());
         renderer.draw(sim.coordinator.chamber, lerp_t);
 
         // Selection overlay: highlight circle + name above selected conker
