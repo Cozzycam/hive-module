@@ -77,6 +77,18 @@ void Coordinator::init() {
     colony = ColonyState();
     chamber.init(&colony, queen);  // sets food_total for queen
     chamber.bonds = &bonds;        // let behaviour read friendships
+
+#ifdef ARDUINO
+    // Restore the followed list (app pins → on-glass stars)
+    {
+        Preferences fp;
+        fp.begin("hive", true);
+        size_t len = fp.getBytes("followed", chamber.followed,
+                                 sizeof(chamber.followed));
+        fp.end();
+        chamber.followed_count = (uint8_t)(len / sizeof(uint32_t));
+    }
+#endif
 }
 
 void Coordinator::set_role_nvs(ModuleRole r) {
@@ -1575,6 +1587,21 @@ bool Coordinator::cmd_gift_care_package(uint16_t target_id) {
     (void)target_id;
     return false;
 #endif
+}
+
+// App pins → followed list. The renderer draws a small star over these
+// conkers so a favourite stays findable at a glance (readability lever as
+// the population grows). Persisted so it survives reboots.
+void Coordinator::cmd_set_followed(const uint32_t* ids, int n) {
+    if (n > Chamber::MAX_FOLLOWED) n = Chamber::MAX_FOLLOWED;
+    chamber.followed_count = (uint8_t)n;
+    for (int i = 0; i < n; i++) chamber.followed[i] = ids[i];
+
+    Preferences prefs;
+    prefs.begin("hive", false);
+    prefs.putBytes("followed", chamber.followed, n * sizeof(uint32_t));
+    prefs.end();
+    Serial.printf("[cmd] following %d conker(s)\r\n", n);
 }
 
 void Coordinator::_receive_gifts() {

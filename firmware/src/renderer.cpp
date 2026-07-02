@@ -1314,6 +1314,20 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
                 }
             }
 
+            // Followed star — a small gold diamond so a favourite stays
+            // findable at a glance (fed by the app's pin list)
+            if (ch.is_followed(w.id) && w.stack_on < 0) {
+                int fx = sd.render_x - 9;
+                int fy = sd.render_y - 11;
+                uint16_t gold = _rgb565(255, 215, 90);
+                _gfx->drawPixel(fx, fy - 1, gold);
+                _gfx->drawPixel(fx - 1, fy, gold);
+                _gfx->drawPixel(fx, fy, gold);
+                _gfx->drawPixel(fx + 1, fy, gold);
+                _gfx->drawPixel(fx, fy + 1, gold);
+                _mark_dirty(fx - 2, fy - 2, 5, 5);
+            }
+
             // Grief tear: a single slow tear while standing vigil
             if (w.state == STATE_MOURNING) {
                 float tphase = (millis() % 2400) / 2400.0f;

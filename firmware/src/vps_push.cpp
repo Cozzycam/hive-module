@@ -330,6 +330,16 @@ static void _poll_commands(Coordinator& coord) {
             // until then; after the reboot the manifest reads "already current"
             // so it acks without re-flashing — no loop.
             vps_ota_update(coord);
+        } else if (strcmp(type, "set_followed") == 0) {
+            // App pins — star these conkers on the glass
+            uint32_t ids[Chamber::MAX_FOLLOWED];
+            int n = 0;
+            for (JsonVariant v : cmd["payload"]["ids"].as<JsonArray>()) {
+                if (n >= Chamber::MAX_FOLLOWED) break;
+                uint32_t id = v | 0;
+                if (id != 0) ids[n++] = id;
+            }
+            coord.cmd_set_followed(ids, n);
         } else if (strcmp(type, "reset_to_satellite") == 0) {
             // Conversion: this board abandons its sovereign colony and
             // reboots as a blank satellite (or specialised role), ready to
@@ -393,31 +403,35 @@ void vps_push_tick(Coordinator& coord) {
         _post(path, buf, len);
     }
 
-    // Push events since the line cursor (16KB of new lines per cycle;
-    // a backlog drains across cycles instead of silently truncating)
-    if (_last_pushed_unix > 0 || g_tod.unix_time > 0) {
-        uint32_t day = g_tod.unix_time / 86400;
-        if (day != _pushed_day) {
-            _pushed_day = day;      // midnight (or first run): fresh file
+    // Push events since the line cursor (16KB of new lines per cycle; a
+    // backlog drains across cycles instead of silently truncating). The
+    // cursor day only rolls forward once its file is FULLY drained, so a
+    // day spent offline catches up from the 32GB SD archive when WiFi
+    // returns — history is never dropped at midnight.
+    if (g_tod.unix_time > 0) {
+        uint32_t today = g_tod.unix_time / 86400;
+        if (_pushed_day == 0 || _pushed_day > today) {
+            _pushed_day = today;    // first run / clock weirdness
             _pushed_lines = 0;
         }
 
         struct EventCtx {
             String* str;
             bool has;
+            bool capped;        // hit the batch cap — more remains in the file
             uint32_t skip;      // lines already pushed
             uint32_t seen;      // lines encountered this read
             uint32_t appended;  // new lines added to this batch
         };
         String events = "{\"events\":[";
-        EventCtx ctx = {&events, false, _pushed_lines, 0, 0};
+        EventCtx ctx = {&events, false, false, _pushed_lines, 0, 0};
 
-        coord.journal.read_day(g_tod.unix_time,
+        coord.journal.read_day(_pushed_day * 86400 + 43200,  // noon of cursor day
             [](const char* line, void* raw) -> bool {
                 EventCtx* c = (EventCtx*)raw;
                 c->seen++;
                 if (c->seen <= c->skip) return true;   // already pushed
-                if (c->str->length() > 16000) return false;
+                if (c->str->length() > 16000) { c->capped = true; return false; }
                 if (c->has) *c->str += ",";
                 *c->str += line;
                 c->has = true;
@@ -433,15 +447,29 @@ void vps_push_tick(Coordinator& coord) {
             // VPS-side dedup makes any overlap harmless.
             _pushed_lines = ctx.seen;
             _save_cursor();
-        } else if (ctx.has) {
-            char path[80];
-            snprintf(path, sizeof(path), "/api/v1/colonies/%s/events",
-                     coord.registry.manifest().colony_id);
-            if (_post(path, events.c_str(), events.length())) {
-                _last_pushed_unix = g_tod.unix_time;
-                _pushed_lines += ctx.appended;
-                _save_cursor();
+        } else {
+            bool sent_ok = true;
+            if (ctx.has) {
+                char path[80];
+                snprintf(path, sizeof(path), "/api/v1/colonies/%s/events",
+                         coord.registry.manifest().colony_id);
+                sent_ok = _post(path, events.c_str(), events.length());
+                if (sent_ok) {
+                    _last_pushed_unix = g_tod.unix_time;
+                    _pushed_lines += ctx.appended;
+                }
             }
+            // Cursor day fully drained and it's a PAST day — advance one
+            // day per cycle until we reach today (empty days skip through)
+            bool advanced = false;
+            if (sent_ok && !ctx.capped && _pushed_day < today) {
+                _pushed_day++;
+                _pushed_lines = 0;
+                advanced = true;
+                Serial.printf("[vps] journal catch-up: advancing to day %lu\r\n",
+                              (unsigned long)_pushed_day);
+            }
+            if (advanced || (ctx.has && sent_ok)) _save_cursor();
         }
     }
 

@@ -88,6 +88,7 @@ public:
     bool cmd_set_module_role(uint16_t target_id, uint8_t new_role);
     bool cmd_set_floor_tint(uint16_t target_id, uint8_t r, uint8_t g, uint8_t b);
     bool cmd_gift_care_package(uint16_t target_id);
+    void cmd_set_followed(const uint32_t* ids, int n);  // app pins → on-glass stars
 
     // Journal — called from main.cpp with drained EventBus events
     void _journal_from_bus_events(const Event* events, int count, uint32_t tick_num);

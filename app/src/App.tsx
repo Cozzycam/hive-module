@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { registerSW } from 'virtual:pwa-register';
 import { ColonyContext, ColonyActionsContext, type ColonyState, type ColonyActions } from './state/colony';
-import { PinsProvider } from './state/pins';
+import { PinsProvider, usePins } from './state/pins';
 import { Poller } from './api/poller';
 import { getStoredColonyId, setStoredColonyId, fetchEvents, clearConnection, fetchLatestFirmware, sendCommand, enablePushNotifications } from './api/client';
 import { Home } from './screens/Home';
@@ -326,6 +326,7 @@ export function App() {
       <ColonyContext.Provider value={colonyState}>
         <ColonyActionsContext.Provider value={actions}>
           <PinsProvider>
+            <PinsSync colonyId={colonyId} />
             <div style={{
               display: 'flex', flexDirection: 'column',
               height: '100vh', width: '100%', maxWidth: 430, margin: '0 auto',
@@ -503,4 +504,20 @@ export function App() {
       </ColonyContext.Provider>
     </AuthGate>
   );
+}
+
+// Mirrors the pin list to the module (set_followed command) so followed
+// conkers get a small gold star on the glass. Sends on change, once.
+function PinsSync({ colonyId }: { colonyId: string | null }) {
+  const { pins } = usePins();
+  const lastSent = useRef<string>('');
+  useEffect(() => {
+    if (!colonyId) return;
+    const ids = pins.slice(0, 8);  // firmware caps at 8 followed
+    const key = JSON.stringify(ids);
+    if (key === lastSent.current) return;
+    lastSent.current = key;
+    sendCommand(colonyId, 'set_followed', { ids });
+  }, [pins, colonyId]);
+  return null;
 }

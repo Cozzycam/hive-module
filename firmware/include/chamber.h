@@ -62,6 +62,15 @@ public:
     EventBus*    event_bus = nullptr;   // transient, set per-tick by Sim
     uint32_t     tick_num  = 0;         // transient, set per-tick by Sim
     bool         is_garden = false;     // garden role: more critters, wild sprouts
+    // Followed conkers (app pins) — the renderer stars them on the glass
+    static constexpr int MAX_FOLLOWED = 8;
+    uint32_t     followed[MAX_FOLLOWED] = {};
+    uint8_t      followed_count = 0;
+    bool is_followed(uint32_t id) const {
+        for (int i = 0; i < followed_count; i++)
+            if (followed[i] == id) return true;
+        return false;
+    }
     bool         gather_active = false; // transient: finger held, conkers rush here
     bool         gather_is_exit = false; // true = heading to edge to cross modules
     float        gather_x = 0, gather_y = 0; // cell coords
