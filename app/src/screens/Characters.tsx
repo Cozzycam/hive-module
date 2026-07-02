@@ -584,13 +584,24 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
           {char.traits.map(t => {
             const info = TRAIT_INFO[t];
             // Bonded names its friends right here (feedback: "says bonded but
-            // doesn't tell you who they're bonded to")
+            // doesn't tell you who they're bonded to"). Only mutual
+            // (reciprocated) bonds are "best friends" — one-way ones are soft
+            // spots, matching the web + the bond list below (feedback: "best
+            // friends are not best friends").
             let desc = info?.desc;
-            if (t === 'bonded' && bonds.length > 0) {
-              const names = bonds.map(b => b.to.name);
-              desc = names.length === 1
-                ? `Best friends with ${names[0]}.`
-                : `Best friends with ${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}.`;
+            if (t === 'bonded') {
+              const joinNames = (bs: typeof bonds) => {
+                const names = bs.map(b => b.to.name);
+                return names.length === 1
+                  ? names[0]
+                  : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+              };
+              const best = bonds.filter(b => b.reciprocated);
+              const soft = bonds.filter(b => !b.reciprocated);
+              const parts: string[] = [];
+              if (best.length > 0) parts.push(`Best friends with ${joinNames(best)}.`);
+              if (soft.length > 0) parts.push(`Has a soft spot for ${joinNames(soft)}.`);
+              if (parts.length > 0) desc = parts.join(' ');
             }
             return (
               <div key={t} style={{ marginBottom: 8 }}>
