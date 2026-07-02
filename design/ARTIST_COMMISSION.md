@@ -56,8 +56,9 @@ is procedural — you supply poses, not motion in-betweens.
 | `mourn` | Head bowed, antennae drooped — used at vigils for dead friends. Make it quietly sad |
 | `celebrate` | A little jump/cheer — earned a title, made a best friend |
 | `eat` | Munching |
+| `sow` | Leant over the soil, planting — farming is a real profession (the colony's gardeners emerge from personality and earn "the Green-Thumbed") |
 
-**9 frames @ 16×16, neutral body ramp + exempt eye colours.**
+**10 frames @ 16×16, neutral body ramp + exempt eye colours.**
 
 ### B. Emote glyphs — 8×8, full colour (priority 2)
 
@@ -91,7 +92,7 @@ The collection game. Native sizes; rendered ~1.5–2×.
 | Item | Canvas | Notes |
 |---|---|---|
 | Food pile ×3 states | 12×8 each | small / half / full mound — seeds & berries, warm |
-| Wild sprout | 8×8 | little green shoot (garden food spawns) |
+| Garden crop ×4 stages | soil bed 12×8; plant up to 10×14 | tilled soil bed → sprout → growing → mature-with-berries. The garden module's crops grow through these over real hours — the keeper literally watches them rise, so each stage should read as *progress*. Mature = the payoff frame |
 | Mossy stone | 12×8 | milestone: 25 workers born |
 | Cairn | 10×9 | milestone: survived first challenge — 3 stacked pebbles |
 | Wildflower | 8×10 | milestone: first best friends — one sweet flower |
