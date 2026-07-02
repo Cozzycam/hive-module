@@ -9,32 +9,14 @@ import { BondsWeb } from '../components/BondsWeb';
 import { ConkerSprite } from '../components/ConkerSprite';
 import { nameFromId } from '../data/plantNames';
 import { personalityPhrase, deriveRoleTag, PERSONALITY_DIMS, dimLeaning } from '../data/personality';
+import { TRAIT_INFO, traitLabel } from '../data/traits';
+import { epithet, buildLifeStory } from '../data/biography';
 import { HIVE, TOD_PALETTES } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 import { fetchLilguyDetail, fetchLilguyEvents, sendCommand } from '../api/client';
 import type { ColonyEvent, LilGuyDetail, Personality, Bond, ConkerMood } from '../api/types';
 
-// Trait names arrive as firmware identifiers — translate to human warmth
-// (Amber feedback: "make the traits be understandable")
-const TRAIT_INFO: Record<string, { label: string; desc: string }> = {
-  pioneer: { label: 'Pioneer', desc: 'First to step into an unexplored chamber.' },
-  elder: { label: 'Elder', desc: 'Has lived to a grand old age — the young ones huddle close.' },
-  bonded: {
-    label: 'Bonded',
-    desc: 'Made a true friend by spending lots of time side by side. '
-        + 'Friendships can fade if they drift apart — or be lost when a friend dies — '
-        + 'but the badge is theirs to keep.',
-  },
-  survived_heatwave: { label: 'Heatwave Survivor', desc: 'Came through a scorching spell.' },
-  survived_cold_snap: { label: 'Cold Snap Survivor', desc: 'Endured a bitter freeze.' },
-  survived_drought: { label: 'Drought Survivor', desc: 'Outlasted the hungry, dry days.' },
-  survived_storm: { label: 'Storm Survivor', desc: 'Weathered a great storm.' },
-  catcher: { label: 'Bug Hunter', desc: "The colony's reigning critter-catcher — a title that only passes to whoever out-catches the current champion." },
-};
-
-function traitLabel(t: string): string {
-  return TRAIT_INFO[t]?.label ?? t.replace(/_/g, ' ');
-}
+// Trait metadata now lives in data/traits.ts (shared with biography.ts).
 
 // "What does this mean?" — tap to expand each personality dimension into
 // the conker's leaning plus what to expect from them (Amber feedback)
@@ -364,6 +346,15 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
           <div>
             <div style={{ fontSize: SIZES.base, fontWeight: 600, color: palette.text }}>
               {c.name}
+              {(() => {
+                // Epithets make them memorable at a glance ("Bramble the Bold")
+                const ep = epithet(c.traits, c.personality);
+                return ep && (
+                  <span style={{ fontWeight: 400, fontStyle: 'italic', color: palette.dimText }}>
+                    {' '}{ep}
+                  </span>
+                );
+              })()}
               {c.died_unix && <span style={{ fontSize: SIZES.xs, color: palette.dimText, marginLeft: 6 }}>(deceased)</span>}
             </div>
             <div style={{ fontSize: SIZES.sm, color: palette.dimText }}>
@@ -402,8 +393,30 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
   const personality = detail?.personality || char.personality;
   const bonds = detail?.bonds || char.bonds;
   const isDeceased = !!char.died_unix || !!detail?.died_unix;
-  const { colonyId } = useColony();
+  const { colonyId, events: colonyEvents, snapshot } = useColony();
   const [renaming, setRenaming] = useState(false);
+
+  // History refines the epithet (parade-leaders, keen eyes) beyond what
+  // traits + personality alone can tell
+  const ep = useMemo(() => epithet(char.traits, personality, events),
+    [char.traits, personality, events]);
+
+  const rosterNames = useMemo(() => {
+    const map = new Map<number, string>();
+    if (snapshot?.lilguys) for (const l of snapshot.lilguys) map.set(l.id, l.name);
+    return map;
+  }, [snapshot]);
+
+  const story = useMemo(() => buildLifeStory({
+    id: char.id,
+    name: char.name,
+    founder: char.founder,
+    died_unix: char.died_unix || detail?.died_unix || undefined,
+    age_days: detail?.age_days ?? char.age_days,
+    born_unix: detail?.born_unix,
+    tended_by_name: detail?.tended_by?.name,
+  }, events, rosterNames, colonyEvents),
+    [char, detail, events, rosterNames, colonyEvents]);
 
   const handleRename = useCallback(async () => {
     if (!colonyId) return;
@@ -441,6 +454,11 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
       {/* Name + role */}
       <h1 style={{ fontSize: SIZES.xxl, fontWeight: 700, color: palette.text, margin: 0 }}>
         {char.name}
+        {ep && (
+          <span style={{ fontWeight: 400, fontStyle: 'italic', fontSize: SIZES.lg, color: palette.dimText }}>
+            {' '}{ep}
+          </span>
+        )}
         {!isDeceased && (
           // A proper labelled pill — the bare pencil was invisible (Amber)
           <button
@@ -678,14 +696,22 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
         </Card>
       )}
 
-      {/* Events */}
-      {events.length > 0 && (
+      {/* Life Story — their history told as a biography, oldest first */}
+      {story.length > 0 && (
         <Card style={{ background: palette.cardBg }}>
           <div style={{ fontSize: SIZES.xs, fontWeight: 600, color: palette.dimText, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-            Life Events
+            Life Story
           </div>
-          {events.slice(-20).reverse().map((ev, i) => (
-            <EventRow key={i} event={ev} palette={palette} />
+          {story.map((s, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, padding: '4px 0', alignItems: 'baseline' }}>
+              <span style={{ minWidth: 22, textAlign: 'center' }}>{s.icon}</span>
+              <div style={{ flex: 1 }}>
+                <span style={{ fontSize: SIZES.sm, color: palette.text }}>{s.text}</span>
+                <span style={{ fontSize: SIZES.xs, color: palette.dimText, marginLeft: 6 }}>
+                  {new Date(s.unix * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                </span>
+              </div>
+            </div>
           ))}
         </Card>
       )}
@@ -704,20 +730,5 @@ function MiniStat({ label, value, palette }: {
   );
 }
 
-function EventRow({ event, palette }: {
-  event: ColonyEvent;
-  palette: { text: string; dimText: string };
-}) {
-  const date = new Date(event.unix * 1000);
-  const dateStr = `${date.getMonth() + 1}/${date.getDate()}`;
-  return (
-    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '3px 0', fontSize: SIZES.sm }}>
-      <span style={{ color: palette.dimText, minWidth: 36 }}>{dateStr}</span>
-      <span style={{ color: palette.text }}>{formatEventType(event.type)}</span>
-    </div>
-  );
-}
-
-function formatEventType(type: string): string {
-  return type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-}
+// (EventRow / formatEventType removed — the Life Story card narrativizes
+// per-conker history via data/biography.ts instead of bare event labels.)

@@ -7,6 +7,35 @@ import { HIVE, TOD_PALETTES } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 import type { ColonyEvent, EventType } from '../api/types';
 
+// Rollup entries synthesized by the chronicle view — one line per kind
+// of ambient hum per day
+type Rollup = {
+  type: 'food_group' | 'play_group' | 'discovery_group' | 'tap_group' | 'flicker_group';
+  count: number;
+  totalAmount?: number;
+  unix: number;
+  tick: number;
+  lilguy: number;
+  data: Record<string, unknown>;
+};
+type DiaryItem = ColonyEvent | Rollup;
+
+// Neighbour connect/disconnect churn — a flapping pogo connection can log
+// dozens of these a day; the chronicle shows one flicker line instead
+const FLICKER_KINDS = new Set([
+  'module_connected', 'module_disconnected', 'met_a_neighbouring_kingdom',
+]);
+
+function dayLabel(unix: number): string {
+  const d = new Date(unix * 1000);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return 'Today';
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
 const EVENT_CATEGORIES: { label: string; types: EventType[] }[] = [
   { label: 'All', types: [] },
   { label: 'Births', types: ['hatch'] },
@@ -31,61 +60,116 @@ export function Diary() {
     refreshEvents();
   }, []);
 
-  const filtered = useMemo(() => {
+  const sections = useMemo(() => {
     const cat = EVENT_CATEGORIES[categoryIdx];
     // Filter out noisy chamber_crossing events from diary
     const meaningful = events.filter(e => e.type !== 'chamber_crossing');
-    const list = cat.types.length === 0
-      ? meaningful
-      : meaningful.filter(e => cat.types.includes(e.type));
-    // Group food_delivered events within 10 minutes of each other
-    const grouped: (ColonyEvent | { type: 'food_group'; count: number; totalAmount: number; unix: number; tick: number; lilguy: number; data: Record<string, unknown> } | { type: 'play_group'; count: number; unix: number; tick: number; lilguy: number; data: Record<string, unknown> })[] = [];
-    const TEN_MIN = 600;
-    const THIRTY_MIN = 1800;
-    for (let i = 0; i < list.length; i++) {
-      // Collapse runs of play — conkers romp constantly; one "playing" note per
-      // burst, not one per romp.
-      if (list[i].type === 'play') {
-        let count = 1;
-        const startUnix = list[i].unix;
-        const firstName = (list[i] as unknown as { name?: string }).name;
-        while (i + 1 < list.length && list[i + 1].type === 'play'
-               && Math.abs(list[i + 1].unix - startUnix) < THIRTY_MIN) {
-          i++; count++;
-        }
-        if (count === 1) {
-          grouped.push(list[i]);
-        } else {
-          grouped.push({
+
+    // Drill-down categories: raw entries, with the old run-grouping so
+    // Social/Discoveries stay readable
+    if (cat.types.length > 0) {
+      const list = meaningful.filter(e => cat.types.includes(e.type));
+      const grouped: DiaryItem[] = [];
+      const TEN_MIN = 600;
+      const THIRTY_MIN = 1800;
+      for (let i = 0; i < list.length; i++) {
+        if (list[i].type === 'play') {
+          let count = 1;
+          const startUnix = list[i].unix;
+          const firstName = (list[i] as unknown as { name?: string }).name;
+          while (i + 1 < list.length && list[i + 1].type === 'play'
+                 && Math.abs(list[i + 1].unix - startUnix) < THIRTY_MIN) {
+            i++; count++;
+          }
+          if (count === 1) grouped.push(list[i]);
+          else grouped.push({
             type: 'play_group', count,
             unix: startUnix, tick: list[i].tick, lilguy: 0, data: { name: firstName },
           });
+          continue;
         }
-        continue;
-      }
-      if (list[i].type !== 'food_delivered') {
-        grouped.push(list[i]);
-        continue;
-      }
-      let count = 1;
-      let total = ((list[i].data as { amount?: number }).amount) || 0;
-      const startUnix = list[i].unix;
-      while (i + 1 < list.length && list[i + 1].type === 'food_delivered'
-             && Math.abs(list[i + 1].unix - startUnix) < TEN_MIN) {
-        i++;
-        count++;
-        total += ((list[i].data as { amount?: number }).amount) || 0;
-      }
-      if (count === 1) {
-        grouped.push(list[i]);
-      } else {
-        grouped.push({
+        if (list[i].type !== 'food_delivered') {
+          grouped.push(list[i]);
+          continue;
+        }
+        let count = 1;
+        let total = ((list[i].data as { amount?: number }).amount) || 0;
+        const startUnix = list[i].unix;
+        while (i + 1 < list.length && list[i + 1].type === 'food_delivered'
+               && Math.abs(list[i + 1].unix - startUnix) < TEN_MIN) {
+          i++;
+          count++;
+          total += ((list[i].data as { amount?: number }).amount) || 0;
+        }
+        if (count === 1) grouped.push(list[i]);
+        else grouped.push({
           type: 'food_group', count, totalAmount: total,
           unix: startUnix, tick: list[i].tick, lilguy: 0, data: {},
         });
       }
+      return [{ label: null as string | null, items: [...grouped].reverse() }];
     }
-    return [...grouped].reverse(); // newest first
+
+    // "All": the chronicle. Days become sections; headline moments render
+    // individually while the ambient hum (discoveries, romps, hauls, tunnel
+    // flicker, keeper feeds) rolls up to one line per kind per day.
+    // (Amber: "too many parade entries... 90% of what's on the diary")
+    const byDay = new Map<string, ColonyEvent[]>();
+    for (const e of meaningful) {
+      const k = new Date(e.unix * 1000).toDateString();
+      if (!byDay.has(k)) byDay.set(k, []);
+      byDay.get(k)!.push(e);
+    }
+
+    const out: { label: string | null; items: DiaryItem[] }[] = [];
+    for (const dayEvents of byDay.values()) {
+      const items: DiaryItem[] = [];
+      const counts: Record<string, number> = {};
+      let discLast = 0, discTick = 0;
+      let plays = 0, playLast = 0, playTick = 0;
+      let foods = 0, foodTotal = 0, foodLast = 0, foodTick = 0;
+      let taps = 0, tapLast = 0, tapTick = 0;
+      let flickers = 0, flickLast = 0, flickTick = 0;
+
+      for (const e of dayEvents) {
+        const kind = String((e.data as { kind?: string })?.kind ?? '');
+        if (e.type === 'discovery') {
+          const c = String((e.data as { critter?: string }).critter || 'critter');
+          counts[c] = (counts[c] || 0) + 1;
+          discLast = e.unix; discTick = e.tick;
+        } else if (e.type === 'play') {
+          plays++; playLast = e.unix; playTick = e.tick;
+        } else if (e.type === 'food_delivered') {
+          foods++;
+          foodTotal += Number((e.data as { amount?: number }).amount) || 0;
+          foodLast = e.unix; foodTick = e.tick;
+        } else if (e.type === 'food_tap') {
+          taps++; tapLast = e.unix; tapTick = e.tick;
+        } else if (e.type === 'food_discovered' || e.type === 'tended_by_assigned') {
+          // quiet ambience — visible under their filters, not the chronicle
+        } else if (e.type === 'colony_event' && FLICKER_KINDS.has(kind)) {
+          flickers++; flickLast = e.unix; flickTick = e.tick;
+        } else {
+          items.push(e);
+        }
+      }
+
+      if (Object.keys(counts).length > 0) {
+        items.push({
+          type: 'discovery_group',
+          count: Object.values(counts).reduce((a, b) => a + b, 0),
+          unix: discLast, tick: discTick, lilguy: 0, data: { counts },
+        });
+      }
+      if (plays > 0) items.push({ type: 'play_group', count: plays, unix: playLast, tick: playTick, lilguy: 0, data: {} });
+      if (foods > 0) items.push({ type: 'food_group', count: foods, totalAmount: foodTotal, unix: foodLast, tick: foodTick, lilguy: 0, data: {} });
+      if (taps > 0) items.push({ type: 'tap_group', count: taps, unix: tapLast, tick: tapTick, lilguy: 0, data: {} });
+      if (flickers > 0) items.push({ type: 'flicker_group', count: flickers, unix: flickLast, tick: flickTick, lilguy: 0, data: {} });
+
+      items.sort((a, b) => b.unix - a.unix);
+      out.push({ label: dayLabel(dayEvents[0].unix), items });
+    }
+    return out.reverse(); // newest day first
   }, [events, categoryIdx]);
 
   // Build name lookup from roster (firmware random names)
@@ -135,14 +219,27 @@ export function Diary() {
         ))}
       </div>
 
-      {/* Events list */}
-      {filtered.length === 0 ? (
+      {/* Chronicle */}
+      {sections.every(s => s.items.length === 0) ? (
         <div style={{ color: palette.dimText, fontSize: SIZES.base, textAlign: 'center', padding: 32 }}>
           No events to show
         </div>
       ) : (
-        filtered.map((ev, i) => (
-          <DiaryEntry key={`${ev.unix}-${ev.tick}-${i}`} event={ev as ColonyEvent} palette={palette} rosterNames={rosterNames} />
+        sections.map((section, si) => (
+          <div key={section.label ?? si}>
+            {section.label && (
+              <div style={{
+                fontSize: SIZES.xs, fontWeight: 700, color: palette.dimText,
+                textTransform: 'uppercase', letterSpacing: 1,
+                padding: '14px 4px 6px',
+              }}>
+                {section.label}
+              </div>
+            )}
+            {section.items.map((ev, i) => (
+              <DiaryEntry key={`${ev.unix}-${ev.tick}-${i}`} event={ev as ColonyEvent} palette={palette} rosterNames={rosterNames} />
+            ))}
+          </div>
         ))
       )}
     </div>
@@ -270,16 +367,60 @@ function formatEvent(ev: ColonyEvent, rosterNames: Map<number, string>): { icon:
         icon: '\u{1F389}',
         description: `${name} led a parade — ${Math.max(0, ((data.participants as number) || 2) - 1)} joined in.`,
       };
-    case 'food_group' as EventType:
+    case 'food_group' as EventType: {
+      const g = ev as unknown as { count: number; totalAmount: number };
       return {
         icon: '\u{1F36F}',
-        description: `${(ev as unknown as { count: number }).count} food deliveries (${((ev as unknown as { totalAmount: number }).totalAmount).toFixed(0)}u total).`,
+        description: g.count === 1
+          ? `A foraging haul came in (${g.totalAmount.toFixed(0)}u).`
+          : `${g.count} foraging hauls brought in ${g.totalAmount.toFixed(0)}u.`,
       };
-    case 'play_group' as EventType:
+    }
+    case 'play_group' as EventType: {
+      const count = (ev as unknown as { count: number }).count;
       return {
-        icon: '\u{2728}',
-        description: `Lots of playing — ${(ev as unknown as { count: number }).count} romps.`,
+        icon: '\u{1F389}',
+        description: count === 1
+          ? 'A parade romped through the chamber.'
+          : `${count} parades romped through the chamber.`,
       };
+    }
+    case 'discovery_group' as EventType: {
+      const counts = (data.counts || {}) as Record<string, number>;
+      const PLURALS: Record<string, string> = {
+        butterfly: 'butterflies', worm: 'worms', firefly: 'fireflies', beetle: 'beetles',
+      };
+      const parts = Object.entries(counts).map(([k, n]) =>
+        n === 1 ? `a ${k}` : `${n} ${PLURALS[k] || k + 's'}`);
+      const listed = parts.length === 1
+        ? parts[0]
+        : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+      const kinds = Object.keys(counts);
+      const icon = kinds.length === 1
+        ? (kinds[0] === 'butterfly' ? '\u{1F98B}'
+           : kinds[0] === 'worm' ? '\u{1FAB1}'
+           : kinds[0] === 'firefly' ? '\u{2728}' : '\u{1FAB2}')
+        : '\u{1F50D}';
+      return { icon, description: `The colony found ${listed}.` };
+    }
+    case 'tap_group' as EventType: {
+      const count = (ev as unknown as { count: number }).count;
+      return {
+        icon: '\u{1FAF6}',
+        description: count === 1
+          ? 'The keeper dropped in a helping of food.'
+          : `The keeper dropped in ${count} helpings of food.`,
+      };
+    }
+    case 'flicker_group' as EventType: {
+      const count = (ev as unknown as { count: number }).count;
+      return {
+        icon: '\u{1F6AA}',
+        description: count <= 2
+          ? 'A neighbour module connected.'
+          : `The tunnel to a neighbour flickered ${count} times.`,
+      };
+    }
     default:
       return {
         icon: '\u{1F4AC}',
