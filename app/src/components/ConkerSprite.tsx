@@ -30,7 +30,9 @@ export function useTintFilter(seed: number): { filterId: string; filterSvg: JSX.
     const ul = ((h2 >>> 5) & 0xff) / 255;
 
     const rare = ur ** 6; // straying far is rare
-    const spread = 40 + 240 * rare;
+    // Keep in lockstep with firmware renderer.cpp: ±85° common band so any
+    // two conkers read as distinct at a glance; rares still roam the wheel
+    const spread = 85 + 155 * rare;
     let hue = 28 + (uh * 2 - 1) * spread; // anchor on orange (28°)
     hue = ((hue % 360) + 360) % 360;
 

@@ -1428,7 +1428,10 @@ void Renderer::_draw_sprite_scaled_tinted(int cx, int cy, const uint16_t* data,
         uint32_t h2 = hs ^ (hs >> 13);
         float ul = ((h2 >> 5) & 0xFF) / 255.0f;
         float rare = ur * ur; rare = rare * rare * rare;    // ur^6 — straying far is rare
-        float spread = 40.0f + 240.0f * rare;               // ±deg: warm band wider so they separate
+        // ±85° common band (pinks through ambers to spring greens) — ±40°
+        // made any two commons read as the same amber at arm's length.
+        // Rare rolls still reach the whole wheel (max unchanged at ±240°).
+        float spread = 85.0f + 155.0f * rare;
         float hue = 28.0f + (uh * 2.0f - 1.0f) * spread;    // anchor on orange (28°)
         while (hue < 0.0f)      hue += 360.0f;
         while (hue >= 360.0f)   hue -= 360.0f;
