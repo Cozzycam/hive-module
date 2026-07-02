@@ -659,7 +659,14 @@ void Conker::_pick_task(Chamber& ch) {
     // Forager cap — count current foragers vs desired fraction
     int max_foragers = _max_foragers(ch);
 
-    if (col->gatherer_count < max_foragers) {
+    // Night stand-down: no foraging expeditions in the dark unless the
+    // colony is genuinely hungry. A zero-pressure midnight forager pacing
+    // between modules hunting piles that don't exist reads as broken, not
+    // busy (night watch, 2026-07-03). Famine overrides — survival first.
+    bool forage_hours = (g_tod.phase != PHASE_NIGHT)
+                     || pressure >= Cfg::NIGHT_FORAGE_MIN_PRESSURE;
+
+    if (forage_hours && col->gatherer_count < max_foragers) {
         // Go gather
         state = STATE_TO_FOOD;
         has_target = false;

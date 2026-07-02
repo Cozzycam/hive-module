@@ -26,7 +26,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 179;
+constexpr uint32_t FW_VERSION = 180;
 
 namespace Cfg {
 
@@ -106,6 +106,10 @@ constexpr float    GREEN_THUMB_MIN         = 0.55f;     // aptitude floor to eve
 constexpr float    SOW_CHANCE_PER_TICK     = 0.0006f;   // idle roll (×green_thumb): ~1 sow per few idle minutes
 constexpr int      SOW_DURATION_TICKS      = 24;        // ~3s planting pause
 constexpr int      FARM_MAX_TICKS          = 600;       // failsafe: give up the trip after ~75s
+
+// Foraging stands down during deep night below this food pressure —
+// the colony sleeps; only genuine hunger sends anyone out in the dark
+constexpr float    NIGHT_FORAGE_MIN_PRESSURE = 0.5f;
 
 // ---- Food rates (per real day) ----
 constexpr float QUEEN_FOOD_PER_DAY    = 3.0f;
