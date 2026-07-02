@@ -43,6 +43,8 @@ export function epithet(
   if (survived.length === 1) return SURVIVAL_EPITHETS[survived[0]] ?? null;
 
   if (events && events.length > 0) {
+    const sows = events.filter(e => e.type === 'crop_sown').length;
+    if (sows >= 10) return 'the Green-Thumbed';
     const parades = events.filter(e => e.type === 'play').length;
     if (parades >= 5) return 'the Parade-Leader';
     const finds = events.filter(e => e.type === 'discovery').length;
@@ -128,6 +130,8 @@ export function buildLifeStory(
   let lastDiscoveryUnix = 0;
   let parades = 0;
   let lastParadeUnix = 0;
+  let sows = 0;
+  let lastSowUnix = 0;
 
   for (const ev of events) {
     const data = ev.data as Record<string, unknown>;
@@ -171,6 +175,11 @@ export function buildLifeStory(
         lastParadeUnix = ev.unix;
         break;
       }
+      case 'crop_sown': {
+        sows++;
+        lastSowUnix = ev.unix;
+        break;
+      }
       case 'death':
         story.push({
           unix: ev.unix,
@@ -202,6 +211,14 @@ export function buildLifeStory(
       icon: '\u{1F389}',
       text: parades === 1 ? 'Once led a parade around the chamber.'
                           : `Has led ${parades} parades around the chamber.`,
+    });
+  }
+  if (sows > 0) {
+    story.push({
+      unix: lastSowUnix,
+      icon: '\u{1F33E}',
+      text: sows === 1 ? 'Sowed their first crop in the garden.'
+                       : `Has sown ${sows} crops in the garden.`,
     });
   }
 

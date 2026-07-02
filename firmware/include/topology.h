@@ -23,6 +23,7 @@ enum TopoMsgType : uint8_t {
     TOPO_GIFT_FOOD  = 0x26, // queen → neighbouring queen: care package across the border
     TOPO_DEATH_SYNC   = 0x15,  // satellite → queen: worker died on satellite
     TOPO_GATHER_SYNC  = 0x16,  // broadcast: finger held, conkers gather
+    TOPO_JOURNAL_RELAY = 0x17, // satellite → queen: diary-worthy moment (the journal lives with her)
     TOPO_OTA_ANNOUNCE = 0x30, // queen → satellites: "new firmware, connect to WiFi"
     TOPO_OTA_READY    = 0x31, // queen → satellites: "server at IP:port, download now"
 };
@@ -206,6 +207,23 @@ struct PendingDeathSync {
     int     len;
 };
 int  topology_drain_death_syncs(PendingDeathSync* out, int max_out);
+
+// Journal relay (satellite → queen): crop sowings, critter discoveries and
+// future satellite story beats reach the colony diary. jtype = JournalType;
+// extra carries the type-specific detail (critter kind / plot index).
+struct __attribute__((packed)) JournalRelayMessage {
+    uint8_t  msg_type;    // TOPO_JOURNAL_RELAY
+    uint16_t sender_id;
+    uint8_t  jtype;
+    uint32_t lilguy_id;
+    char     who[16];
+    uint8_t  extra;
+};
+struct PendingJournalRelay {
+    uint8_t data[32];
+    int     len;
+};
+int  topology_drain_journal_relays(PendingJournalRelay* out, int max_out);
 
 // Gather sync — receiver polls this
 bool topology_has_gather(GatherSyncMessage* out);  // returns true + copies, clears flag

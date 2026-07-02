@@ -11,7 +11,7 @@ import type { ColonyEvent, EventType } from '../api/types';
 // Rollup entries synthesized by the chronicle view — one line per kind
 // of ambient hum per day
 type Rollup = {
-  type: 'food_group' | 'play_group' | 'discovery_group' | 'tap_group' | 'flicker_group';
+  type: 'food_group' | 'play_group' | 'discovery_group' | 'tap_group' | 'flicker_group' | 'sow_group';
   count: number;
   totalAmount?: number;
   unix: number;
@@ -130,6 +130,7 @@ export function Diary() {
       let plays = 0, playLast = 0, playTick = 0;
       let foods = 0, foodTotal = 0, foodLast = 0, foodTick = 0;
       let taps = 0, tapLast = 0, tapTick = 0;
+      let sows = 0, sowLast = 0, sowTick = 0, sowWho = '';
       let flickers = 0, flickLast = 0, flickTick = 0;
 
       for (const e of dayEvents) {
@@ -146,6 +147,9 @@ export function Diary() {
           foodLast = e.unix; foodTick = e.tick;
         } else if (e.type === 'food_tap') {
           taps++; tapLast = e.unix; tapTick = e.tick;
+        } else if (e.type === 'crop_sown') {
+          sows++; sowLast = e.unix; sowTick = e.tick;
+          if (sows === 1) sowWho = (e as unknown as { name?: string }).name || '';
         } else if (e.type === 'food_discovered' || e.type === 'tended_by_assigned') {
           // quiet ambience — visible under their filters, not the chronicle
         } else if (e.type === 'colony_event' && FLICKER_KINDS.has(kind)) {
@@ -165,6 +169,7 @@ export function Diary() {
       if (plays > 0) items.push({ type: 'play_group', count: plays, unix: playLast, tick: playTick, lilguy: 0, data: {} });
       if (foods > 0) items.push({ type: 'food_group', count: foods, totalAmount: foodTotal, unix: foodLast, tick: foodTick, lilguy: 0, data: {} });
       if (taps > 0) items.push({ type: 'tap_group', count: taps, unix: tapLast, tick: tapTick, lilguy: 0, data: {} });
+      if (sows > 0) items.push({ type: 'sow_group', count: sows, unix: sowLast, tick: sowTick, lilguy: 0, data: { who: sowWho } });
       if (flickers > 0) items.push({ type: 'flicker_group', count: flickers, unix: flickLast, tick: flickTick, lilguy: 0, data: {} });
 
       items.sort((a, b) => b.unix - a.unix);
@@ -400,6 +405,21 @@ function formatEvent(ev: ColonyEvent, rosterNames: Map<number, string>): { icon:
         description: count === 1
           ? 'The keeper dropped in a helping of food.'
           : `The keeper dropped in ${count} helpings of food.`,
+      };
+    }
+    case 'crop_sown':
+      return {
+        icon: '\u{1F331}',
+        description: `${name} sowed a crop in the garden.`,
+      };
+    case 'sow_group' as EventType: {
+      const count = (ev as unknown as { count: number }).count;
+      const who = String(data.who || '');
+      return {
+        icon: '\u{1F33E}',
+        description: count === 1
+          ? `${who || 'A farmer'} sowed a crop in the garden.`
+          : `${count} crops were sown in the garden.`,
       };
     }
     case 'flicker_group' as EventType: {

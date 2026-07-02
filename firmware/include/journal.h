@@ -30,6 +30,7 @@ enum JournalType : uint8_t {
     JEVT_PLAY,
     JEVT_DISCOVERY,   // a conker found a visiting critter
     JEVT_BOND_MUTUAL, // a one-way bond got reciprocated — the pair are best friends now
+    JEVT_CROP_SOWN,   // a green-thumbed farmer planted a garden plot
     JEVT_COUNT
 };
 

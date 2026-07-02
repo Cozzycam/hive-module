@@ -188,6 +188,14 @@ struct Conker {
         return lifespan_ms > 0 && lived_ms >= static_cast<uint32_t>(lifespan_ms * 0.7f);
     }
 
+    // Farming aptitude — emergent from personality, no new dims: steady
+    // workers who love routine and stay near home make natural gardeners.
+    float green_thumb() const {
+        return 0.5f * personality[PERS_WORK_TEMPO]
+             + 0.3f * personality[PERS_ROUTE_STICKINESS]
+             + 0.2f * (1.0f - personality[PERS_EXPLORATION]);
+    }
+
     // Hatchlings grow into their full size over their first day — visible
     // "they grow up" progress on the glass. Render-only: sim logic
     // (collision, movement) keeps using scale_factor.
@@ -235,6 +243,7 @@ struct Conker {
     void _do_cannibalize(Chamber& ch);
     void _do_zoomies(Chamber& ch);
     void _do_mourning(Chamber& ch);
+    void _do_farming(Chamber& ch);
     bool _target_still_valid(Chamber& ch);
 
     // Marker sampling -- returns true and sets out_dx/out_dy if gradient found

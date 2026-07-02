@@ -74,6 +74,12 @@ static volatile int _ds_write = 0;
 static volatile int _ds_count = 0;
 static PendingDeathSync _ds_buf[DS_BUF_SIZE];
 
+// Journal relay receive buffer (ISR -> coordinator via drain, queen side)
+static const int JR_BUF_SIZE = 8;
+static volatile int _jr_write = 0;
+static volatile int _jr_count = 0;
+static PendingJournalRelay _jr_buf[JR_BUF_SIZE];
+
 // Handoff drop counter (extern, defined in main.cpp)
 extern uint32_t g_handoffs_dropped;
 
@@ -342,6 +348,15 @@ static void _on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int l
             _ds_buf[idx].len = len;
             _ds_write = (idx + 1) % DS_BUF_SIZE;
             _ds_count++;
+        }
+    } else if (msg_type == TOPO_JOURNAL_RELAY && len >= (int)sizeof(JournalRelayMessage)) {
+        // Satellite story beat — buffer for the queen's journal
+        if (_jr_count < JR_BUF_SIZE) {
+            int idx = _jr_write;
+            memcpy(_jr_buf[idx].data, data, len);
+            _jr_buf[idx].len = len;
+            _jr_write = (idx + 1) % JR_BUF_SIZE;
+            _jr_count++;
         }
     } else if (msg_type == TOPO_GATHER_SYNC && len >= (int)sizeof(GatherSyncMessage)) {
         // Only honour gathers from a face-connected neighbour — with multiple
@@ -788,6 +803,17 @@ int topology_drain_handoff_acks(PendingAck* out, int max_out) {
         int idx = (_ack_write - _ack_count + ACK_BUF_SIZE) % ACK_BUF_SIZE;
         out[n] = _ack_buf[idx];
         _ack_count--;
+        n++;
+    }
+    return n;
+}
+
+int topology_drain_journal_relays(PendingJournalRelay* out, int max_out) {
+    int n = 0;
+    while (_jr_count > 0 && n < max_out) {
+        int idx = (_jr_write - _jr_count + JR_BUF_SIZE) % JR_BUF_SIZE;
+        out[n] = _jr_buf[idx];
+        _jr_count--;
         n++;
     }
     return n;

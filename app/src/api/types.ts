@@ -167,7 +167,8 @@ export type EventType =
   | 'chamber_crossing' | 'milestone' | 'colony_event'
   | 'tended_by_assigned' | 'bond_formed' | 'bond_broken'
   | 'challenge_start' | 'challenge_end' | 'trait_earned'
-  | 'mourning' | 'play' | 'discovery' | 'became_best_friends';
+  | 'mourning' | 'play' | 'discovery' | 'became_best_friends'
+  | 'crop_sown';
 
 export interface ColonyEvent {
   tick: number;

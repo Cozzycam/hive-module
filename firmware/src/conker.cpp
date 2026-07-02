@@ -385,6 +385,7 @@ void Conker::tick(Chamber& ch, float dt) {
             case STATE_EATING:      _do_eating(ch);      break;
             case STATE_ZOOMIES:     _do_zoomies(ch);     break;
             case STATE_MOURNING:    _do_mourning(ch);    break;
+            case STATE_FARMING:     _do_farming(ch);     break;
             default:                _do_idle(ch);        break;
         }
     }
@@ -1278,6 +1279,63 @@ void Conker::_do_mourning(Chamber& ch) {
     }
 }
 
+// Off to the allotment: walk to the claimed plot, lean over the soil for a
+// few seconds, sow it. Bails gracefully if another farmer got there first
+// (both may set out for the same plot — first one to arrive plants it).
+void Conker::_do_farming(Chamber& ch) {
+    zoomie_ticks--;   // repurposed as the trip's failsafe timer
+    int plot = zoomie_target;
+    bool plot_gone = plot < 0 || plot >= Cfg::GARDEN_PLOTS
+                  || ch.plants[plot].stage != PLOT_SOIL;
+    if (zoomie_ticks <= 0 || plot_gone || !ch.is_garden) {
+        state = STATE_IDLE;
+        has_target = false;
+        has_target_cell = false;
+        anim_type = LG_ANIM_NONE;
+        anim_remaining_ticks = 0;
+        idle_repoll_tick = Cfg::IDLE_REPOLL_INTERVAL;
+        return;
+    }
+
+    const Plant& p = ch.plants[plot];
+    int cx = cell_x(), cy = cell_y();
+    if (abs(p.x - cx) + abs(p.y - cy) > 1) {
+        _step_toward_cell(p.x, p.y, ch);
+        return;
+    }
+
+    // At the plot — settle into the sowing lean
+    if (anim_type != LG_ANIM_GROOMING) {
+        anim_type = LG_ANIM_GROOMING;
+        anim_remaining_ticks = Cfg::SOW_DURATION_TICKS;
+        float bdx = (p.x + 0.5f) - x, bdy = (p.y + 0.5f) - y;
+        if (fabsf(bdx) >= fabsf(bdy)) {
+            anim_lean_dx = (bdx >= 0) ? 1 : -1; anim_lean_dy = 0;
+        } else {
+            anim_lean_dx = 0; anim_lean_dy = (bdy >= 0) ? 1 : -1;
+        }
+        return;
+    }
+    if (anim_remaining_ticks > 1) return;   // still planting
+
+    // Done — seed in the ground
+    anim_type = LG_ANIM_NONE;
+    anim_remaining_ticks = 0;
+    if (ch.sow_plot(plot, id, name)) {
+        Event ev = {};
+        ev.type = EVT_CROP_SOWN;
+        ev.tick = ch.tick_num;
+        ev.crop.plot = (uint8_t)plot;
+        ev.crop.sower_id = id;
+        strlcpy(ev.crop.who, name, sizeof(ev.crop.who));
+        ch.emit(ev);
+    }
+    state = STATE_IDLE;
+    has_target = false;
+    has_target_cell = false;
+    idle_repoll_tick = Cfg::IDLE_REPOLL_INTERVAL;
+}
+
 void Conker::_tick_idle(Chamber& ch) {
     idle_ticks_remaining--;
     idle_micro_ticks--;
@@ -1303,6 +1361,24 @@ void Conker::_tick_idle(Chamber& ch) {
             state = STATE_ZOOMIES;
             zoomie_target = -2 - fi;  // <= -2 encodes a firefly chase
             zoomie_ticks = Cfg::FIREFLY_CHASE_MAX_TICKS;
+            has_target = false;
+            has_target_cell = false;
+            idle_ticks_remaining = 0;
+            return;
+        }
+    }
+
+    // A steady pair of hands drifts to the allotment: a green-thumbed idler
+    // on the garden module heads off to sow an empty plot by day
+    if (ch.is_garden && g_tod.phase == PHASE_DAY && !sleeping && stack_on < 0
+            && anim_type == LG_ANIM_NONE
+            && green_thumb() >= Cfg::GREEN_THUMB_MIN
+            && g_rng.rand_float() < Cfg::SOW_CHANCE_PER_TICK * green_thumb()) {
+        int plot = ch.free_plot();
+        if (plot >= 0) {
+            state = STATE_FARMING;
+            zoomie_target = plot;              // repurposed: plot index
+            zoomie_ticks = Cfg::FARM_MAX_TICKS;
             has_target = false;
             has_target_cell = false;
             idle_ticks_remaining = 0;

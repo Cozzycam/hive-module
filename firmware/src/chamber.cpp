@@ -33,6 +33,16 @@ void Chamber::init(ColonyState* col, bool with_queen) {
     for (int i = 0; i < Cfg::MAX_FIREFLIES; i++) fireflies[i] = Firefly{};
     for (int i = 0; i < Cfg::MAX_CRITTERS; i++) critters[i] = Critter{};
     for (int i = 0; i < Cfg::MAX_SCENT_MARKS; i++) scent_marks[i] = {0, 0, 0};
+    // Garden plots — fixed beds, scattered like a real allotment
+    {
+        static const int8_t PX[Cfg::GARDEN_PLOTS] = { 9, 14,  9, 18 };
+        static const int8_t PY[Cfg::GARDEN_PLOTS] = { 6,  9, 13,  7 };
+        for (int i = 0; i < Cfg::GARDEN_PLOTS; i++) {
+            plants[i] = Plant{};
+            plants[i].x = PX[i];
+            plants[i].y = PY[i];
+        }
+    }
     home_face = -1;
     has_queen = with_queen;
     event_bus = nullptr;
@@ -140,6 +150,7 @@ void Chamber::tick(float dt) {
     _tick_fireflies();
     _tick_critters();
     _detect_critter_discovery();
+    _tick_plants();
 
     // Finger scent shimmer fade
     for (int i = 0; i < Cfg::MAX_SCENT_MARKS; i++)
@@ -889,24 +900,6 @@ void Chamber::_tick_critters() {
     bool day = (g_tod.phase == PHASE_DAY || g_tod.phase == PHASE_DUSK
              || g_tod.phase == PHASE_DAWN);
 
-    // Garden: wild food sprouts now and then — the reason to keep one
-    bool foul_wx = g_weather.valid
-                && (g_weather.condition >= WX_RAIN
-                    || g_weather.wind >= WIND_HIGH
-                    || g_weather.temp == TEMP_FREEZING);
-    if (is_garden && day && !foul_wx
-            && g_rng.rand_float() < Cfg::GARDEN_SPROUT_CHANCE) {
-        int sx = g_rng.rand_int(2, Cfg::GRID_WIDTH - 3);
-        int sy = g_rng.rand_int(2, Cfg::GRID_HEIGHT - 3);
-        add_food(sx, sy, Cfg::GARDEN_SPROUT_AMOUNT);
-        Event ev = {};
-        ev.type = EVT_FOOD_DELIVERED;   // reuse: sparkle at the sprout
-        ev.tick = tick_num;
-        ev.food_delivered = {static_cast<int8_t>(sx), static_cast<int8_t>(sy),
-                             Cfg::GARDEN_SPROUT_AMOUNT};
-        emit(ev);
-    }
-
     int active = 0;
     for (int i = 0; i < Cfg::MAX_CRITTERS; i++)
         if (critters[i].active) active++;
@@ -1138,4 +1131,68 @@ int Chamber::_entry_face_at(int x, int y) const {
         if (on_edge) return f;
     }
     return -1;
+}
+
+// ---- Garden farming ----
+
+int Chamber::free_plot() const {
+    if (!is_garden) return -1;
+    for (int i = 0; i < Cfg::GARDEN_PLOTS; i++)
+        if (plants[i].stage == PLOT_SOIL) return i;
+    return -1;
+}
+
+bool Chamber::sow_plot(int idx, uint32_t by_id, const char* by_name) {
+    if (idx < 0 || idx >= Cfg::GARDEN_PLOTS) return false;
+    Plant& p = plants[idx];
+    if (p.stage != PLOT_SOIL || g_tod.unix_time == 0) return false;
+    p.stage = PLOT_SPROUT;
+    p.stage_started_unix = g_tod.unix_time;
+    p.sown_by = by_id;
+    strlcpy(p.sown_by_name, by_name, sizeof(p.sown_by_name));
+    return true;
+}
+
+// Crops advance on the wall clock (lifecycle rule): sprout -> growing ->
+// mature -> drop yield -> soil. Rain hurries them along; a scorching dry
+// spell can wither a crop back to bare soil at each stage boundary —
+// which is exactly when a keeper's care package matters.
+void Chamber::_tick_plants() {
+    if (!is_garden || g_tod.unix_time == 0) return;
+
+    bool rain = g_weather.valid
+             && g_weather.condition >= WX_DRIZZLE
+             && g_weather.condition <= WX_HEAVY_RAIN;
+    bool scorch = g_weather.valid
+             && (g_weather.temp >= TEMP_HOT
+                 || (g_weather.humidity_pct < 30.0f && g_weather.temp >= TEMP_WARM));
+    uint32_t stage_secs = rain
+        ? (uint32_t)(Cfg::PLANT_STAGE_SECS / Cfg::PLANT_RAIN_GROWTH_MULT)
+        : Cfg::PLANT_STAGE_SECS;
+
+    for (int i = 0; i < Cfg::GARDEN_PLOTS; i++) {
+        Plant& p = plants[i];
+        if (p.stage == PLOT_SOIL) continue;
+        if (g_tod.unix_time - p.stage_started_unix < stage_secs) continue;
+
+        // Stage boundary. Scorching weather may claim the crop.
+        if (scorch && g_rng.rand_float() < Cfg::PLANT_WITHER_CHANCE) {
+            p.stage = PLOT_SOIL;
+            continue;
+        }
+
+        if (p.stage == PLOT_MATURE) {
+            // Harvest drop — the ordinary foraging machinery takes it home
+            add_food(p.x, p.y, Cfg::PLANT_YIELD);
+            Event ev = {};
+            ev.type = EVT_FOOD_DELIVERED;   // sparkle at the drop
+            ev.tick = tick_num;
+            ev.food_delivered = {p.x, p.y, Cfg::PLANT_YIELD};
+            emit(ev);
+            p.stage = PLOT_SOIL;
+        } else {
+            p.stage++;
+            p.stage_started_unix = g_tod.unix_time;
+        }
+    }
 }

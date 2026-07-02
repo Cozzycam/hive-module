@@ -32,6 +32,7 @@ enum EventType : uint8_t {
     EVT_MOURNING            = 16,   // a conker set off to stand vigil
     EVT_CHALLENGE_STARTED   = 17,   // weather challenge began (banner)
     EVT_CHALLENGE_ENDED     = 18,   // weather challenge passed (banner)
+    EVT_CROP_SOWN           = 19,   // a farmer planted a garden plot
 };
 
 // ---- Interaction subtypes ----
@@ -115,6 +116,12 @@ struct ChallengeEventData {
     float   severity;
 };
 
+struct CropSownData {
+    uint8_t  plot;
+    uint32_t sower_id;
+    char     who[16];
+};
+
 // ---- Event struct (tagged union) ----
 
 struct Event {
@@ -134,6 +141,7 @@ struct Event {
         TraitEarnedData        trait;     // trait_earned
         MourningData           mourning;  // mourning
         ChallengeEventData     challenge; // challenge_started, challenge_ended
+        CropSownData           crop;      // crop_sown
     };
 };
 

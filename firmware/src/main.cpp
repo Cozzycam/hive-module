@@ -1036,6 +1036,8 @@ void loop() {
             renderer.receive_events(evt_buf, evt_count, sim.coordinator.chamber);
             if (sim.coordinator.is_queen() && evt_count > 0)
                 sim.coordinator._journal_from_bus_events(evt_buf, evt_count, sim.tick_count);
+            else if (!sim.coordinator.is_queen() && evt_count > 0)
+                sim.coordinator._relay_bus_events(evt_buf, evt_count);  // → queen's journal
         }
 
         float lerp_t = static_cast<float>(now - last_tick_ms) / interval;

@@ -224,6 +224,9 @@ private:
     // Visiting critters: beetle/butterfly/worm wandering the chamber
     void _draw_critters(const Chamber& ch, float lerp_t);
 
+    // Garden crops (plots + growth stages; garden module only)
+    void _draw_plants(const Chamber& ch);
+
     // Finger scent shimmer — fading echo of a swipe
     void _draw_scent_marks(const Chamber& ch);
 };

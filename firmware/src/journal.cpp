@@ -15,7 +15,7 @@ static const char* JEVT_NAMES[] = {
     "milestone", "colony_event", "tended_by_assigned",
     "bond_formed", "bond_broken", "challenge_start",
     "challenge_end", "trait_earned", "mourning", "play", "discovery",
-    "became_best_friends"
+    "became_best_friends", "crop_sown"
 };
 
 // Keep in lockstep with CritterKind (chamber.h)

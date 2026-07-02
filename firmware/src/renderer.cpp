@@ -568,6 +568,7 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
     // Layer 2: floor-level sprites (food, brood) — Y-sorted
     _build_floor_sprites(ch);
     _draw_sorted_sprites(_floor_sprites, _floor_sprite_count, ch);
+    _draw_plants(ch);   // garden crops sit on the floor layer too
 
     // Layer 3: living agents (workers, queen) — Y-sorted, queen +2 cell bias
     _build_agent_sprites(ch, lerp_t);
@@ -1679,6 +1680,14 @@ void Renderer::receive_events(const Event* events, int count, const Chamber& ch)
             break;
         }
 
+        case EVT_CROP_SOWN: {
+            char msg[64];
+            snprintf(msg, sizeof(msg), "%s sowed a crop in the garden",
+                     ev.crop.who);
+            banner(msg);
+            break;
+        }
+
         default:
             break;
         }
@@ -1822,6 +1831,48 @@ void Renderer::_draw_critters(const Chamber& ch, float lerp_t) {
             break;
         }
         }
+    }
+}
+
+// Garden crops — procedural placeholders until the artist's plant stages
+// land. Bare plots read as a tilled dark patch; stages grow visibly.
+void Renderer::_draw_plants(const Chamber& ch) {
+    if (!ch.is_garden) return;
+    for (int i = 0; i < Cfg::GARDEN_PLOTS; i++) {
+        const Plant& p = ch.plants[i];
+        int px = p.x * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
+        int py = p.y * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
+
+        // Tilled soil bed (always visible so plots read as *places*)
+        uint16_t soil = _rgb565(_lerp8(105, 60, _nf), _lerp8(82, 48, _nf), _lerp8(58, 38, _nf));
+        _gfx->fillRoundRect(px - 6, py - 3, 12, 7, 2, soil);
+
+        uint16_t stem = _rgb565(_lerp8(95, 45, _nf), _lerp8(160, 85, _nf), _lerp8(80, 50, _nf));
+        uint16_t leaf = _rgb565(_lerp8(120, 60, _nf), _lerp8(190, 100, _nf), _lerp8(95, 60, _nf));
+        uint16_t berry = _rgb565(_lerp8(235, 130, _nf), _lerp8(120, 70, _nf), _lerp8(90, 55, _nf));
+
+        switch (p.stage) {
+        case PLOT_SPROUT:
+            _gfx->drawFastVLine(px, py - 3, 3, stem);
+            _gfx->drawPixel(px - 1, py - 3, leaf);
+            break;
+        case PLOT_GROWING:
+            _gfx->drawFastVLine(px, py - 6, 6, stem);
+            _gfx->drawPixel(px - 1, py - 4, leaf);
+            _gfx->drawPixel(px + 1, py - 5, leaf);
+            _gfx->drawPixel(px - 2, py - 3, leaf);
+            break;
+        case PLOT_MATURE:
+            _gfx->drawFastVLine(px, py - 8, 8, stem);
+            _gfx->fillRect(px - 2, py - 8, 5, 3, leaf);
+            _gfx->drawPixel(px - 1, py - 9, berry);
+            _gfx->drawPixel(px + 1, py - 8, berry);
+            _gfx->drawPixel(px, py - 6, berry);
+            break;
+        default:
+            break;   // bare soil
+        }
+        _mark_dirty(px - 7, py - 10, 15, 15);
     }
 }
 

@@ -54,6 +54,25 @@ struct Critter {
     bool     active = false;
 };
 
+// ---- Garden farming ----
+// Crops grow on WALL-CLOCK time (the lifecycle clock): sown by a
+// green-thumbed conker, they pass sprout → growing → mature, then drop a
+// food pile the ordinary foraging machinery carries home.
+enum PlantStage : uint8_t {
+    PLOT_SOIL    = 0,   // empty, sowable
+    PLOT_SPROUT  = 1,
+    PLOT_GROWING = 2,
+    PLOT_MATURE  = 3,   // drops its yield on the next plant tick
+};
+
+struct Plant {
+    uint8_t  stage = PLOT_SOIL;
+    int8_t   x = 0, y = 0;          // fixed plot cell
+    uint32_t stage_started_unix = 0;
+    uint32_t sown_by = 0;           // conker id, for the chronicle's credit
+    char     sown_by_name[16] = {};
+};
+
 class Chamber {
 public:
     ColonyState* colony;
@@ -98,6 +117,12 @@ public:
     Critter  critters[Cfg::MAX_CRITTERS];
     void _tick_critters();
     void _detect_critter_discovery();   // contact → discovery event + boredom relief
+
+    // Garden farming (only ticks when is_garden)
+    Plant plants[Cfg::GARDEN_PLOTS];
+    void _tick_plants();
+    int  free_plot() const;             // -1 if none sowable
+    bool sow_plot(int idx, uint32_t by_id, const char* by_name);
 
     // Finger scent shimmer — visual echo of a swipe, fades over TTL
     struct ScentMark { int8_t x, y; uint8_t ttl; };

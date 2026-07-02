@@ -93,6 +93,10 @@ public:
     // Journal — called from main.cpp with drained EventBus events
     void _journal_from_bus_events(const Event* events, int count, uint32_t tick_num);
 
+    // Satellite counterpart: forward diary-worthy bus events to the queen
+    // (crop sowings, critter discoveries — the journal lives with her)
+    void _relay_bus_events(const Event* events, int count);
+
 private:
     // Story-beat seam: stashed at tick() entry so deep call chains
     // (bond/trait/death paths) can emit display-bus events without
@@ -143,6 +147,7 @@ private:
 
     void _receive_death_syncs();
     void _send_death_syncs();
+    void _receive_journal_relays();
     void _receive_gifts();
 
     // Dedup table for incoming handoffs (one seq per face, 0xFFFF = never seen)

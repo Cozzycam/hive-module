@@ -119,6 +119,9 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
     // ---- Receive death syncs from satellites (queen only) ----
     if (is_queen()) _receive_death_syncs();
 
+    // ---- Receive satellite story beats for the journal (queen only) ----
+    if (is_queen()) _receive_journal_relays();
+
     // ---- Receive care packages from neighbouring kingdoms (queen only) ----
     if (is_queen()) _receive_gifts();
 
@@ -1602,6 +1605,83 @@ void Coordinator::cmd_set_followed(const uint32_t* ids, int n) {
     prefs.putBytes("followed", chamber.followed, n * sizeof(uint32_t));
     prefs.end();
     Serial.printf("[cmd] following %d conker(s)\r\n", n);
+}
+
+// Satellite side: forward diary-worthy bus events to the queen. The
+// journal (and the VPS push) live with her — without this relay the most
+// story-rich module would be mute in the chronicle.
+void Coordinator::_relay_bus_events(const Event* events, int count) {
+#ifdef ARDUINO
+    if (chamber.home_face < 0) return;
+    for (int i = 0; i < count; i++) {
+        const Event& ev = events[i];
+        JournalRelayMessage msg = {};
+        msg.msg_type  = TOPO_JOURNAL_RELAY;
+        msg.sender_id = topology_my_id();
+
+        if (ev.type == EVT_CROP_SOWN) {
+            msg.jtype     = JEVT_CROP_SOWN;
+            msg.lilguy_id = ev.crop.sower_id;
+            msg.extra     = ev.crop.plot;
+            strlcpy(msg.who, ev.crop.who, sizeof(msg.who));
+        } else if (ev.type == EVT_DISCOVERY) {
+            int fi = ev.discovery.finder_idx;
+            if (fi < 0 || fi >= chamber.conker_count) continue;
+            msg.jtype     = JEVT_DISCOVERY;
+            msg.lilguy_id = chamber.conkers[fi].id;
+            msg.extra     = ev.discovery.kind;
+            strlcpy(msg.who, chamber.conkers[fi].name, sizeof(msg.who));
+        } else {
+            continue;
+        }
+        topology_send_to_face(static_cast<Face>(chamber.home_face),
+                              (const uint8_t*)&msg, sizeof(msg));
+    }
+#endif
+}
+
+// Queen side: satellite story beats land in the colony journal (throttled
+// like local ones so a busy garden doesn't flood the diary).
+void Coordinator::_receive_journal_relays() {
+#ifdef ARDUINO
+    PendingJournalRelay pending[8];
+    int n = topology_drain_journal_relays(pending, 8);
+    for (int i = 0; i < n; i++) {
+        if (pending[i].len < (int)sizeof(JournalRelayMessage)) continue;
+        const JournalRelayMessage& msg =
+            *reinterpret_cast<const JournalRelayMessage*>(pending[i].data);
+        if (msg.msg_type != TOPO_JOURNAL_RELAY) continue;
+
+        if (msg.jtype == JEVT_DISCOVERY) {
+            // Same cadence as local discoveries — ≤1 per 10 min
+            static uint32_t _last_relay_discovery_ms = 0;
+            uint32_t now_ms = millis();
+            if (_last_relay_discovery_ms != 0
+                    && now_ms - _last_relay_discovery_ms < 600000) continue;
+            _last_relay_discovery_ms = now_ms;
+        }
+
+        JournalEntry je = {};
+        je.tick = chamber.tick_num;
+        je.unix_time = g_tod.unix_time;
+        je.type = msg.jtype;
+        je.lilguy_id = msg.lilguy_id;
+        strlcpy(je.who, msg.who, sizeof(je.who));
+        if (msg.jtype == JEVT_DISCOVERY) je.discovery.critter = msg.extra;
+        journal.emit(je);
+
+        // The queen's glass narrates the garden's news too
+        if (_bus && msg.jtype == JEVT_CROP_SOWN) {
+            Event ev = {};
+            ev.type = EVT_CROP_SOWN;
+            ev.tick = chamber.tick_num;
+            ev.crop.plot = msg.extra;
+            ev.crop.sower_id = msg.lilguy_id;
+            strlcpy(ev.crop.who, msg.who, sizeof(ev.crop.who));
+            _bus->emit(ev);
+        }
+    }
+#endif
 }
 
 void Coordinator::_receive_gifts() {

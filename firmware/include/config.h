@@ -20,12 +20,13 @@ enum AntState : uint8_t {
     STATE_TO_FOOD = 3, STATE_TO_HOME = 4, STATE_CANNIBALIZE = 5,
     STATE_ZOOMIES = 6,
     STATE_EATING = 7,
-    STATE_MOURNING = 8   // bonded partner died — pay respects at the husk
+    STATE_MOURNING = 8,  // bonded partner died — pay respects at the husk
+    STATE_FARMING = 9    // green thumb at work — off to sow a garden plot
 };
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 176;
+constexpr uint32_t FW_VERSION = 177;
 
 namespace Cfg {
 
@@ -91,8 +92,20 @@ constexpr float    WX_CHALLENGE_BURN_SCALE  = 0.35f;  // burn mult = 1 + scale *
 
 // ---- Garden module role ----
 constexpr float GARDEN_CRITTER_MULT  = 3.0f;       // critter spawn bias vs plain chamber
-constexpr float GARDEN_SPROUT_CHANCE = 0.000005f;  // per tick @8tps ≈ 2-3 sprouts/day
-constexpr float GARDEN_SPROUT_AMOUNT = 3.0f;       // food units per wild sprout
+
+// Farming (garden module only). Crops grow on WALL-CLOCK time (lifecycle
+// clock, not sim ticks). Balance target: a well-tended garden covers
+// ~40% of a full colony's burn — raises the floor without killing the
+// foraging economy.
+constexpr int      GARDEN_PLOTS            = 4;
+constexpr uint32_t PLANT_STAGE_SECS        = 4 * 3600;  // sprout→growing→mature
+constexpr float    PLANT_YIELD             = 5.0f;      // food pile per mature crop
+constexpr float    PLANT_RAIN_GROWTH_MULT  = 1.5f;      // rain is good for crops
+constexpr float    PLANT_WITHER_CHANCE     = 0.20f;     // per stage during heat/drought challenge
+constexpr float    GREEN_THUMB_MIN         = 0.55f;     // aptitude floor to ever sow
+constexpr float    SOW_CHANCE_PER_TICK     = 0.0006f;   // idle roll (×green_thumb): ~1 sow per few idle minutes
+constexpr int      SOW_DURATION_TICKS      = 24;        // ~3s planting pause
+constexpr int      FARM_MAX_TICKS          = 600;       // failsafe: give up the trip after ~75s
 
 // ---- Food rates (per real day) ----
 constexpr float QUEEN_FOOD_PER_DAY    = 3.0f;
