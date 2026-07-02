@@ -281,7 +281,7 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
         detail={detail}
         events={lilguyEvents}
         isPinned={isPinned(selectedId)}
-        onTogglePin={() => togglePin(selectedId)}
+        onTogglePin={() => togglePin(selectedId, char?.name)}
         onBack={() => setSelectedId(null)}
         palette={palette}
       />
@@ -363,7 +363,7 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
             </div>
           </div>
           <button
-            onClick={(e) => { e.stopPropagation(); togglePin(c.id); }}
+            onClick={(e) => { e.stopPropagation(); togglePin(c.id, c.name); }}
             style={{
               background: 'none', border: 'none', cursor: 'pointer',
               fontSize: 18, color: isPinned(c.id) ? HIVE.accent : HIVE.sand,

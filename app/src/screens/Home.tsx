@@ -20,8 +20,18 @@ interface HomeProps {
 
 export function Home({ onNavigate }: HomeProps) {
   const { snapshot, events, source, lastFetchMs, colonyId } = useColony();
-  const { pins, isPinned, togglePin } = usePins();
+  const { pins, isPinned, togglePin, pinName, rememberName } = usePins();
   const tod = useTOD(true);
+
+  // Keep pinned names fresh from the roster (renames propagate; the cache
+  // then outlives the roster when a followed conker dies)
+  useEffect(() => {
+    if (!snapshot?.lilguys) return;
+    for (const id of pins) {
+      const live = snapshot.lilguys.find(l => l.id === id);
+      if (live?.name) rememberName(id, live.name);
+    }
+  }, [snapshot, pins, rememberName]);
 
   if (!snapshot) return null;
 
@@ -153,7 +163,7 @@ export function Home({ onNavigate }: HomeProps) {
                   fontSize: SIZES.sm, fontWeight: 500, color: tod.text,
                 }}
               >
-                {snapshot.lilguys?.find(l => l.id === id)?.name || nameFromId(id)}
+                {snapshot.lilguys?.find(l => l.id === id)?.name || pinName(id) || nameFromId(id)}
               </button>
             ))}
           </div>
@@ -181,7 +191,7 @@ export function Home({ onNavigate }: HomeProps) {
                 </div>
               </div>
               <button
-                onClick={(e) => { e.stopPropagation(); togglePin(l.id); }}
+                onClick={(e) => { e.stopPropagation(); togglePin(l.id, l.name); }}
                 style={{
                   background: 'none', border: 'none', cursor: 'pointer',
                   fontSize: 18, color: isPinned(l.id) ? HIVE.accent : HIVE.sand,
