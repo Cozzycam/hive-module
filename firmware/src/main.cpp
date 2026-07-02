@@ -868,6 +868,7 @@ void setup() {
     if (queen) {
         hud_init();
         hud_set_colony_name(sim.coordinator.registry.manifest().colony_id);
+        hud_set_founded_unix(sim.coordinator.registry.manifest().founded_unix);
         if (wizard_choice == SETUP_FOUNDED) {
             setup_wizard_ceremony(gfx,
                 sim.coordinator.registry.manifest().colony_id,

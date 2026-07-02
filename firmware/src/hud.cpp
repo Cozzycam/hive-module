@@ -372,17 +372,24 @@ static ColonyPhase _phase      = PHASE_FOUNDING;
 // ================================================================
 
 void hud_init() {
-    // Reset founding time so colony always starts at Day 1
-    _prefs.begin("hive", false);
-    _prefs.remove("founded");
-    _prefs.remove("founded_ok");
-    _prefs.end();
-    _colony_founded_unix = 0;
-    _founded_stored = false;
-    _founded_reliable = false;
+    // Founding time is the colony's, not the boot's — restore the persisted
+    // value so the "Day N" counter survives power cycles. The authoritative
+    // value comes from the SD manifest via hud_set_founded_unix() (called just
+    // after this in setup); the NVS copy loaded here is a fallback for the gap
+    // before the manifest is wired in, and for very first boots.
+    // (A genuine new-colony reset clears the NVS keys in main.cpp's reset path.)
+    _load_founded();
     _anim_pop  = { 0, 0, 0 };
     _anim_days = { 0, 0, 0 };
     _anim_food = { 0, 0, 0 };
+}
+
+void hud_set_founded_unix(uint32_t founded_unix) {
+    if (founded_unix == 0) return;  // manifest unknown — keep NVS fallback
+    if (founded_unix == _colony_founded_unix) return;
+    // The manifest value wins; mirror it into NVS so any future fallback path
+    // (and the coordinator's migration read) sees the correct founding time.
+    _store_founded(founded_unix, true);
 }
 
 void hud_draw(Arduino_Canvas* gfx, const Chamber& ch) {

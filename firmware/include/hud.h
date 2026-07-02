@@ -14,6 +14,12 @@ void hud_draw(Arduino_Canvas* gfx, const Chamber& ch);
 // Colony name shown centered in the strip — set once after persistence init
 void hud_set_colony_name(const char* name);
 
+// Founding time (unix) — set once after persistence init from the colony
+// manifest, which is the authoritative SD-persisted value the app also uses.
+// This is what the "Day N" counter is measured from. Pass 0 to leave the
+// current value untouched (e.g. manifest not loaded yet).
+void hud_set_founded_unix(uint32_t founded_unix);
+
 // Battery indicator — works on both queen and satellite.
 // Call hud_battery_init() once in setup (after Wire.begin).
 // Call hud_draw_battery() every frame.
