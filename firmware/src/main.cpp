@@ -247,6 +247,16 @@ static void process_serial_line(const char* line) {
         ESP.restart();
     } else if (strcmp(line, "ota") == 0) {
         enter_ota_mode();
+    } else if (strcmp(line, "ota push") == 0) {
+        // Cascade the RUNNING firmware to connected satellites now — the
+        // manual lever for when the queen was updated over USB (the
+        // automatic cascade only arms on the queen's own OTA path).
+        if (sim.coordinator.is_queen()) {
+            Serial.println("[ota] manual cascade — serving firmware to satellites...");
+            ota_push();  // blocks up to 2 min, reboots after
+        } else {
+            Serial.println("[ota] push is a queen-only command");
+        }
     } else if (strcmp(line, "clearbonds") == 0) {
         // Wipe all friendships (RAM + SD) so they reform cleanly under the
         // current bonding rules. Lineage bonds re-set on the next hatch.
