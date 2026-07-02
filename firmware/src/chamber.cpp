@@ -1135,6 +1135,39 @@ int Chamber::_entry_face_at(int x, int y) const {
 
 // ---- Garden farming ----
 
+// Crop persistence — plots survive reboots in NVS (~112 bytes; mutations
+// are a handful a day, so wear is negligible). stage_started_unix is
+// wall-clock, so crops keep growing while the module is powered off,
+// like real plants. Cleared by colony_reset_wipe().
+#include <Preferences.h>
+
+static bool _plants_loaded = false;
+
+static void _plants_save(const Plant* plants) {
+    Preferences prefs;
+    prefs.begin("hive", false);
+    prefs.putBytes("plants", plants, sizeof(Plant) * Cfg::GARDEN_PLOTS);
+    prefs.end();
+}
+
+static void _plants_load(Plant* plants) {
+    Plant saved[Cfg::GARDEN_PLOTS];
+    Preferences prefs;
+    prefs.begin("hive", true);
+    size_t len = prefs.getBytes("plants", saved, sizeof(saved));
+    prefs.end();
+    if (len != sizeof(saved)) return;   // no (or stale-shaped) save
+    for (int i = 0; i < Cfg::GARDEN_PLOTS; i++) {
+        // Restore the crop, keep the canonical bed position (so plots can
+        // move between firmware versions without stale coords following)
+        plants[i].stage = saved[i].stage <= PLOT_MATURE ? saved[i].stage : PLOT_SOIL;
+        plants[i].stage_started_unix = saved[i].stage_started_unix;
+        plants[i].sown_by = saved[i].sown_by;
+        strlcpy(plants[i].sown_by_name, saved[i].sown_by_name,
+                sizeof(plants[i].sown_by_name));
+    }
+}
+
 int Chamber::free_plot() const {
     if (!is_garden) return -1;
     for (int i = 0; i < Cfg::GARDEN_PLOTS; i++)
@@ -1150,6 +1183,7 @@ bool Chamber::sow_plot(int idx, uint32_t by_id, const char* by_name) {
     p.stage_started_unix = g_tod.unix_time;
     p.sown_by = by_id;
     strlcpy(p.sown_by_name, by_name, sizeof(p.sown_by_name));
+    _plants_save(plants);
     return true;
 }
 
@@ -1159,6 +1193,12 @@ bool Chamber::sow_plot(int idx, uint32_t by_id, const char* by_name) {
 // which is exactly when a keeper's care package matters.
 void Chamber::_tick_plants() {
     if (!is_garden || g_tod.unix_time == 0) return;
+
+    // First garden tick after boot: restore whatever was growing
+    if (!_plants_loaded) {
+        _plants_loaded = true;
+        _plants_load(plants);
+    }
 
     bool rain = g_weather.valid
              && g_weather.condition >= WX_DRIZZLE
@@ -1178,6 +1218,7 @@ void Chamber::_tick_plants() {
         // Stage boundary. Scorching weather may claim the crop.
         if (scorch && g_rng.rand_float() < Cfg::PLANT_WITHER_CHANCE) {
             p.stage = PLOT_SOIL;
+            _plants_save(plants);
             continue;
         }
 
@@ -1194,5 +1235,6 @@ void Chamber::_tick_plants() {
             p.stage++;
             p.stage_started_unix = g_tod.unix_time;
         }
+        _plants_save(plants);
     }
 }

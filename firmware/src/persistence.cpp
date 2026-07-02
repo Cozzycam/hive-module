@@ -793,6 +793,8 @@ void colony_reset_wipe() {
         prefs.begin("hive", false);
         prefs.remove("founded");
         prefs.remove("founded_ok");
+        prefs.remove("plants");    // fresh start = bare garden beds
+        prefs.remove("followed");  // and no stale follow stars
         prefs.end();
     }
     {
