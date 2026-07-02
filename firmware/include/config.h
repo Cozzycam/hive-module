@@ -26,7 +26,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 180;
+constexpr uint32_t FW_VERSION = 181;
 
 namespace Cfg {
 
@@ -110,6 +110,13 @@ constexpr int      FARM_MAX_TICKS          = 600;       // failsafe: give up the
 // Foraging stands down during deep night below this food pressure —
 // the colony sleeps; only genuine hunger sends anyone out in the dark
 constexpr float    NIGHT_FORAGE_MIN_PRESSURE = 0.5f;
+
+// ---- Night life ----
+// The night is a register, not an absence: owls potter and firefly-watch,
+// sleepers turn over and resettle. Interesting at any hour, any population.
+constexpr float OWL_NIGHT_THRESHOLD_LIFT = 0.25f;  // owls resist bedtime after dark
+constexpr float OWL_DAY_THRESHOLD_DROP   = 0.15f;  // ...and lie in / siesta by day
+constexpr float SLEEP_TWITCH_CHANCE      = 0.0014f; // per tick ≈ one twitch / ~90s asleep
 
 // ---- Food rates (per real day) ----
 constexpr float QUEEN_FOOD_PER_DAY    = 3.0f;

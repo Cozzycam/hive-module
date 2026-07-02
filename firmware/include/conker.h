@@ -188,6 +188,14 @@ struct Conker {
         return lifespan_ms > 0 && lived_ms >= static_cast<uint32_t>(lifespan_ms * 0.7f);
     }
 
+    // Chronotype: the curious, unhurried ones keep late hours — pottering
+    // and firefly-watching after the others bed down, lying in once the
+    // sun is up. ~1 in 5 conkers. Emergent from personality, no new dims.
+    bool is_night_owl() const {
+        return personality[PERS_EXPLORATION] >= 0.6f
+            && personality[PERS_WORK_TEMPO] <= 0.5f;
+    }
+
     // Farming aptitude — emergent from personality, no new dims: steady
     // workers who love routine and stay near home make natural gardeners.
     float green_thumb() const {

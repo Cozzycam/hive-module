@@ -312,6 +312,19 @@ void Conker::tick(Chamber& ch, float dt) {
             }
         } else {
             anim_type = LG_ANIM_SNOOZE;
+            // Sleep isn't stillness: now and then a sleeper turns over or
+            // resettles half a step — a pile of creatures, not statues.
+            if (g_rng.rand_float() < Cfg::SLEEP_TWITCH_CHANCE) {
+                if (stack_on < 0 && g_rng.rand_int(0, 2) == 0) {
+                    // Resettle: a tiny shuffle in place
+                    float nx = x + (g_rng.rand_float() - 0.5f) * 0.4f;
+                    if (nx >= 1.0f && nx < Cfg::GRID_WIDTH - 1.0f) x = nx;
+                } else {
+                    // Turn over
+                    facing_dx = (facing_dx >= 0.0f) ? -1.0f : 1.0f;
+                    last_dx = facing_dx;
+                }
+            }
             return;
         }
     }
@@ -547,8 +560,11 @@ void Conker::_pick_task(Chamber& ch) {
                       || g_tod.phase == PHASE_DAWN);
         float tired = needs[NEED_REST];
         // Chronotype: dozy ones cross the any-time (daytime-nap) line sooner.
+        // Night owls skip the easy "it's dark, go to bed" trigger entirely —
+        // they only turn in via their (night-lifted) personal threshold.
         bool wants_sleep = (tired >= _nap_threshold())
-                        || (tired >= Cfg::TIRED_SLEEP_NIGHT && nightish);
+                        || (tired >= Cfg::TIRED_SLEEP_NIGHT && nightish
+                            && !is_night_owl());
         if (!was_sleeping && !sleeping && wants_sleep
                 && pressure <= Cfg::FAMINE_SLOWDOWN_PRESSURE) {
             stack_on = was_stacked;
@@ -1593,7 +1609,17 @@ float Conker::_need_salience(uint8_t need, Chamber& ch) const {
 float Conker::_nap_threshold() const {
     float nappiness = 0.6f * (0.5f - personality[PERS_HARDINESS])
                     + 0.4f * (0.5f - personality[PERS_WORK_TEMPO]);   // -0.5..+0.5
-    return Cfg::TIRED_SLEEP_ANY - Cfg::CHRONO_NAP_RANGE * nappiness;  // 0.55..0.85
+    float base = Cfg::TIRED_SLEEP_ANY - Cfg::CHRONO_NAP_RANGE * nappiness;  // 0.55..0.85
+    // Night owls run a shifted clock: hard to send to bed while the
+    // fireflies are out, quick to nap once the sun is up. Their existing
+    // idle repertoire (drift, huddle, firefly chase) becomes the night shift.
+    if (is_night_owl()) {
+        if (g_tod.phase == PHASE_NIGHT || g_tod.phase == PHASE_DUSK)
+            base += Cfg::OWL_NIGHT_THRESHOLD_LIFT;
+        else if (g_tod.phase == PHASE_DAY)
+            base -= Cfg::OWL_DAY_THRESHOLD_DROP;
+    }
+    return base;
 }
 
 // v152: how bored a conker must be before it bothers to act (play it off) — and
