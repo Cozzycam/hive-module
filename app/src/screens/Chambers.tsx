@@ -13,7 +13,7 @@ import type { Module, ModuleRole } from '../api/types';
 const ROLE_META: Record<ModuleRole, { label: string; icon: string; blurb: string }> = {
   queen: { label: 'Queen Module', icon: '👑', blurb: 'Heart of the colony — source of truth.' },
   satellite: { label: 'Satellite', icon: '🛰️', blurb: 'Plain extension chamber.' },
-  garden: { label: 'Garden', icon: '🌿', blurb: 'A growing place. Behaviours coming soon.' },
+  garden: { label: 'Garden', icon: '🌿', blurb: 'A growing place — wild food sprouts here, and critters visit far more often. The colony’s best spot for discoveries.' },
   food_store: { label: 'Food Storage', icon: '🌰', blurb: 'Deep larder. Behaviours coming soon.' },
   heart_tree: { label: 'Heart Tree', icon: '🌳', blurb: 'The colony’s living memory. Behaviours coming soon.' },
   foreign_queen: { label: 'Neighbour Kingdom', icon: '🏰', blurb: 'Another colony’s queen — borders are politely closed.' },

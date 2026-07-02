@@ -11,6 +11,7 @@ import { Diary } from './screens/Diary';
 import { Feedback } from './screens/Feedback';
 import { Empty } from './screens/Empty';
 import { Settings } from './screens/Settings';
+import { FieldGuide } from './screens/FieldGuide';
 import { HIVE } from './theme/palette';
 import { SIZES } from './theme/fonts';
 import type { ColonyEvent, DataSource } from './api/types';
@@ -64,6 +65,7 @@ export function App() {
   const [colonyId, setColonyIdState] = useState<string | null>(getStoredColonyId);
   const [tab, setTab] = useState<Tab>('home');
   const [showSettings, setShowSettings] = useState(false);
+  const [showFieldGuide, setShowFieldGuide] = useState(false);
   const [navParams, setNavParams] = useState<Record<string, unknown>>({});
 
   // Gift toast — a neighbouring kingdom sent us a care package (royal diplomacy).
@@ -171,9 +173,14 @@ export function App() {
       setShowSettings(true);
       return;
     }
+    if (target === 'fieldguide') {
+      setShowFieldGuide(true);
+      return;
+    }
     setTab(target as Tab);
     setNavParams(params || {});
     setShowSettings(false);
+    setShowFieldGuide(false);
   }, []);
 
   // Newest "care package from a neighbour" event, if any.
@@ -322,6 +329,8 @@ export function App() {
                     onDisconnect={handleDisconnect}
                     onReconnect={(id) => { handleConnect(id); setShowSettings(false); }}
                   />
+                ) : showFieldGuide ? (
+                  <FieldGuide onBack={() => setShowFieldGuide(false)} />
                 ) : (
                   <>
                     {tab === 'home' && <Home onNavigate={handleNavigate} />}

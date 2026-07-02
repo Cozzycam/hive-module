@@ -89,6 +89,23 @@ export function Home({ onNavigate }: HomeProps) {
         <CarePackageButton colonyId={colonyId} tod={tod} />
       </Card>
 
+      {/* Field Guide — the colony's collection of visiting critters */}
+      <Card
+        style={{ background: tod.cardBg, display: 'flex', alignItems: 'center', gap: 12 }}
+        onClick={() => onNavigate('fieldguide')}
+      >
+        <div style={{ fontSize: 26, minWidth: 34, textAlign: 'center' }}>{'\u{1F98B}'}</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: SIZES.base, fontWeight: 600, color: tod.text }}>
+            Field Guide
+          </div>
+          <div style={{ fontSize: SIZES.sm, color: tod.dimText }}>
+            Every visitor the colony has spotted
+          </div>
+        </div>
+        <div style={{ fontSize: SIZES.base, color: tod.dimText }}>{'›'}</div>
+      </Card>
+
       {/* Topology mini-map */}
       {modules.length > 0 && (
         <Card style={{ background: tod.cardBg, display: 'flex', alignItems: 'center', gap: 16 }}
