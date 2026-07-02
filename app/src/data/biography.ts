@@ -6,6 +6,7 @@
 import type { ColonyEvent, Personality } from '../api/types';
 import { nameFromId } from './plantNames';
 import { traitLabel, SURVIVAL_TRAITS } from './traits';
+import { CRITTER_PLURALS } from './critters';
 
 // ---- Epithets ----------------------------------------------------------
 
@@ -79,10 +80,6 @@ interface StorySubject {
   tended_by_name?: string;
 }
 
-const CRITTER_PLURALS: Record<string, string> = {
-  butterfly: 'butterflies', worm: 'worms',
-  firefly: 'fireflies', beetle: 'beetles',
-};
 
 function listNames(names: string[]): string {
   if (names.length === 1) return names[0];

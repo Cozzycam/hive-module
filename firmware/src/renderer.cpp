@@ -1691,6 +1691,53 @@ void Renderer::_draw_critters(const Chamber& ch, float lerp_t) {
             _mark_dirty(px - 3, py - 1, 8, 5);
             break;
         }
+        case CRITTER_MOTH: {
+            // Dusty grey night flier — slower flap than the butterfly
+            bool open = (cr.anim_phase & 0x08);
+            uint16_t wing = _rgb565(190, 185, 168);
+            uint16_t body = _rgb565(90, 82, 70);
+            int spread = open ? 3 : 1;
+            _gfx->fillRect(px - spread, py - 1, spread, 3, wing);
+            _gfx->fillRect(px + 1,      py - 1, spread, 3, wing);
+            _gfx->drawPixel(px, py, body);
+            _mark_dirty(px - 4, py - 3, 9, 7);
+            break;
+        }
+        case CRITTER_SNAIL: {
+            // Slow blob with a lighter shell whorl
+            uint16_t bodyc = _rgb565(150, 122, 92);
+            uint16_t shell = _rgb565(205, 172, 124);
+            uint16_t whorl = _rgb565(120, 96, 66);
+            _gfx->fillRect(px - 2, py, 5, 2, bodyc);
+            _gfx->fillRect(px, py - 2, 3, 3, shell);
+            _gfx->drawPixel(px + 1, py - 1, whorl);
+            _mark_dirty(px - 3, py - 3, 8, 7);
+            break;
+        }
+        case CRITTER_LADYBIRD: {
+            // Little red dome, black spots
+            uint16_t red   = _rgb565(205, 45, 40);
+            uint16_t black = _rgb565(25, 20, 20);
+            _gfx->fillRect(px - 1, py - 1, 3, 3, red);
+            _gfx->drawPixel(px - 1, py - 1, black);
+            _gfx->drawPixel(px + 1, py, black);
+            _gfx->drawPixel(px, py + 2, black);  // head
+            _mark_dirty(px - 2, py - 2, 6, 6);
+            break;
+        }
+        case CRITTER_DRAGONFLY: {
+            // Long teal dart with shimmering cross-wings
+            bool open = (cr.anim_phase & 0x02);
+            uint16_t bodyc = _rgb565(60, 185, 190);
+            uint16_t wing  = _rgb565(180, 220, 235);
+            _gfx->drawFastVLine(px, py - 2, 5, bodyc);
+            if (open) {
+                _gfx->drawFastHLine(px - 2, py - 1, 5, wing);
+                _gfx->drawFastHLine(px - 2, py,     5, wing);
+            }
+            _mark_dirty(px - 3, py - 3, 7, 8);
+            break;
+        }
         default: {  // CRITTER_BEETLE — a dark trundling oval with a shell line
             uint16_t shell = _rgb565(70, 55, 40);
             uint16_t back  = _rgb565(110, 90, 60);

@@ -11,6 +11,7 @@ import { Diary } from './screens/Diary';
 import { Feedback } from './screens/Feedback';
 import { Empty } from './screens/Empty';
 import { Settings, notificationManager } from './screens/Settings';
+import { critterEmoji } from './data/critters';
 import { FieldGuide } from './screens/FieldGuide';
 import { HIVE } from './theme/palette';
 import { SIZES } from './theme/fonts';
@@ -293,10 +294,7 @@ export function App() {
     if (!latestDiscovery) return '';
     const critter = String((latestDiscovery.data as Record<string, unknown>)?.critter || 'critter');
     const finder = (latestDiscovery as unknown as { name?: string }).name || 'Someone';
-    const emoji = critter === 'butterfly' ? '\u{1F98B}'
-                : critter === 'worm' ? '\u{1FAB1}'
-                : critter === 'firefly' ? '\u{2728}'
-                : '\u{1FAB2}';
+    const emoji = critterEmoji(critter);
     return `${emoji} ${finder} found a ${critter}! Tap to see.`;
   })();
 

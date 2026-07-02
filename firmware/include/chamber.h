@@ -36,7 +36,12 @@ enum CritterKind : uint8_t {
     CRITTER_BUTTERFLY  = 1,
     CRITTER_WORM       = 2,
     CRITTER_FIREFLY    = 3,   // the night critter — caught via the firefly chase
-    CRITTER_KIND_COUNT = 4,
+    // Variant visitors (v172) — rarer, condition-gated collection fodder
+    CRITTER_MOTH       = 4,   // clear nights only
+    CRITTER_SNAIL      = 5,   // rain redirects the guest list to snails
+    CRITTER_LADYBIRD   = 6,   // rare lucky visitor on fair days
+    CRITTER_DRAGONFLY  = 7,   // garden-only prize on warm clear days
+    CRITTER_KIND_COUNT = 8,
 };
 
 struct Critter {

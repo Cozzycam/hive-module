@@ -920,19 +920,58 @@ void Chamber::_tick_critters() {
         Critter& cr = critters[i];
 
         if (!cr.active) {
-            // Visitors wander in only in daylight — and not in foul
-            // weather. Nobody visits during a downpour, a gale or a
-            // freeze; their absence is part of how weather reads on-glass.
-            if (day && !foul_wx && active < max_active && conker_count > 0
-                    && g_rng.rand_float() < spawn_chance) {
+            // The guest list depends on the weather rather than closing
+            // outright: rain redirects it to snails, clear nights belong to
+            // moths, gales and freezes keep everyone home. Rarity is the
+            // collection game — ladybirds are lucky, dragonflies garden-only.
+            bool rain = g_weather.valid
+                     && g_weather.condition >= WX_DRIZZLE
+                     && g_weather.condition <= WX_HEAVY_RAIN;
+            bool kept_home = g_weather.valid
+                     && (g_weather.wind >= WIND_HIGH
+                         || g_weather.temp == TEMP_FREEZING
+                         || g_weather.condition == WX_THUNDERSTORM
+                         || g_weather.condition == WX_SNOW);
+            bool warm = g_weather.valid && g_weather.temp >= TEMP_WARM;
+            float roll = day ? spawn_chance
+                             : Cfg::CRITTER_NIGHT_SPAWN_CHANCE
+                               * (is_garden ? Cfg::GARDEN_CRITTER_MULT : 1.0f);
+
+            if (!kept_home && active < max_active && conker_count > 0
+                    && g_rng.rand_float() < roll) {
+                struct Guest { uint8_t kind; float w; };
+                Guest guests[5];
+                int gn = 0;
+                if (day && !rain) {
+                    guests[gn++] = {CRITTER_BUTTERFLY, 0.46f};
+                    guests[gn++] = {CRITTER_BEETLE,    0.30f};
+                    guests[gn++] = {CRITTER_WORM,      0.14f};
+                    guests[gn++] = {CRITTER_LADYBIRD,  0.05f};       // lucky
+                    if (is_garden && warm)
+                        guests[gn++] = {CRITTER_DRAGONFLY, 0.08f};   // garden prize
+                } else if (day && rain) {
+                    guests[gn++] = {CRITTER_SNAIL, 0.85f};
+                    guests[gn++] = {CRITTER_WORM,  0.15f};           // likes it damp
+                } else if (!day && !rain) {
+                    guests[gn++] = {CRITTER_MOTH, 1.0f};
+                }
+                if (gn == 0) continue;
+
+                float total = 0.0f;
+                for (int g = 0; g < gn; g++) total += guests[g].w;
+                float pick = g_rng.rand_float() * total;
+                uint8_t kind = guests[gn - 1].kind;
+                for (int g = 0; g < gn; g++) {
+                    if (pick < guests[g].w) { kind = guests[g].kind; break; }
+                    pick -= guests[g].w;
+                }
+
                 cr.active = true;
                 cr.flee = 0;
                 cr.ttl = static_cast<uint16_t>(
                     g_rng.rand_int(Cfg::CRITTER_TTL_MIN, Cfg::CRITTER_TTL_MAX));
-                float r = g_rng.rand_float();
-                cr.kind = (r < 0.50f) ? CRITTER_BUTTERFLY
-                        : (r < 0.85f) ? CRITTER_BEETLE
-                                      : CRITTER_WORM;
+                if (kind == CRITTER_SNAIL) cr.ttl *= 2;  // slow — needs the time
+                cr.kind = kind;
                 // Enter from a random edge
                 if (g_rng.rand_int(0, 1) == 0) {
                     cr.x = (g_rng.rand_int(0, 1) == 0) ? 1.0f : Cfg::GRID_WIDTH - 2.0f;
@@ -964,12 +1003,20 @@ void Chamber::_tick_critters() {
         if (cr.ttl > 0) cr.ttl--;
         if (cr.ttl == 0) { cr.active = false; continue; }  // wandered off unseen
 
-        float max_speed = (cr.kind == CRITTER_BUTTERFLY) ? Cfg::CRITTER_SPEED_BUTTERFLY
-                        : (cr.kind == CRITTER_WORM)       ? Cfg::CRITTER_SPEED_WORM
-                                                          : Cfg::CRITTER_SPEED_BEETLE;
+        float max_speed;
+        switch (cr.kind) {
+            case CRITTER_BUTTERFLY:  max_speed = Cfg::CRITTER_SPEED_BUTTERFLY;  break;
+            case CRITTER_WORM:       max_speed = Cfg::CRITTER_SPEED_WORM;       break;
+            case CRITTER_MOTH:       max_speed = Cfg::CRITTER_SPEED_MOTH;       break;
+            case CRITTER_SNAIL:      max_speed = Cfg::CRITTER_SPEED_SNAIL;      break;
+            case CRITTER_LADYBIRD:   max_speed = Cfg::CRITTER_SPEED_LADYBIRD;   break;
+            case CRITTER_DRAGONFLY:  max_speed = Cfg::CRITTER_SPEED_DRAGONFLY;  break;
+            default:                 max_speed = Cfg::CRITTER_SPEED_BEETLE;     break;
+        }
         // Wander, with a gentle pull toward the nearest conker so encounters
         // actually happen (you watch the bug amble into the group).
-        float jitter = (cr.kind == CRITTER_BUTTERFLY) ? 0.05f : 0.02f;
+        float jitter = (cr.kind == CRITTER_BUTTERFLY || cr.kind == CRITTER_MOTH) ? 0.05f
+                     : (cr.kind == CRITTER_DRAGONFLY) ? 0.08f : 0.02f;
         cr.vx += (g_rng.rand_float() - 0.5f) * jitter;
         cr.vy += (g_rng.rand_float() - 0.5f) * jitter;
         int nx = -1; float best_d2 = 1e9f;

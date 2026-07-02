@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 171;
+constexpr uint32_t FW_VERSION = 172;
 
 namespace Cfg {
 
@@ -392,6 +392,12 @@ constexpr int   CRITTER_TTL_MAX          = 720;     // ~90s
 constexpr float CRITTER_SPEED_BEETLE     = 0.065f;
 constexpr float CRITTER_SPEED_BUTTERFLY  = 0.13f;
 constexpr float CRITTER_SPEED_WORM       = 0.045f;
+constexpr float CRITTER_SPEED_MOTH       = 0.11f;
+constexpr float CRITTER_SPEED_SNAIL      = 0.02f;   // takes its time (double TTL)
+constexpr float CRITTER_SPEED_LADYBIRD   = 0.06f;
+constexpr float CRITTER_SPEED_DRAGONFLY  = 0.22f;   // darts
+// Night visitors (moths) are rarer than the daytime parade
+constexpr float CRITTER_NIGHT_SPAWN_CHANCE = 0.0004f;
 constexpr float CRITTER_SEEK_CONKER      = 0.06f;   // homes toward the nearest guy
                                                     // (must beat the wander jitter
                                                     // or it never reaches the cluster)

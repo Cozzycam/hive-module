@@ -19,7 +19,10 @@ static const char* JEVT_NAMES[] = {
 };
 
 // Keep in lockstep with CritterKind (chamber.h)
-static const char* CRITTER_NAMES[] = { "beetle", "butterfly", "worm", "firefly" };
+static const char* CRITTER_NAMES[] = {
+    "beetle", "butterfly", "worm", "firefly",
+    "moth", "snail", "ladybird", "dragonfly",
+};
 
 static const char* CHALLENGE_NAMES[] = {
     "none", "heatwave", "cold_snap", "drought", "storm"
@@ -141,8 +144,9 @@ void EventJournal::_serialize_entry(const JournalEntry& e, char* buf, size_t buf
         data["participants"] = e.play.participants;
         break;
     case JEVT_DISCOVERY:
-        data["critter"] = (e.discovery.critter < 4)
-            ? CRITTER_NAMES[e.discovery.critter] : "critter";
+        data["critter"] =
+            (e.discovery.critter < sizeof(CRITTER_NAMES) / sizeof(CRITTER_NAMES[0]))
+                ? CRITTER_NAMES[e.discovery.critter] : "critter";
         break;
     }
 

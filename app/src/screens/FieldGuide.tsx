@@ -13,27 +13,48 @@ import type { ColonyEvent } from '../api/types';
 // Undiscovered visitors show as silhouettes with a hint of how to meet them.
 const CRITTERS: {
   kind: string; emoji: string; name: string; blurb: string; hint: string;
+  rarity: 'Common' | 'Uncommon' | 'Rare';
 }[] = [
   {
-    kind: 'butterfly', emoji: '\u{1F98B}', name: 'Butterfly',
+    kind: 'butterfly', emoji: '\u{1F98B}', name: 'Butterfly', rarity: 'Common',
     blurb: 'Flutters in on warm, clear days and drifts among the wee guys.',
     hint: 'Visits by day, in fair weather. Gardens see the most.',
   },
   {
-    kind: 'beetle', emoji: '\u{1FAB2}', name: 'Beetle',
+    kind: 'beetle', emoji: '\u{1FAB2}', name: 'Beetle', rarity: 'Common',
     blurb: 'Trundles through on important beetle business.',
     hint: 'Visits by day, in fair weather.',
   },
   {
-    kind: 'worm', emoji: '\u{1FAB1}', name: 'Worm',
+    kind: 'worm', emoji: '\u{1FAB1}', name: 'Worm', rarity: 'Common',
     blurb: 'Surfaces for a wander between the grains.',
     hint: 'Visits by day — likes the ground soft.',
   },
   {
-    kind: 'firefly', emoji: '\u{2728}', name: 'Firefly',
+    kind: 'firefly', emoji: '\u{2728}', name: 'Firefly', rarity: 'Uncommon',
     blurb: 'Glimmers over the chamber after dusk. The brave give chase — '
          + 'whoever catches the most holds the Bug Hunter title.',
     hint: 'Only after dark. Watch for the chase!',
+  },
+  {
+    kind: 'moth', emoji: '\u{1F319}', name: 'Moth', rarity: 'Uncommon',
+    blurb: 'A dusty grey flier that drifts in when the chamber sleeps.',
+    hint: 'Clear nights only — most keepers never see one arrive.',
+  },
+  {
+    kind: 'snail', emoji: '\u{1F40C}', name: 'Snail', rarity: 'Uncommon',
+    blurb: 'Takes its sweet time crossing the chamber, rain glistening on its shell.',
+    hint: 'Only ventures out in the rain.',
+  },
+  {
+    kind: 'ladybird', emoji: '\u{1F41E}', name: 'Ladybird', rarity: 'Rare',
+    blurb: 'A lucky little dome of red. The colony considers a visit a blessing.',
+    hint: 'A rare fair-weather visitor. Keep watch.',
+  },
+  {
+    kind: 'dragonfly', emoji: '\u{1F4A0}', name: 'Dragonfly', rarity: 'Rare',
+    blurb: 'A teal dart that shimmers over the garden on warm days. The rarest prize.',
+    hint: 'Only ever seen over a garden module, on warm clear days.',
   },
 ];
 
@@ -129,7 +150,8 @@ export function FieldGuide({ onBack, initialKind }: {
             {s ? (meta?.name ?? selectedKind) : '???'}
           </h1>
           <div style={{ fontSize: SIZES.sm, color: palette.dimText }}>
-            Common visitor {'·'} classic colouring
+            {meta?.rarity ?? 'Common'} visitor
+            {meta?.rarity === 'Rare' ? ' \u{2B50}' : ''}
           </div>
         </div>
 
@@ -220,6 +242,9 @@ export function FieldGuide({ onBack, initialKind }: {
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: SIZES.base, fontWeight: 600, color: palette.text }}>
                   {s ? c.name : '???'}
+                  <span style={{ fontWeight: 400, fontSize: SIZES.xs, color: c.rarity === 'Rare' ? HIVE.accent : palette.dimText }}>
+                    {' '}{c.rarity}
+                  </span>
                   {s && (
                     <span style={{ fontWeight: 400, fontSize: SIZES.sm, color: palette.dimText }}>
                       {' '}· seen {s.count} {s.count === 1 ? 'time' : 'times'}

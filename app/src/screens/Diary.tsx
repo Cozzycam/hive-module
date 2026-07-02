@@ -3,6 +3,7 @@ import { useColony, useColonyActions } from '../state/colony';
 import { Card } from '../components/Card';
 import { Chip } from '../components/Chip';
 import { nameFromId } from '../data/plantNames';
+import { critterEmoji, critterPlural } from '../data/critters';
 import { HIVE, TOD_PALETTES } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 import type { ColonyEvent, EventType } from '../api/types';
@@ -328,12 +329,8 @@ function formatEvent(ev: ColonyEvent, rosterNames: Map<number, string>): { icon:
       };
     case 'discovery': {
       const critter = String(data.critter || 'critter');
-      const icon = critter === 'butterfly' ? '\u{1F98B}'
-                 : critter === 'worm' ? '\u{1FAB1}'
-                 : critter === 'firefly' ? '\u{2728}'
-                 : '\u{1FAB2}'; // beetle
       return {
-        icon,
+        icon: critterEmoji(critter),
         description: `${name} found a ${critter}!`,
       };
     }
@@ -387,20 +384,13 @@ function formatEvent(ev: ColonyEvent, rosterNames: Map<number, string>): { icon:
     }
     case 'discovery_group' as EventType: {
       const counts = (data.counts || {}) as Record<string, number>;
-      const PLURALS: Record<string, string> = {
-        butterfly: 'butterflies', worm: 'worms', firefly: 'fireflies', beetle: 'beetles',
-      };
       const parts = Object.entries(counts).map(([k, n]) =>
-        n === 1 ? `a ${k}` : `${n} ${PLURALS[k] || k + 's'}`);
+        n === 1 ? `a ${k}` : `${n} ${critterPlural(k, n)}`);
       const listed = parts.length === 1
         ? parts[0]
         : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
       const kinds = Object.keys(counts);
-      const icon = kinds.length === 1
-        ? (kinds[0] === 'butterfly' ? '\u{1F98B}'
-           : kinds[0] === 'worm' ? '\u{1FAB1}'
-           : kinds[0] === 'firefly' ? '\u{2728}' : '\u{1FAB2}')
-        : '\u{1F50D}';
+      const icon = kinds.length === 1 ? critterEmoji(kinds[0]) : '\u{1F50D}';
       return { icon, description: `The colony found ${listed}.` };
     }
     case 'tap_group' as EventType: {
