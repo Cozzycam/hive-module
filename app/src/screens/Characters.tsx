@@ -497,6 +497,7 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
           <ConkerSprite
             scaleFactor={char.scale_factor}
             tintSeed={char.tint_seed}
+            ageDays={detail?.age_days ?? char.age_days}
             palette={palette}
           />
         </Card>

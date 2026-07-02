@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { growthFactor } from '../data/growth';
 
 // Per-conker colour (mirrors renderer.cpp `_draw_sprite_scaled_tinted`):
 // every conker gets its own vivid hue so the colony is easy to tell apart; what's
@@ -65,17 +66,20 @@ const SCALE_MEAN = 3.2;
 interface Props {
   scaleFactor?: number;
   tintSeed?: number;
+  ageDays?: number;     // growth: under a day old renders smaller (mirrors glass)
   displaySize?: number; // base display size in px (at scale 1.0)
   palette: { dimText: string };
 }
 
-export function ConkerSprite({ scaleFactor = SCALE_MEAN, tintSeed = 0, displaySize = 80, palette }: Props) {
-  const relativeScale = scaleFactor / SCALE_MEAN;
+export function ConkerSprite({ scaleFactor = SCALE_MEAN, tintSeed = 0, ageDays, displaySize = 80, palette }: Props) {
+  const grown = growthFactor(ageDays);
+  const relativeScale = (scaleFactor / SCALE_MEAN) * grown;
   const spriteSize = displaySize * relativeScale;
   const { filterId, filterSvg } = useTintFilter(tintSeed);
 
-  // Height label: mean scale_factor 3.2 = 1cm
-  const heightCm = (scaleFactor / SCALE_MEAN).toFixed(1);
+  // Height label: mean scale_factor 3.2 = 1cm, scaled down while growing
+  const heightCm = relativeScale.toFixed(1);
+  const stillGrowing = grown < 1;
 
   // Scale bar: shows 1cm reference
   const refBarHeight = displaySize; // 1cm = base display size
@@ -96,7 +100,7 @@ export function ConkerSprite({ scaleFactor = SCALE_MEAN, tintSeed = 0, displaySi
           }}
         />
         <div style={{ fontSize: 11, color: palette.dimText, marginTop: 4 }}>
-          {heightCm} cm
+          {heightCm} cm{stillGrowing ? ' · still growing' : ''}
         </div>
       </div>
 

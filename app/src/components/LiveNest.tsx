@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useTintFilter } from './ConkerSprite';
+import { growthFactor } from '../data/growth';
 import { HIVE } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 import type { ColonySnapshot, LilGuySummary } from '../api/types';
@@ -23,7 +24,8 @@ function NestConker({
   palette: { text: string; cardBg: string };
 }) {
   const { filterId, filterSvg } = useTintFilter(lg.tint_seed ?? 0);
-  const size = BASE_SPRITE_PX * ((lg.scale_factor ?? SCALE_MEAN) / SCALE_MEAN);
+  const size = BASE_SPRITE_PX * ((lg.scale_factor ?? SCALE_MEAN) / SCALE_MEAN)
+             * growthFactor(lg.age_days);  // bubs render small, like the glass
 
   return (
     <div
