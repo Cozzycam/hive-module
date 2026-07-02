@@ -26,6 +26,10 @@ enum EventType : uint8_t {
     EVT_HANDOFF_OUTGOING    = 10,
     EVT_PARADE_STARTED      = 11,
     EVT_DISCOVERY           = 12,   // a conker found a visiting critter
+    EVT_BOND_FORMED         = 13,   // one-way bond crossed the formed threshold
+    EVT_BOND_MUTUAL         = 14,   // pair became best friends
+    EVT_TRAIT_EARNED        = 15,   // a conker earned a trait/title
+    EVT_MOURNING            = 16,   // a conker set off to stand vigil
 };
 
 // ---- Interaction subtypes ----
@@ -83,6 +87,27 @@ struct DiscoveryData {
     uint8_t kind;          // CritterKind value
 };
 
+/* Story-beat payloads carry ids AND names: the renderer resolves ids to
+ * local chamber slots for animations (skipping if the conker isn't here),
+ * while names keep the HUD banner meaningful even for non-local conkers. */
+
+struct BondEventData {     // bond_formed, bond_mutual
+    uint32_t a_id, b_id;
+    char     a_name[16], b_name[16];
+};
+
+struct TraitEarnedData {
+    uint32_t conker_id;
+    uint32_t trait_bit;    // TraitBit mask (single bit)
+    char     who[16];
+};
+
+struct MourningData {
+    uint32_t mourner_id;
+    char     mourner_name[16];
+    char     dead_name[16];
+};
+
 // ---- Event struct (tagged union) ----
 
 struct Event {
@@ -98,6 +123,9 @@ struct Event {
         HandoffData            handoff;   // handoff_incoming, handoff_outgoing
         ParadeData             parade;    // parade_started
         DiscoveryData          discovery; // discovery
+        BondEventData          bond;      // bond_formed, bond_mutual
+        TraitEarnedData        trait;     // trait_earned
+        MourningData           mourning;  // mourning
     };
 };
 

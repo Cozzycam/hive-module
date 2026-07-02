@@ -38,6 +38,8 @@ enum AnimType : uint8_t {
     ANIM_HATCH,            // expanding sparkle pop
     ANIM_DEATH_WORKER,     // brief X mark
     ANIM_DEATH_YOUNG,      // dim fade dot
+    ANIM_HEARTS,           // hearts drift up — a bond formed / best friends
+    ANIM_TRAIT_SPARKLE,    // gold burst — a trait/title earned
 };
 
 struct Anim {
@@ -98,6 +100,10 @@ public:
 
     // Feed drained events to create animations
     void receive_events(const Event* events, int count, const Chamber& ch);
+
+    // Story-beat banner — one-line narration under the HUD ("X & Y are
+    // best friends"). Queued; each shows ~3.5s. Advisory: drops when full.
+    void banner(const char* text);
 
     // Boot splash
     void start_boot_splash();
@@ -184,6 +190,16 @@ private:
     void _spawn_anim(AnimType type, int px, int py, uint8_t duration);
     void _draw_anims();
     void _draw_one_anim(const Anim& a);
+
+    // Story-beat banner queue
+    static constexpr int MAX_BANNERS = 4;
+    static constexpr uint32_t BANNER_SHOW_MS = 3500;
+    char _banner_q[MAX_BANNERS][64];
+    int  _banner_q_count = 0;
+    unsigned long _banner_front_ms = 0;   // when the front banner went up (0 = idle)
+    int16_t _banner_rect_x = 0, _banner_rect_w = 0;  // last drawn box (for dismissal repaint)
+    void _tick_banner();
+    static const char* _trait_label(uint32_t bit);
 
     // Tunnel entrances at connected faces
     void _draw_tunnel_entrances(const Chamber& ch);

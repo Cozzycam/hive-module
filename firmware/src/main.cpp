@@ -1113,7 +1113,7 @@ void loop() {
             if (w.alive) {
                 int px = static_cast<int>(w.x * Cfg::CELL_SIZE);
                 int py = static_cast<int>(w.y * Cfg::CELL_SIZE);
-                int radius = static_cast<int>(w.scale_factor * 6.0f);
+                int radius = static_cast<int>(w.render_scale() * 6.0f);
 
                 // Highlight circle
                 gfx->drawCircle(px, py, radius, 0xFFFF);

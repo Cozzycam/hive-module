@@ -95,6 +95,7 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
     // Wire transient per-tick state
     chamber.event_bus = &bus;
     chamber.tick_num  = tick_num;
+    _bus              = &bus;
 
     // Sync topology neighbour state into chamber entries
     _sync_topology_to_chamber();
@@ -1679,6 +1680,10 @@ void Coordinator::_persist_process_deaths() {
         // before bonds.remove_owner() erases the relationships. Skipped
         // when the colony is stressed — survival first.
         if (colony.food_pressure() <= Cfg::FLAIR_MAX_PRESSURE) {
+            // Dead conker's name for the vigil banner (registry record still
+            // live — mark_dead runs after this loop)
+            const IdentityRecord* dead_rec = registry.get(id);
+            const char* dead_name = dead_rec ? dead_rec->name : "";
             int8_t hx = -1, hy = -1;
             for (int h = chamber.husk_count - 1; h >= 0; h--) {
                 if (chamber.husks[h].conker_id == id) {
@@ -1723,6 +1728,19 @@ void Coordinator::_persist_process_deaths() {
                     strlcpy(jm.who, w.name, sizeof(jm.who));
                     jm.mourning.dead_id = id;
                     journal.emit(jm);
+
+                    // Display bus: vigil banner ("X stands vigil for Y")
+                    if (_bus) {
+                        Event ev = {};
+                        ev.type = EVT_MOURNING;
+                        ev.tick = chamber.tick_num;
+                        ev.mourning.mourner_id = w.id;
+                        strlcpy(ev.mourning.mourner_name, w.name,
+                                sizeof(ev.mourning.mourner_name));
+                        strlcpy(ev.mourning.dead_name, dead_name,
+                                sizeof(ev.mourning.dead_name));
+                        _bus->emit(ev);
+                    }
                     break;
                 }
             }
@@ -2139,6 +2157,18 @@ void Coordinator::_bond_detect_proximity(uint32_t tick_num) {
                     strlcpy(je.bond.target_name, a.name, sizeof(je.bond.target_name));
                     journal.emit(je);
                 }
+                // Display bus: subtle hearts between the pair (no banner —
+                // one-way bonds form often enough to spam it)
+                if ((formed_ab || formed_ba) && _bus) {
+                    Event ev = {};
+                    ev.type = EVT_BOND_FORMED;
+                    ev.tick = tick_num;
+                    ev.bond.a_id = a.id;
+                    ev.bond.b_id = b.id;
+                    strlcpy(ev.bond.a_name, a.name, sizeof(ev.bond.a_name));
+                    strlcpy(ev.bond.b_name, b.name, sizeof(ev.bond.b_name));
+                    _bus->emit(ev);
+                }
 
                 // Reciprocation: the moment both directions are formed, the pair
                 // become best friends. Fires once, on the tick the second side
@@ -2155,6 +2185,19 @@ void Coordinator::_bond_detect_proximity(uint32_t tick_num) {
                     je.bond.target_id = b.id;
                     strlcpy(je.bond.target_name, b.name, sizeof(je.bond.target_name));
                     journal.emit(je);
+
+                    // Display bus: best friends is a headline moment —
+                    // big hearts + HUD banner
+                    if (_bus) {
+                        Event ev = {};
+                        ev.type = EVT_BOND_MUTUAL;
+                        ev.tick = tick_num;
+                        ev.bond.a_id = a.id;
+                        ev.bond.b_id = b.id;
+                        strlcpy(ev.bond.a_name, a.name, sizeof(ev.bond.a_name));
+                        strlcpy(ev.bond.b_name, b.name, sizeof(ev.bond.b_name));
+                        _bus->emit(ev);
+                    }
                 }
             }
         }
@@ -2321,8 +2364,10 @@ void Coordinator::_trait_tick(uint32_t tick_num) {
                     je.unix_time = g_tod.unix_time;
                     je.type = JEVT_TRAIT_EARNED;
                     je.lilguy_id = w.id;
+                    strlcpy(je.who, w.name, sizeof(je.who));
                     je.trait.trait_bit = (1u << bit);
                     journal.emit(je);
+                    _emit_trait_bus(w.id, w.name, 1u << bit, tick_num);
                 }
             }
         }
@@ -2331,6 +2376,19 @@ void Coordinator::_trait_tick(uint32_t tick_num) {
     }
 
     _catcher_resolve(tick_num);
+}
+
+// Display-bus mirror of JEVT_TRAIT_EARNED — sparkle + HUD banner on the glass.
+void Coordinator::_emit_trait_bus(uint32_t id, const char* name,
+                                  uint32_t trait_bit, uint32_t tick_num) {
+    if (!_bus) return;
+    Event ev = {};
+    ev.type = EVT_TRAIT_EARNED;
+    ev.tick = tick_num;
+    ev.trait.conker_id = id;
+    ev.trait.trait_bit = trait_bit;
+    strlcpy(ev.trait.who, name, sizeof(ev.trait.who));
+    _bus->emit(ev);
 }
 
 // "Bug Hunter" is a single, colony-wide title that scales in steps of 25
@@ -2412,8 +2470,10 @@ void Coordinator::_catcher_resolve(uint32_t tick_num) {
         je.unix_time = g_tod.unix_time;
         je.type = JEVT_TRAIT_EARNED;
         je.lilguy_id = champ.id;
+        strlcpy(je.who, champ.name, sizeof(je.who));
         je.trait.trait_bit = TRAIT_CATCHER;
         journal.emit(je);
+        _emit_trait_bus(champ.id, champ.name, TRAIT_CATCHER, tick_num);
     }
 }
 
@@ -2480,8 +2540,10 @@ void Coordinator::challenge_end(uint32_t tick_num) {
             te.unix_time = g_tod.unix_time;
             te.type = JEVT_TRAIT_EARNED;
             te.lilguy_id = w.id;
+            strlcpy(te.who, w.name, sizeof(te.who));
             te.trait.trait_bit = survival_bit;
             journal.emit(te);
+            _emit_trait_bus(w.id, w.name, survival_bit, tick_num);
         }
     }
 

@@ -188,6 +188,15 @@ struct Conker {
         return lifespan_ms > 0 && lived_ms >= static_cast<uint32_t>(lifespan_ms * 0.7f);
     }
 
+    // Hatchlings grow into their full size over their first day — visible
+    // "they grow up" progress on the glass. Render-only: sim logic
+    // (collision, movement) keeps using scale_factor.
+    float render_scale() const {
+        if (lived_ms >= Cfg::GROWTH_JUVENILE_MS) return scale_factor;
+        return scale_factor * (0.6f + 0.4f * static_cast<float>(lived_ms)
+                                            / Cfg::GROWTH_JUVENILE_MS);
+    }
+
     void init(int8_t px, int8_t py, Role c = ROLE_CONKER, bool pioneer = false);
     void tick(Chamber& chamber, float dt);
 

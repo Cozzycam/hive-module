@@ -25,7 +25,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 166;
+constexpr uint32_t FW_VERSION = 167;
 
 namespace Cfg {
 
@@ -75,6 +75,8 @@ constexpr float CONKER_SCALE_MEAN = 3.2f;   // matches old minor size
 constexpr float CONKER_SCALE_SD   = 0.5f;
 constexpr float CONKER_SCALE_MIN  = 2.2f;
 constexpr float CONKER_SCALE_MAX  = 4.2f;
+// Hatchlings render at 60% and grow to full size over their first day
+constexpr uint32_t GROWTH_JUVENILE_MS = 86400000UL;  // 24h sim-running time
 
 // ---- Food rates (per real day) ----
 constexpr float QUEEN_FOOD_PER_DAY    = 3.0f;

@@ -93,6 +93,12 @@ public:
     void _journal_from_bus_events(const Event* events, int count, uint32_t tick_num);
 
 private:
+    // Story-beat seam: stashed at tick() entry so deep call chains
+    // (bond/trait/death paths) can emit display-bus events without
+    // threading EventBus& through every signature. Single-threaded;
+    // points at main.cpp's long-lived bus. Null only before first tick.
+    EventBus* _bus = nullptr;
+
     void _aggregate_colony_stats();
     void _sync_topology_to_chamber();
     void _check_edge_crossings(EventBus& bus, uint32_t tick_num);
@@ -161,6 +167,8 @@ private:
     void _world_tick();
     void _trait_tick(uint32_t tick_num);
     void _catcher_resolve(uint32_t tick_num);   // single colony-wide "Bug Hunter" title
+    void _emit_trait_bus(uint32_t id, const char* name, uint32_t trait_bit,
+                         uint32_t tick_num);    // display-bus mirror of JEVT_TRAIT_EARNED
 
     // Persistence (internal)
     uint32_t _last_persist_flush_ms = 0;

@@ -583,6 +583,8 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
     if (g_weather.valid && g_weather.condition >= WX_DRIZZLE)
         _flush_bounds.full = true;
 
+    _tick_banner();  // story-beat narration, drawn on top of everything
+
     _frame++;
 
 #if RENDERER_PROFILE
@@ -970,7 +972,7 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
             while (cur >= 0 && cur < ch.conker_count
                    && stack_depth < Cfg::MAX_CONKERS) {
                 auto& b = ch.conkers[cur];
-                float s = b.scale_factor;
+                float s = b.render_scale();
                 offset -= static_cast<int>(WORKER_PIONEER_H * s + 0.5f) * 0.6f;
                 stack_depth++;
                 if (b.stack_on < 0) base_idx = cur;  // ground-level ant
@@ -1011,7 +1013,7 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
                 // Compute the height this ant was at
                 float height = 0.0f;
                 for (int d = 0; d < w.topple_depth; d++) {
-                    height -= static_cast<int>(WORKER_PIONEER_H * w.scale_factor + 0.5f) * 0.6f;
+                    height -= static_cast<int>(WORKER_PIONEER_H * w.render_scale() + 0.5f) * 0.6f;
                 }
                 py += static_cast<int>(height * (1.0f - fall_p));
                 // Alternate left/right by depth, scatter ~1 cell width
@@ -1075,7 +1077,7 @@ void Renderer::_build_agent_sprites(const Chamber& ch, float lerp_t) {
             }
         }
 
-        float scale = w.scale_factor;
+        float scale = w.render_scale();
 
         auto& sd = _agent_sprites[_agent_sprite_count++];
         sd.sort_y    = sort_y_stable;
@@ -1151,12 +1153,13 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
             break;
         case SK_WORKER: {
             auto& w = ch.conkers[sd.entity_idx];
-            float scale = w.scale_factor;
+            float scale = w.render_scale();
 
             // Sprite frame lookup: use dedicated frame if available, else base
             ConkerSpriteFrame frame = LG_FRAME_BASE;
             if (w.anim_type == LG_ANIM_GROOMING) frame = LG_FRAME_LEAN;
             else if (w.anim_type == LG_ANIM_SNOOZE) frame = LG_FRAME_SNOOZE;
+            else if (w.state == STATE_MOURNING) frame = LG_FRAME_LEAN;  // head bowed at the vigil
             const SpriteRef* spr = _get_worker_sprite(frame);
             if (!spr) spr = _get_worker_sprite(LG_FRAME_BASE);
 
@@ -1182,10 +1185,17 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
             }
 
             if (w.food_carried > 0) {
+                // Load-scaled bundle on their back — a full carrier visibly
+                // hauls more than one with a nibble (placeholder until the
+                // artist's LG_FRAME_CARRYING lands)
+                float load = (w.carry_amount > 0.0f)
+                                 ? w.food_carried / w.carry_amount : 1.0f;
+                if (load > 1.0f) load = 1.0f;
+                int fs = 2 + static_cast<int>(3.0f * load);  // 2..5 px
                 int mx = sd.render_x - static_cast<int>(w.facing_dx * 4);
                 int my = sd.render_y - static_cast<int>(w.facing_dy * 4);
-                _gfx->fillRect(mx - 1, my - 1, 3, 3, _pal_food_carry);
-                _mark_dirty(mx - 1, my - 1, 3, 3);
+                _gfx->fillRect(mx - fs / 2, my - fs / 2, fs, fs, _pal_food_carry);
+                _mark_dirty(mx - fs / 2, my - fs / 2, fs, fs);
             }
 
             // Floating Zs above sleeping ants
@@ -1208,15 +1218,18 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
             }
 
             // Mood emote — the loudest unmet need, floating above the head.
-            // Sleep has its own Zs; stacked riders are too cramped to read.
+            // Sleep has its own Zs; stacked riders are too cramped to read;
+            // mourners get the grief tear below instead.
             if (w.mood != MOOD_CONTENT && w.anim_type != LG_ANIM_SNOOZE
-                    && w.stack_on < 0) {
+                    && w.stack_on < 0 && w.state != STATE_MOURNING) {
                 const char* glyph = nullptr;
                 uint16_t mc = 0;
                 switch (w.mood) {
                     case MOOD_PLAYING:  glyph = "\x0E"; mc = _rgb565(255, 220, 90);  break; // music note
                     case MOOD_BORED:    glyph = "...";  mc = _rgb565(150, 150, 165); break;
                     case MOOD_RESTLESS: glyph = "?";    mc = _rgb565(220, 185, 95);  break;
+                    case MOOD_SLEEPY:   glyph = "z";    mc = _rgb565(170, 170, 215); break; // pre-bed drowse
+                    case MOOD_HAPPY:    glyph = "\x03"; mc = _rgb565(255, 140, 160); break; // afterglow heart
                     default: break;
                 }
                 if (glyph) {
@@ -1228,6 +1241,28 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
                     _gfx->print(glyph);
                     _mark_dirty(ex, ey, 20, 8);
                 }
+                // Lonely: a little gloom cloud, slowly bobbing — no font
+                // glyph reads as "missing company", so it's drawn by hand
+                if (w.mood == MOOD_LONELY) {
+                    int bob = (_frame / 12) % 2;
+                    int cxp = sd.render_x + 5;
+                    int cyp = sd.render_y - 13 + bob;
+                    uint16_t cc = _rgb565(120, 130, 160);
+                    _gfx->fillCircle(cxp - 3, cyp + 1, 2, cc);
+                    _gfx->fillCircle(cxp,     cyp,     3, cc);
+                    _gfx->fillCircle(cxp + 3, cyp + 1, 2, cc);
+                    _mark_dirty(cxp - 6, cyp - 4, 13, 9);
+                }
+            }
+
+            // Grief tear: a single slow tear while standing vigil
+            if (w.state == STATE_MOURNING) {
+                float tphase = (millis() % 2400) / 2400.0f;
+                int ty = sd.render_y - 2 + static_cast<int>(tphase * 6);
+                uint16_t tc = _rgb565(150, 190, 235);
+                _gfx->drawPixel(sd.render_x + 4, ty, tc);
+                _gfx->drawPixel(sd.render_x + 4, ty + 1, tc);
+                _mark_dirty(sd.render_x + 4, sd.render_y - 2, 2, 9);
             }
             break;
         }
@@ -1485,6 +1520,69 @@ void Renderer::receive_events(const Event* events, int count, const Chamber& ch)
             _spawn_anim(ANIM_DEATH_WORKER, px, py, 10);
             break;
 
+        case EVT_BOND_FORMED:
+        case EVT_BOND_MUTUAL: {
+            // Resolve both ids to local, living conkers for the heart anim.
+            // Non-local conkers just skip the animation — the banner (mutual
+            // only) still reads from the names carried in the payload.
+            int ax = -1, ay = 0, bx = -1, by = 0;
+            for (int c = 0; c < ch.conker_count; c++) {
+                const Conker& w = ch.conkers[c];
+                if (!w.alive) continue;
+                if (w.id == ev.bond.a_id) {
+                    ax = static_cast<int>(w.x * cell);
+                    ay = static_cast<int>(w.y * cell);
+                } else if (w.id == ev.bond.b_id) {
+                    bx = static_cast<int>(w.x * cell);
+                    by = static_cast<int>(w.y * cell);
+                }
+            }
+            bool big = (ev.type == EVT_BOND_MUTUAL);
+            if (ax >= 0 && bx >= 0)
+                _spawn_anim(ANIM_HEARTS, (ax + bx) / 2, (ay + by) / 2 - 6,
+                            big ? 45 : 24);
+            else if (ax >= 0)
+                _spawn_anim(ANIM_HEARTS, ax, ay - 6, big ? 45 : 24);
+            else if (bx >= 0)
+                _spawn_anim(ANIM_HEARTS, bx, by - 6, big ? 45 : 24);
+            if (big) {
+                char msg[64];
+                snprintf(msg, sizeof(msg), "\x03 %s & %s are best friends",
+                         ev.bond.a_name, ev.bond.b_name);
+                banner(msg);
+            }
+            break;
+        }
+
+        case EVT_TRAIT_EARNED: {
+            for (int c = 0; c < ch.conker_count; c++) {
+                const Conker& w = ch.conkers[c];
+                if (w.alive && w.id == ev.trait.conker_id) {
+                    _spawn_anim(ANIM_TRAIT_SPARKLE,
+                                static_cast<int>(w.x * cell),
+                                static_cast<int>(w.y * cell), 30);
+                    break;
+                }
+            }
+            char msg[64];
+            snprintf(msg, sizeof(msg), "\x0F %s earned '%s'",
+                     ev.trait.who, _trait_label(ev.trait.trait_bit));
+            banner(msg);
+            break;
+        }
+
+        case EVT_MOURNING: {
+            char msg[64];
+            if (ev.mourning.dead_name[0])
+                snprintf(msg, sizeof(msg), "%s stands vigil for %s",
+                         ev.mourning.mourner_name, ev.mourning.dead_name);
+            else
+                snprintf(msg, sizeof(msg), "%s stands vigil for a friend",
+                         ev.mourning.mourner_name);
+            banner(msg);
+            break;
+        }
+
         default:
             break;
         }
@@ -1674,7 +1772,97 @@ void Renderer::_draw_one_anim(const Anim& a) {
         _mark_dirty(a.px - r - 1, a.py - r - 1, r * 2 + 3, r * 2 + 3);
         break;
     }
+
+    case ANIM_HEARTS: {
+        // Two tiny hearts drift up and apart, fading as they rise
+        uint8_t fade = static_cast<uint8_t>(255 * (1.0f - t * 0.7f));
+        uint16_t col = _rgb565(fade, fade * 120 / 255, fade * 145 / 255);
+        _gfx->setTextSize(1);
+        _gfx->setTextColor(col);
+        for (int h = 0; h < 2; h++) {
+            int hx = a.px + (h == 0 ? -7 : 3) - static_cast<int>(t * 2) * (h == 0 ? 1 : -1);
+            int hy = a.py - 4 - static_cast<int>(t * 12) - h * 3;
+            _gfx->setCursor(hx, hy);
+            _gfx->print('\x03');
+            _mark_dirty(hx, hy, 6, 8);
+        }
+        break;
     }
+
+    case ANIM_TRAIT_SPARKLE: {
+        // Gold burst — like a hatch pop but grander, white-hot at the end
+        int arm = 3 + static_cast<int>(10 * t);
+        uint16_t col = (t < 0.5f) ? _pal_glow_amber
+                                  : _rgb565(255, 245, 215);
+        _gfx->drawFastHLine(a.px - arm, a.py, arm * 2 + 1, col);
+        _gfx->drawFastVLine(a.px, a.py - arm, arm * 2 + 1, col);
+        int d = arm * 7 / 10;
+        _gfx->drawPixel(a.px - d, a.py - d, col);
+        _gfx->drawPixel(a.px + d, a.py - d, col);
+        _gfx->drawPixel(a.px - d, a.py + d, col);
+        _gfx->drawPixel(a.px + d, a.py + d, col);
+        _mark_dirty(a.px - arm - 1, a.py - arm - 1, arm * 2 + 3, arm * 2 + 3);
+        break;
+    }
+    }
+}
+
+// ================================================================
+//  Story-beat banner — one-line narration under the HUD
+// ================================================================
+
+// Display labels for TraitBit masks (order matches world_condition.h)
+const char* Renderer::_trait_label(uint32_t bit) {
+    switch (bit) {
+        case 1u << 0: return "Pioneer";
+        case 1u << 1: return "Elder";
+        case 1u << 2: return "Bonded";
+        case 1u << 3: return "Heatwave Survivor";
+        case 1u << 4: return "Cold Snap Survivor";
+        case 1u << 5: return "Drought Survivor";
+        case 1u << 6: return "Storm Survivor";
+        case 1u << 7: return "Bug Hunter";
+        default:      return "?";
+    }
+}
+
+void Renderer::banner(const char* text) {
+    if (_banner_q_count >= MAX_BANNERS) return;  // advisory — drop when full
+    strlcpy(_banner_q[_banner_q_count++], text, sizeof(_banner_q[0]));
+}
+
+void Renderer::_tick_banner() {
+    static constexpr int BANNER_Y = 32;   // just under the 28px HUD strip
+    static constexpr int BANNER_H = 14;
+
+    if (_banner_q_count == 0) return;
+    unsigned long now = millis();
+    if (_banner_front_ms == 0) _banner_front_ms = now;
+
+    if (now - _banner_front_ms >= BANNER_SHOW_MS) {
+        // Dismiss front, repaint the vacated strip, promote the next
+        for (int i = 1; i < _banner_q_count; i++)
+            strlcpy(_banner_q[i - 1], _banner_q[i], sizeof(_banner_q[0]));
+        _banner_q_count--;
+        _banner_front_ms = (_banner_q_count > 0) ? now : 0;
+        _mark_dirty(_banner_rect_x, BANNER_Y, _banner_rect_w, BANNER_H);
+        if (_banner_q_count == 0) return;
+    }
+
+    const char* text = _banner_q[0];
+    int tw = 6 * static_cast<int>(strlen(text));
+    int bw = tw + 10;
+    int bx = (SCREEN_W - bw) / 2;
+
+    _gfx->fillRoundRect(bx, BANNER_Y, bw, BANNER_H, 3, _rgb565(38, 28, 20));
+    _gfx->drawRoundRect(bx, BANNER_Y, bw, BANNER_H, 3, _pal_glow_amber);
+    _gfx->setTextSize(1);
+    _gfx->setTextColor(_rgb565(255, 240, 210));
+    _gfx->setCursor(bx + 5, BANNER_Y + 3);
+    _gfx->print(text);
+    _mark_dirty(bx, BANNER_Y, bw, BANNER_H);
+    _banner_rect_x = bx;
+    _banner_rect_w = bw;
 }
 
 // ================================================================
