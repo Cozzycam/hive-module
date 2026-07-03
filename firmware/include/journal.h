@@ -48,7 +48,8 @@ struct JournalEntry {
 
     union {
         struct { uint8_t role; bool is_pioneer; uint32_t from_brood_id; } hatch;
-        struct { uint8_t cause; } death;  // 0=old_age, 1=starved
+        struct { uint8_t cause; char attended_by[16]; } death;  // 0=old_age, 1=starved;
+                                     // attended_by: the friend at their side, if any
         struct { uint8_t from_role; uint8_t to_role; } role_change;
         struct { int8_t x; int8_t y; float amount; } food_tap;
         struct { int8_t x; int8_t y; } food_discovered;
@@ -60,8 +61,9 @@ struct JournalEntry {
         struct { uint32_t target_id; char target_name[16]; } bond;  // formed or broken
         struct { uint8_t challenge_type; float severity; } challenge;
         struct { uint32_t trait_bit; } trait;
-        struct { uint32_t dead_id; char dead_name[16]; } mourning;  // lilguy_id grieves
-            // for dead_id (name rides along — the roster forgets the dead)
+        struct { uint32_t dead_id; char dead_name[16]; uint8_t anniversary; } mourning;
+            // lilguy_id grieves for dead_id (name rides along — the roster
+            // forgets the dead); anniversary = a return visit to the stone
         struct { uint8_t kind; uint8_t participants; } play;  // kind 0=parade
         struct { uint8_t critter; } discovery;  // CritterKind found
         struct { uint8_t kind; uint8_t context; char honoree[16]; } crafted;

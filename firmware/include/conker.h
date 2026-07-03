@@ -194,6 +194,18 @@ struct Conker {
         return lifespan_ms > 0 && lived_ms >= static_cast<uint32_t>(lifespan_ms * 0.7f);
     }
 
+    // Twilight: the final stretch (last ~10% of life) — they slow down,
+    // and friends are drawn to keep them company
+    bool is_twilight() const {
+        return lifespan_ms > 0 && lived_ms >= static_cast<uint32_t>(lifespan_ms * 0.9f);
+    }
+
+    // Role speed, tempered by age — twilight conkers walk shorter, slower loops
+    float base_speed() const {
+        float s = Cfg::ROLE_PARAMS[role].speed;
+        return is_twilight() ? s * 0.65f : s;
+    }
+
     // Making aptitude — the colony's artists: playful imagination with a
     // wandering eye. Emergent from personality, no new dims.
     float muse() const {

@@ -301,7 +301,9 @@ function formatEvent(ev: ColonyEvent, rosterNames: Map<number, string>): { icon:
     case 'death':
       return {
         icon: '\u{1F342}',
-        description: `${name} passed away. ${data.cause === 'starvation' ? 'Cause: starvation.' : ''}`,
+        description: `${name} passed away`
+          + (data.attended_by ? `, with ${data.attended_by} at their side` : '')
+          + `.${data.cause === 'starvation' ? ' Cause: starvation.' : ''}`,
       };
     case 'role_change':
       return {
@@ -360,11 +362,15 @@ function formatEvent(ev: ColonyEvent, rosterNames: Map<number, string>): { icon:
         icon: '\u{1F9B7}',
         description: `${name} was assigned a caretaker${data.carer_id ? `: ${rosterNames.get(data.carer_id as number) || nameFromId(data.carer_id as number)}` : ''}.`,
       };
-    case 'mourning' as EventType:
+    case 'mourning' as EventType: {
+      const dead = (data.dead_name as string) || 'a fallen friend';
       return {
         icon: '\u{1F56F}\u{FE0F}',
-        description: `${name} stood vigil for a fallen friend.`,
+        description: data.anniversary
+          ? `${name} visited ${dead}'s stone — remembering.`
+          : `${name} stood vigil for ${dead}.`,
       };
+    }
     case 'play' as EventType:
       return {
         icon: '\u{1F389}',

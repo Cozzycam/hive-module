@@ -165,7 +165,13 @@ export function buildLifeStory(
           || (typeof data.dead_id === 'number'
               ? (rosterNames.get(data.dead_id as number) || nameFromId(data.dead_id as number))
               : 'a fallen friend');
-        story.push({ unix: ev.unix, icon: '\u{1F56F}\u{FE0F}', text: `Stood vigil for ${dead}.` });
+        story.push({
+          unix: ev.unix,
+          icon: '\u{1F56F}\u{FE0F}',
+          text: data.anniversary
+            ? `Visited ${dead}'s stone, remembering.`
+            : `Stood vigil for ${dead}.`,
+        });
         break;
       }
       case 'discovery': {
@@ -204,7 +210,8 @@ export function buildLifeStory(
           unix: ev.unix,
           icon: '\u{1F342}',
           text: `Passed away${subject.age_days ? ` at ${subject.age_days.toFixed(0)} days old` : ''}`
-            + `${data.cause === 'starvation' ? ', hungry to the last' : ', of a grand old age'}.`,
+            + `${data.cause === 'starvation' ? ', hungry to the last' : ', of a grand old age'}`
+            + `${data.attended_by ? ` — ${data.attended_by} was at their side` : ''}.`,
         });
         break;
       default:

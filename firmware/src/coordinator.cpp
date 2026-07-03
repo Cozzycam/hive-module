@@ -122,6 +122,9 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
     // ---- Receive satellite story beats for the journal (queen only) ----
     if (is_queen()) _receive_journal_relays();
 
+    // ---- Anniversary visits to memorials (all modules) ----
+    _anniversary_tick(tick_num);
+
     // ---- Receive care packages from neighbouring kingdoms (queen only) ----
     if (is_queen()) _receive_gifts();
 
@@ -1172,7 +1175,7 @@ void Coordinator::_respawn_worker(uint32_t id, IdentityRecord* rec) {
     w.move_ticks   = Cfg::ROLE_PARAMS[w.role].move_ticks;
     w.sense_radius = Cfg::ROLE_PARAMS[w.role].sense_radius;
     w.carry_amount = Cfg::ROLE_PARAMS[w.role].carry_amount;
-    w.speed        = Cfg::ROLE_PARAMS[w.role].speed;
+    w.speed        = w.base_speed();
 
     // Records have been seen with lifespan_ms == 0 or lived >= lifespan (the
     // boot-restore path guards this too). A respawn must never materialise a
@@ -1697,6 +1700,11 @@ void Coordinator::_receive_journal_relays() {
         je.lilguy_id = msg.lilguy_id;
         strlcpy(je.who, msg.who, sizeof(je.who));
         if (msg.jtype == JEVT_DISCOVERY) je.discovery.critter = msg.extra;
+        if (msg.jtype == JEVT_MOURNING) {
+            strlcpy(je.mourning.dead_name, msg.honoree,
+                    sizeof(je.mourning.dead_name));
+            je.mourning.anniversary = msg.extra;
+        }
         // Crafted/weathered are NOT journaled here: they're re-emitted onto
         // the queen's bus below, and the bus→journal bridge writes them —
         // one path for local and relayed alike (no double entries).
@@ -1835,6 +1843,7 @@ void Coordinator::_persist_process_deaths() {
     for (int d = 0; d < chamber.death_count; d++) {
         uint32_t id = chamber.deaths[d].id;
         uint8_t cause = chamber.deaths[d].cause;
+        char attended_by[16] = {};   // the friend at their side, if any
 
         // Mourning: bonded partners pay respects at the husk. Must run
         // before bonds.remove_owner() erases the relationships. Skipped
@@ -1860,6 +1869,11 @@ void Coordinator::_persist_process_deaths() {
                 for (int i = 0; i < chamber.conker_count; i++) {
                     Conker& w = chamber.conkers[i];
                     if (w.id != bs[b].target || !w.alive) continue;
+                    // Was this friend already at their side when they went?
+                    // (within a couple of cells of where they fell)
+                    if (!attended_by[0]
+                            && abs(w.cell_x() - hx) + abs(w.cell_y() - hy) <= 3)
+                        strlcpy(attended_by, w.name, sizeof(attended_by));
                     // Never interrupt a carrier or a departing worker
                     if (w.food_carried > 0 || w.departing) break;
                     w.state = STATE_MOURNING;
@@ -1878,7 +1892,7 @@ void Coordinator::_persist_process_deaths() {
                     w.idle_ticks_remaining = 0;
                     w.anim_type = LG_ANIM_NONE;
                     w.anim_remaining_ticks = 0;
-                    w.speed = Cfg::ROLE_PARAMS[w.role].speed;
+                    w.speed = w.base_speed();
                     mourners++;
 
                     JournalEntry jm = {};
@@ -1913,11 +1927,13 @@ void Coordinator::_persist_process_deaths() {
         registry.manifest().total_workers_died++;
         bonds.remove_owner(id);
 
-        // Journal: death event (name rides along — the roster forgets the dead)
+        // Journal: death event (name rides along — the roster forgets the
+        // dead; attended_by records the friend at their side, if any)
         JournalEntry je = {};
         je.tick = chamber.tick_num;
         je.unix_time = g_tod.unix_time;
         je.type = JEVT_DEATH;
+        strlcpy(je.death.attended_by, attended_by, sizeof(je.death.attended_by));
         je.lilguy_id = id;
         {
             IdentityRecord* rec = registry.get(id);
@@ -2644,6 +2660,82 @@ void Coordinator::_trait_tick(uint32_t tick_num) {
         if (rec->traits & TRAIT_CATCHER) mb |= 0x08;
     }
     _milestone_bits = mb;
+}
+
+// Anniversary visits: on the weekly anniversary of a memorial's making,
+// its maker sets down whatever they're doing (if idle) and returns to the
+// stone for a quiet visit. "Moss visited Fern's stone today" — the single
+// most carable behaviour in the codebase. Runs on all modules.
+void Coordinator::_anniversary_tick(uint32_t tick_num) {
+    uint32_t now_ms = millis();
+    if (now_ms - _last_anniv_check_ms < 600000UL) return;   // every 10 min
+    _last_anniv_check_ms = now_ms;
+    if (g_tod.unix_time == 0) return;
+
+    for (int i = 0; i < Cfg::MAX_ARTWORKS; i++) {
+        Artwork& a = chamber.artworks[i];
+        if (!a.active || a.kind != ART_MEMORIAL) continue;
+        uint32_t age = g_tod.unix_time - a.created_unix;
+        if (age < 6UL * 86400UL) continue;          // grief is still fresh
+        if ((age / 86400UL) % 7 != 0) continue;     // anniversary days only
+        if (a.last_visited_unix != 0
+                && g_tod.unix_time - a.last_visited_unix < 3UL * 86400UL)
+            continue;                               // already visited this one
+
+        for (int c = 0; c < chamber.conker_count; c++) {
+            Conker& w = chamber.conkers[c];
+            if (w.id != a.maker_id || !w.alive) continue;
+            if (w.state != STATE_IDLE || w.food_carried > 0) break;  // catch them later
+            w.state = STATE_MOURNING;
+            w.target_x = a.x;
+            w.target_y = a.y;
+            w.has_target = true;
+            w.has_target_cell = false;
+            strlcpy(w.mourning_for, a.honoree, sizeof(w.mourning_for));
+            w.zoomie_ticks = Cfg::MOURN_ONEWAY_TICKS;   // a shorter, quieter visit
+            w.zoomie_target = -1;
+            w.sleeping = false;
+            w.stack_on = -1;
+            w.idle_ticks_remaining = 0;
+            a.last_visited_unix = g_tod.unix_time;
+
+            JournalEntry jm = {};
+            jm.tick = tick_num;
+            jm.unix_time = g_tod.unix_time;
+            jm.type = JEVT_MOURNING;
+            jm.lilguy_id = w.id;
+            strlcpy(jm.who, w.name, sizeof(jm.who));
+            strlcpy(jm.mourning.dead_name, a.honoree,
+                    sizeof(jm.mourning.dead_name));
+            jm.mourning.anniversary = 1;
+            if (is_queen()) {
+                journal.emit(jm);
+            } else if (chamber.home_face >= 0) {
+                JournalRelayMessage msg = {};
+                msg.msg_type  = TOPO_JOURNAL_RELAY;
+                msg.sender_id = topology_my_id();
+                msg.jtype     = JEVT_MOURNING;
+                msg.lilguy_id = w.id;
+                msg.extra     = 1;   // anniversary flag
+                strlcpy(msg.who, w.name, sizeof(msg.who));
+                strlcpy(msg.honoree, a.honoree, sizeof(msg.honoree));
+                topology_send_to_face(static_cast<Face>(chamber.home_face),
+                                      (const uint8_t*)&msg, sizeof(msg));
+            }
+            if (_bus) {
+                Event ev = {};
+                ev.type = EVT_MOURNING;
+                ev.tick = tick_num;
+                ev.mourning.mourner_id = w.id;
+                strlcpy(ev.mourning.mourner_name, w.name,
+                        sizeof(ev.mourning.mourner_name));
+                strlcpy(ev.mourning.dead_name, a.honoree,
+                        sizeof(ev.mourning.dead_name));
+                _bus->emit(ev);
+            }
+            break;
+        }
+    }
 }
 
 // Display-bus mirror of JEVT_TRAIT_EARNED — sparkle + HUD banner on the glass.

@@ -184,6 +184,10 @@ private:
     uint8_t  _classify_weather_challenge(float* severity_out) const;
     void _weather_challenge_tick(uint32_t tick_num);
 
+    // Anniversary visits — makers return to their memorials weekly
+    uint32_t _last_anniv_check_ms = 0;
+    void _anniversary_tick(uint32_t tick_num);
+
     // Milestone decor bits (renderer reads via getter each frame)
     uint8_t _milestone_bits = 0;
 

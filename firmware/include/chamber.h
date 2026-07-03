@@ -87,6 +87,7 @@ struct Artwork {
     uint8_t  motif = 0;          // procedural look variant
     char     honoree[16] = {};   // memorials: who it remembers
     uint16_t admired = 0;        // times a passerby stopped for it
+    uint32_t last_visited_unix = 0;  // memorials: last anniversary visit
 };
 
 // ---- Garden farming ----

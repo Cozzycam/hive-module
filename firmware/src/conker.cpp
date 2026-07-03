@@ -488,7 +488,7 @@ void Conker::_on_enter_cell(int cx, int cy, Chamber& ch) {
 // ================================================================
 
 void Conker::_pick_task(Chamber& ch) {
-    speed = Cfg::ROLE_PARAMS[role].speed;
+    speed = base_speed();
     idle_ticks_remaining = 0;
     zoomie_target = -1;
     zoomie_ticks = 0;
@@ -1003,7 +1003,7 @@ void Conker::_do_eating(Chamber& ch) {
         if (ch.colony->food_store >= Cfg::WORKER_MEAL_COST) {
             ch.colony->food_store -= Cfg::WORKER_MEAL_COST;
             hunger = 0.0f;
-            speed = Cfg::ROLE_PARAMS[role].speed;  // clear any starvation penalty
+            speed = base_speed();  // clear any starvation penalty
             anim_type = LG_ANIM_GROOMING;
             anim_remaining_ticks = Cfg::GREETING_DURATION_TICKS;
             float qdx = fx - x, qdy = fy - y;
@@ -1102,6 +1102,10 @@ void Conker::_do_idle(Chamber& ch) {
                 // Gravitate to friends — best friends most of all.
                 if (_is_best_friend(ch, other.id))  d -= 2 * Cfg::FRIEND_HUDDLE_PULL;
                 else if (_is_friend(ch, other.id))  d -= Cfg::FRIEND_HUDDLE_PULL;
+                // A friend in their twilight draws everyone who loves them
+                // close — the final days are spent in company
+                if (other.is_twilight() && _is_friend(ch, other.id))
+                    d -= 3 * Cfg::FRIEND_HUDDLE_PULL;
                 if (d > 0 && d < best_dist) {
                     best_dist = d;
                     tx = ox; ty = oy;
@@ -1210,7 +1214,7 @@ void Conker::_do_zoomies(Chamber& ch) {
         state = STATE_IDLE;
         has_target = false;
         has_target_cell = false;
-        speed = Cfg::ROLE_PARAMS[role].speed;
+        speed = base_speed();
         zoomie_target = -1;
         zoomie_ticks = 0;
         zoomie_style = 0;
@@ -1488,7 +1492,7 @@ void Conker::_tick_idle(Chamber& ch) {
 
     // Timer expired → exit idle
     if (idle_ticks_remaining <= 0) {
-        speed = Cfg::ROLE_PARAMS[role].speed;
+        speed = base_speed();
         has_target_cell = false;
         _pick_task(ch);
         return;
@@ -1989,7 +1993,7 @@ void Conker::_pick_idle_microstate(Chamber& ch) {
             && g_rng.rand_float() < Cfg::PIROUETTE_CHANCE * urge
                                     * (0.5f + personality[PERS_EXPLORATION])) {
         idle_microstate = 5;
-        speed = Cfg::ROLE_PARAMS[role].speed;
+        speed = base_speed();
         idle_micro_ticks = Cfg::PIROUETTE_TICKS;
         return;
     }
@@ -2008,7 +2012,7 @@ void Conker::_pick_idle_microstate(Chamber& ch) {
     float r = g_rng.rand_float() * (hold_w + drift_w + huddle_w + reface_w);
     if (r < hold_w) {
         idle_microstate = 0;  // hold
-        speed = Cfg::ROLE_PARAMS[role].speed;
+        speed = base_speed();
     } else if (r < hold_w + drift_w) {
         idle_microstate = 1;  // random drift
         speed = Cfg::IDLE_DRIFT_SPEED;
@@ -2017,7 +2021,7 @@ void Conker::_pick_idle_microstate(Chamber& ch) {
         speed = Cfg::IDLE_DRIFT_SPEED;
     } else {
         idle_microstate = 2;  // reface
-        speed = Cfg::ROLE_PARAMS[role].speed;
+        speed = base_speed();
         int d = g_rng.rand_int(0, 3);
         const float fdx[] = {1.0f, -1.0f, 0.0f, 0.0f};
         const float fdy[] = {0.0f, 0.0f, 1.0f, -1.0f};

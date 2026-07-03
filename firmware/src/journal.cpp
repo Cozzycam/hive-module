@@ -85,6 +85,7 @@ void EventJournal::_serialize_entry(const JournalEntry& e, char* buf, size_t buf
         break;
     case JEVT_DEATH:
         data["cause"] = DEATH_CAUSE[e.death.cause & 1];
+        if (e.death.attended_by[0]) data["attended_by"] = e.death.attended_by;
         break;
     case JEVT_ROLE_CHANGE:
         data["from"] = e.role_change.from_role;
@@ -144,6 +145,7 @@ void EventJournal::_serialize_entry(const JournalEntry& e, char* buf, size_t buf
     case JEVT_MOURNING:
         data["dead_id"] = e.mourning.dead_id;
         if (e.mourning.dead_name[0]) data["dead_name"] = e.mourning.dead_name;
+        if (e.mourning.anniversary) data["anniversary"] = true;
         break;
     case JEVT_PLAY:
         data["kind"] = e.play.kind == 0 ? "parade" : "play";
