@@ -116,6 +116,23 @@ export function Home({ onNavigate }: HomeProps) {
         <div style={{ fontSize: SIZES.base, color: tod.dimText }}>{'›'}</div>
       </Card>
 
+      {/* The Saga — the colony's story so far */}
+      <Card
+        style={{ background: tod.cardBg, display: 'flex', alignItems: 'center', gap: 12 }}
+        onClick={() => onNavigate('saga')}
+      >
+        <div style={{ fontSize: 26, minWidth: 34, textAlign: 'center' }}>{'\u{1F4DC}'}</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: SIZES.base, fontWeight: 600, color: tod.text }}>
+            The Saga
+          </div>
+          <div style={{ fontSize: SIZES.sm, color: tod.dimText }}>
+            The colony{'’'}s story, as the chronicle tells it
+          </div>
+        </div>
+        <div style={{ fontSize: SIZES.base, color: tod.dimText }}>{'›'}</div>
+      </Card>
+
       {/* Gallery — what the makers have left in the world */}
       <Card
         style={{ background: tod.cardBg, display: 'flex', alignItems: 'center', gap: 12 }}

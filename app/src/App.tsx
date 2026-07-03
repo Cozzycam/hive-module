@@ -14,6 +14,7 @@ import { Settings, notificationManager } from './screens/Settings';
 import { critterEmoji } from './data/critters';
 import { FieldGuide } from './screens/FieldGuide';
 import { Gallery } from './screens/Gallery';
+import { Saga } from './screens/Saga';
 import { HIVE } from './theme/palette';
 import { SIZES } from './theme/fonts';
 import type { ColonyEvent, DataSource } from './api/types';
@@ -69,6 +70,7 @@ export function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showFieldGuide, setShowFieldGuide] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
+  const [showSaga, setShowSaga] = useState(false);
   const [navParams, setNavParams] = useState<Record<string, unknown>>({});
 
   // Gift toast — a neighbouring kingdom sent us a care package (royal diplomacy).
@@ -185,11 +187,16 @@ export function App() {
       setShowGallery(true);
       return;
     }
+    if (target === 'saga') {
+      setShowSaga(true);
+      return;
+    }
     setTab(target as Tab);
     setNavParams(params || {});
     setShowSettings(false);
     setShowFieldGuide(false);
     setShowGallery(false);
+    setShowSaga(false);
   }, []);
 
   // Newest "care package from a neighbour" event, if any.
@@ -355,6 +362,8 @@ export function App() {
                   />
                 ) : showGallery ? (
                   <Gallery onBack={() => setShowGallery(false)} />
+                ) : showSaga ? (
+                  <Saga onBack={() => setShowSaga(false)} />
                 ) : (
                   <>
                     {tab === 'home' && <Home onNavigate={handleNavigate} />}
