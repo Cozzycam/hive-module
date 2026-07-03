@@ -108,6 +108,10 @@ export interface LilGuySummary {
   // Mood + needs (added v115 — live conkers only; older snapshots omit)
   mood?: ConkerMood;
   needs?: { boredom?: number; tiredness?: number; loneliness?: number };
+  // Current doing (added v199 — the VPS snapshot finally carries what the
+  // boop label shows on-glass, so no LAN fetch needed; older snapshots omit)
+  state?: string;
+  activity?: ConkerActivity;
 }
 
 // Readable summary of a conker's loudest unmet need (firmware ConkerMood)

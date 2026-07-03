@@ -655,6 +655,24 @@ static void process_serial_line(const char* line) {
                           p.stage <= PLOT_MATURE ? STAGE_NAMES[p.stage] : "?",
                           p.sown_by_name);
         }
+    } else if (strcmp(line, "catches reset") == 0) {
+        // One-time cure for firefly-era inflated banks (pegged at 255, so the
+        // +5 challenge bar sat at an unreachable 260 and the title could only
+        // move through vacancy edge cases). Zeroes live tallies AND registry
+        // banks — the trait-tick sync is bidirectional-max, either side alone
+        // gets re-infected. Run on satellites too: their live copies cross
+        // home and re-pollute the bank. Badges themselves are left alone.
+        int live = 0, banked = 0;
+        auto& cham = sim.coordinator.chamber;
+        for (int i = 0; i < cham.conker_count; i++) {
+            if (cham.conkers[i].catches) { cham.conkers[i].catches = 0; live++; }
+        }
+        auto& reg = sim.coordinator.registry;
+        IdentityRecord* recs = reg.living_records();
+        for (int i = 0; i < reg.living_count(); i++) {
+            if (recs[i].catches) { recs[i].catches = 0; recs[i].dirty = true; banked++; }
+        }
+        Serial.printf("[catches] reset %d live + %d banked tallies to 0\r\n", live, banked);
     } else if (strcmp(line, "sow reset") == 0) {
         // Debug: bare every plot so a posted gardener re-sows from scratch.
         auto& cham = sim.coordinator.chamber;

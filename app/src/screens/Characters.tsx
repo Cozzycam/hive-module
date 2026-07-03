@@ -69,6 +69,7 @@ interface CharacterInfo {
   tint_seed?: number;
   mood?: ConkerMood;
   needs?: { boredom?: number; tiredness?: number; loneliness?: number };
+  activity?: ConkerActivity;
   deathCause?: string;
 }
 
@@ -246,6 +247,7 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
           tint_seed: l.tint_seed,
           mood: l.mood,
           needs: l.needs,
+          activity: l.activity,
         });
       }
     }
@@ -464,6 +466,10 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
 }) {
   const personality = detail?.personality || char.personality;
   const bonds = detail?.bonds || char.bonds;
+  // LAN detail is freshest but unreachable from the house WiFi (queen sits
+  // behind the repeater NAT) — the VPS snapshot roster carries activity too
+  // since v199, so fall back to it rather than hiding the card.
+  const activity = detail?.activity ?? char.activity;
   const isDeceased = !!char.died_unix || !!detail?.died_unix;
   const { colonyId, events: colonyEvents, snapshot } = useColony();
   const [renaming, setRenaming] = useState(false);
@@ -647,21 +653,21 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
         </Card>
       )}
 
-      {/* Currently doing (live conkers only; from the LAN detail fetch) */}
-      {!isDeceased && detail?.activity && (
+      {/* Currently doing (live conkers only; LAN detail or VPS snapshot) */}
+      {!isDeceased && activity && (
         <Card style={{ background: palette.cardBg }}>
           <div style={{ fontSize: SIZES.xs, fontWeight: 600, color: palette.dimText,
                         textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
             Right now
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 22 }}>{ACTIVITY_EMOJI[detail.activity]}</span>
+            <span style={{ fontSize: 22 }}>{ACTIVITY_EMOJI[activity]}</span>
             <div>
               <div style={{ fontSize: SIZES.base, color: palette.text }}>
-                {ACTIVITY_TITLE[detail.activity]}
+                {ACTIVITY_TITLE[activity]}
               </div>
               <div style={{ fontSize: SIZES.xs, color: palette.dimText }}>
-                {char.name} {ACTIVITY_BLURB[detail.activity]}
+                {char.name} {ACTIVITY_BLURB[activity]}
               </div>
             </div>
           </div>

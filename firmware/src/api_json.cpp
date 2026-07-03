@@ -207,6 +207,12 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
         // Appearance
         lg["scale_factor"] = r.scale_factor;
         lg["tint_seed"] = r.tint_seed;
+        // What they're doing right now — same key the boop label maps. The
+        // phone reads this snapshot via the VPS (the queen's LAN API sits
+        // behind the repeater NAT, unreachable from the house WiFi), so the
+        // roster has to carry it; "away" when they're on another module.
+        lg["state"] = conker_state_str(coord, r.id);
+        lg["activity"] = conker_activity_str(coord, r.id);
         // Personality (available via VPS, no LAN needed)
         JsonObject pers = lg["personality"].to<JsonObject>();
         pers["work_tempo"] = r.personality[0];
