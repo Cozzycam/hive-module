@@ -2969,6 +2969,19 @@ void Coordinator::_catcher_resolve(uint32_t tick_num) {
         }
     }
 
+    // The champion may be alive but AWAY — commuting to the garden next door.
+    // They still hold the title. Without this, every crossing by the champion
+    // read as a vacancy (bar resets to 5) and the badge was re-awarded to
+    // whoever stood nearest a snail — ~7 journal handoffs an hour, and the
+    // v196 firefly fix couldn't touch it because the tally wasn't the driver.
+    if (holder_idx < 0) {
+        IdentityRecord* recs = registry.living_records();
+        int n = registry.living_count();
+        for (int i = 0; i < n; i++) {
+            if (recs[i].traits & TRAIT_CATCHER) return;  // held in absentia
+        }
+    }
+
     // Enforce the single-holder invariant: clear the badge from every other
     // living conker. Heals the pre-v131 legacy where Bug Hunter was handed to
     // anyone with >=5 catches, so a whole colony could carry it. The rightful

@@ -23,7 +23,11 @@ static const uint32_t POLL_MS           = 50;
 static const uint32_t HELLO_TIMEOUT_MS  = 1000;
 static const uint8_t  HELLO_MAX_RETRIES = 3;
 static const uint32_t HEARTBEAT_TX_MS   = 1000;
-static const uint32_t HEARTBEAT_RX_TIMEOUT_MS = 3000;
+// Generous: a peer that stalls its main loop (HTTP push, SD write, NTP window)
+// stops TXing heartbeats entirely, so this must ride out multi-second stalls —
+// 3s lost the race against the queen's ~3.5s VPS push every single cycle.
+// Physical detach is still caught instantly by the DETECT pin edge.
+static const uint32_t HEARTBEAT_RX_TIMEOUT_MS = 10000;
 
 static const uint8_t BROADCAST[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 

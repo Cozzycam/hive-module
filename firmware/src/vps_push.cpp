@@ -386,14 +386,16 @@ void vps_push_init() {
     _last_push_ms = millis();
 }
 
-void vps_push_tick(Coordinator& coord) {
-    if (!_configured || !WiFi.isConnected()) return;
+// The push cycle is split into phases — ONE blocking HTTP transaction per
+// loop pass, with a full main-loop iteration (topology_poll, heartbeat TX)
+// between them. Run back-to-back, snapshot+events+commands blocked the loop
+// 3-4s every cycle — long enough that satellites blew their heartbeat
+// timeout and the face link flapped on every single push (v198 fix).
+enum PushPhase : uint8_t { PUSH_IDLE = 0, PUSH_SNAPSHOT, PUSH_EVENTS, PUSH_COMMANDS };
+static uint8_t _push_phase = PUSH_IDLE;
 
-    uint32_t now = millis();
-    if (now - _last_push_ms < PUSH_INTERVAL_MS) return;
-    _last_push_ms = now;
-
-    // Push colony snapshot (buffer sized for roster: ~100 bytes per conker)
+static void _push_snapshot(Coordinator& coord) {
+    // Buffer sized for roster: ~100 bytes per conker
     size_t buf_size = 4096 + coord.registry.living_count() * 512;
     char* buf = (char*)malloc(buf_size);
     if (!buf) return;
@@ -405,7 +407,10 @@ void vps_push_tick(Coordinator& coord) {
                  coord.registry.manifest().colony_id);
         _post(path, buf, len);
     }
+    free(buf);
+}
 
+static void _push_events(Coordinator& coord) {
     // Push events since the line cursor (16KB of new lines per cycle; a
     // backlog drains across cycles instead of silently truncating). The
     // cursor day only rolls forward once its file is FULLY drained, so a
@@ -475,11 +480,31 @@ void vps_push_tick(Coordinator& coord) {
             if (advanced || (ctx.has && sent_ok)) _save_cursor();
         }
     }
+}
 
-    free(buf);
+void vps_push_tick(Coordinator& coord) {
+    if (!_configured || !WiFi.isConnected()) return;
 
-    // Poll + apply queued app commands (rename, care packages, ...)
-    _poll_commands(coord);
+    switch (_push_phase) {
+    case PUSH_IDLE:
+        if (millis() - _last_push_ms < PUSH_INTERVAL_MS) return;
+        _last_push_ms = millis();
+        _push_phase = PUSH_SNAPSHOT;
+        return;  // first transaction next pass
+    case PUSH_SNAPSHOT:
+        _push_snapshot(coord);
+        _push_phase = PUSH_EVENTS;
+        return;
+    case PUSH_EVENTS:
+        _push_events(coord);
+        _push_phase = PUSH_COMMANDS;
+        return;
+    case PUSH_COMMANDS:
+        // Poll + apply queued app commands (rename, care packages, ...)
+        _poll_commands(coord);
+        _push_phase = PUSH_IDLE;
+        return;
+    }
 }
 
 void vps_push_set_secret(const char* secret) {

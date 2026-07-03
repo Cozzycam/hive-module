@@ -1077,7 +1077,14 @@ void Chamber::_detect_critter_discovery() {
         f.needs[NEED_BOREDOM] -= Cfg::DISCOVERY_BOREDOM_RELIEF;
         if (f.needs[NEED_BOREDOM] < 0.0f) f.needs[NEED_BOREDOM] = 0.0f;
         f.afterglow_ticks = Cfg::AFTERGLOW_TICKS;   // a find is a delight
-        if (f.catches < 255) f.catches++;           // earns the Catcher trait
+        // Snails amble over on their own (85% of rainy-day spawns, double
+        // TTL) and moths own every clear night — finding one isn't a hunt.
+        // Same reasoning that benched fireflies (v196): they still delight
+        // and journal as discoveries, but only genuine chases bank toward
+        // Bug Hunter. Ladybird/dragonfly stay — rare trophies.
+        if (cr.kind != CRITTER_SNAIL && cr.kind != CRITTER_MOTH) {
+            if (f.catches < 255) f.catches++;       // earns the Catcher trait
+        }
         if (f.anim_remaining_ticks == 0 && f.state == STATE_IDLE && f.stack_on < 0) {
             f.anim_type = LG_ANIM_NOTICE;
             f.anim_remaining_ticks = 12;
