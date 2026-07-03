@@ -166,12 +166,17 @@ void Chamber::tick(float dt) {
         int j = g_rng.rand_int(0, i);
         if (i != j) {
             Conker tmp = conkers[i]; conkers[i] = conkers[j]; conkers[j] = tmp;
-            // Patch any stack_on / zoomie_target references that pointed to i or j
+            // Patch any stack_on / zoomie_target references that pointed to i or j.
+            // zoomie_target is only a conker index for ZOOMIES chasers — other
+            // states repurpose it (FARMING: plot, TO_GARDEN: face), and this
+            // every-tick shuffle was corrupting those within one tick (v194).
             for (int k = 0; k < conker_count; k++) {
                 if (conkers[k].stack_on == i)      conkers[k].stack_on = j;
                 else if (conkers[k].stack_on == j) conkers[k].stack_on = i;
-                if (conkers[k].zoomie_target == i)      conkers[k].zoomie_target = j;
-                else if (conkers[k].zoomie_target == j) conkers[k].zoomie_target = i;
+                if (conkers[k].state == STATE_ZOOMIES) {
+                    if (conkers[k].zoomie_target == i)      conkers[k].zoomie_target = j;
+                    else if (conkers[k].zoomie_target == j) conkers[k].zoomie_target = i;
+                }
             }
         }
     }
