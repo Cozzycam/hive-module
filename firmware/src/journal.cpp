@@ -15,7 +15,13 @@ static const char* JEVT_NAMES[] = {
     "milestone", "colony_event", "tended_by_assigned",
     "bond_formed", "bond_broken", "challenge_start",
     "challenge_end", "trait_earned", "mourning", "play", "discovery",
-    "became_best_friends", "crop_sown"
+    "became_best_friends", "crop_sown", "crafted", "art_weathered"
+};
+
+// Keep in lockstep with ArtKind / ArtContext (chamber.h)
+static const char* ART_KIND_NAMES[] = { "sculpture", "cairn", "painting", "memorial" };
+static const char* ART_CONTEXT_NAMES[] = {
+    "plenty", "storm", "heatwave", "rain", "night", "grief"
 };
 
 // Keep in lockstep with CritterKind (chamber.h)
@@ -147,6 +153,15 @@ void EventJournal::_serialize_entry(const JournalEntry& e, char* buf, size_t buf
         data["critter"] =
             (e.discovery.critter < sizeof(CRITTER_NAMES) / sizeof(CRITTER_NAMES[0]))
                 ? CRITTER_NAMES[e.discovery.critter] : "critter";
+        break;
+    case JEVT_CRAFTED:
+    case JEVT_ART_WEATHERED:
+        data["kind"] = (e.crafted.kind < 4) ? ART_KIND_NAMES[e.crafted.kind] : "work";
+        if (e.type == JEVT_CRAFTED) {
+            data["context"] = (e.crafted.context < 6)
+                ? ART_CONTEXT_NAMES[e.crafted.context] : "plenty";
+            if (e.crafted.honoree[0]) data["honoree"] = e.crafted.honoree;
+        }
         break;
     }
 

@@ -1269,6 +1269,25 @@ void Coordinator::_journal_from_bus_events(const Event* events, int count,
             break;
         }
 
+        case EVT_CRAFTED:
+            je.type = JEVT_CRAFTED;
+            je.lilguy_id = ev.crafted.maker_id;
+            strlcpy(je.who, ev.crafted.who, sizeof(je.who));
+            je.crafted.kind = ev.crafted.kind;
+            je.crafted.context = ev.crafted.context;
+            strlcpy(je.crafted.honoree, ev.crafted.honoree,
+                    sizeof(je.crafted.honoree));
+            journal.emit(je);
+            break;
+
+        case EVT_ART_WEATHERED:
+            je.type = JEVT_ART_WEATHERED;
+            je.lilguy_id = 0;
+            strlcpy(je.who, ev.crafted.who, sizeof(je.who));
+            je.crafted.kind = ev.crafted.kind;
+            journal.emit(je);
+            break;
+
         default:
             // Other events handled directly (hatch, death, crossing, food_tap)
             break;
@@ -1631,6 +1650,16 @@ void Coordinator::_relay_bus_events(const Event* events, int count) {
             msg.lilguy_id = chamber.conkers[fi].id;
             msg.extra     = ev.discovery.kind;
             strlcpy(msg.who, chamber.conkers[fi].name, sizeof(msg.who));
+        } else if (ev.type == EVT_CRAFTED) {
+            msg.jtype     = JEVT_CRAFTED;
+            msg.lilguy_id = ev.crafted.maker_id;
+            msg.extra     = (uint8_t)(ev.crafted.kind | (ev.crafted.context << 4));
+            strlcpy(msg.who, ev.crafted.who, sizeof(msg.who));
+            strlcpy(msg.honoree, ev.crafted.honoree, sizeof(msg.honoree));
+        } else if (ev.type == EVT_ART_WEATHERED) {
+            msg.jtype = JEVT_ART_WEATHERED;
+            msg.extra = ev.crafted.kind;
+            strlcpy(msg.who, ev.crafted.who, sizeof(msg.who));
         } else {
             continue;
         }
@@ -1668,7 +1697,11 @@ void Coordinator::_receive_journal_relays() {
         je.lilguy_id = msg.lilguy_id;
         strlcpy(je.who, msg.who, sizeof(je.who));
         if (msg.jtype == JEVT_DISCOVERY) je.discovery.critter = msg.extra;
-        journal.emit(je);
+        // Crafted/weathered are NOT journaled here: they're re-emitted onto
+        // the queen's bus below, and the bus→journal bridge writes them —
+        // one path for local and relayed alike (no double entries).
+        if (msg.jtype != JEVT_CRAFTED && msg.jtype != JEVT_ART_WEATHERED)
+            journal.emit(je);
 
         // The queen's glass narrates the garden's news too
         if (_bus && msg.jtype == JEVT_CROP_SOWN) {
@@ -1678,6 +1711,25 @@ void Coordinator::_receive_journal_relays() {
             ev.crop.plot = msg.extra;
             ev.crop.sower_id = msg.lilguy_id;
             strlcpy(ev.crop.who, msg.who, sizeof(ev.crop.who));
+            _bus->emit(ev);
+        }
+        if (_bus && msg.jtype == JEVT_CRAFTED) {
+            Event ev = {};
+            ev.type = EVT_CRAFTED;
+            ev.tick = chamber.tick_num;
+            ev.crafted.kind = msg.extra & 0x0F;
+            ev.crafted.context = (msg.extra >> 4) & 0x0F;
+            ev.crafted.maker_id = msg.lilguy_id;
+            strlcpy(ev.crafted.who, msg.who, sizeof(ev.crafted.who));
+            strlcpy(ev.crafted.honoree, msg.honoree, sizeof(ev.crafted.honoree));
+            _bus->emit(ev);
+        }
+        if (_bus && msg.jtype == JEVT_ART_WEATHERED) {
+            Event ev = {};
+            ev.type = EVT_ART_WEATHERED;
+            ev.tick = chamber.tick_num;
+            ev.crafted.kind = msg.extra;
+            strlcpy(ev.crafted.who, msg.who, sizeof(ev.crafted.who));
             _bus->emit(ev);
         }
     }
@@ -1814,6 +1866,7 @@ void Coordinator::_persist_process_deaths() {
                     w.target_x = hx; w.target_y = hy;
                     w.has_target = true;
                     w.has_target_cell = false;
+                    strlcpy(w.mourning_for, dead_name, sizeof(w.mourning_for));
                     // Best friends (the bond was mutual) hold a full vigil; a
                     // one-way attachment grieves only briefly.
                     bool mutual = bonds.is_formed(w.id, id);

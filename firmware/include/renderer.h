@@ -227,6 +227,10 @@ private:
     // Garden crops (plots + growth stages; garden module only)
     void _draw_plants(const Chamber& ch);
 
+    // Artifacts — conker-made works, rendered in their maker's hue
+    void _draw_artworks(const Chamber& ch);
+    void _maker_colors(uint8_t tint_seed, uint16_t* main_out, uint16_t* dark_out);
+
     // Finger scent shimmer — fading echo of a swipe
     void _draw_scent_marks(const Chamber& ch);
 };

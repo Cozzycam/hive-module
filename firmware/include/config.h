@@ -21,12 +21,13 @@ enum AntState : uint8_t {
     STATE_ZOOMIES = 6,
     STATE_EATING = 7,
     STATE_MOURNING = 8,  // bonded partner died — pay respects at the husk
-    STATE_FARMING = 9    // green thumb at work — off to sow a garden plot
+    STATE_FARMING = 9,   // green thumb at work — off to sow a garden plot
+    STATE_CRAFTING = 10  // the muse struck — making something that lasts
 };
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 181;
+constexpr uint32_t FW_VERSION = 182;
 
 namespace Cfg {
 
@@ -110,6 +111,17 @@ constexpr int      FARM_MAX_TICKS          = 600;       // failsafe: give up the
 // Foraging stands down during deep night below this food pressure —
 // the colony sleeps; only genuine hunger sends anyone out in the dark
 constexpr float    NIGHT_FORAGE_MIN_PRESSURE = 0.5f;
+
+// ---- Making (artifacts) ----
+constexpr int   MAX_ARTWORKS          = 10;      // per module; oldest weathers away
+constexpr float MUSE_MIN              = 0.60f;   // aptitude floor to ever craft
+constexpr float CRAFT_CHANCE_PER_TICK = 0.0002f; // idle roll (×muse, ×play_surplus)
+constexpr float CRAFT_GRIEF_CHANCE    = 0.35f;   // a mourner with muse carves a memorial
+constexpr int   CRAFT_DURATION_TICKS  = 1200;    // ~2.5 min of visible work
+constexpr int   CRAFT_MAX_TICKS       = 2400;    // failsafe for the whole trip
+constexpr float ADMIRE_CHANCE_PER_TICK = 0.002f; // idle near art (×taste)
+constexpr float ADMIRE_BOREDOM_RELIEF = 8.0f;
+constexpr float ADMIRE_BOND_NUDGE     = 0.010f;  // toward the maker, if alive
 
 // ---- Night life ----
 // The night is a register, not an absence: owls potter and firefly-watch,

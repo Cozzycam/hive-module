@@ -8,6 +8,9 @@
 #include <cstring>
 #include <cmath>
 
+// Artwork persistence (defined at the bottom of this file)
+void chamber_artworks_lazy_load(Artwork* artworks);
+
 // v152: friendship is activity-led — a shared moment of fun (zoomie, stack,
 // groom) nudges the bond both ways, each direction scaled by that conker's OWN
 // sociability (same rule as the proximity engine; loners barely bond). No-op on
@@ -43,6 +46,7 @@ void Chamber::init(ColonyState* col, bool with_queen) {
             plants[i].y = PY[i];
         }
     }
+    for (int i = 0; i < Cfg::MAX_ARTWORKS; i++) artworks[i] = Artwork{};
     home_face = -1;
     has_queen = with_queen;
     event_bus = nullptr;
@@ -151,6 +155,7 @@ void Chamber::tick(float dt) {
     _tick_critters();
     _detect_critter_discovery();
     _tick_plants();
+    if (g_tod.unix_time > 0) chamber_artworks_lazy_load(artworks);
 
     // Finger scent shimmer fade
     for (int i = 0; i < Cfg::MAX_SCENT_MARKS; i++)
@@ -1237,4 +1242,85 @@ void Chamber::_tick_plants() {
         }
         _plants_save(plants);
     }
+}
+
+// ---- Making (artifacts) ----
+
+// Artwork persistence — same pattern as the crops: NVS blob, saved on
+// placement/eviction (admire counts ride along every 32nd admiration).
+static bool _artworks_loaded = false;
+
+static void _artworks_save(const Artwork* artworks) {
+    Preferences prefs;
+    prefs.begin("hive", false);
+    prefs.putBytes("artworks", artworks, sizeof(Artwork) * Cfg::MAX_ARTWORKS);
+    prefs.end();
+}
+
+void chamber_artworks_lazy_load(Artwork* artworks) {
+    if (_artworks_loaded) return;
+    _artworks_loaded = true;
+    Artwork saved[Cfg::MAX_ARTWORKS];
+    Preferences prefs;
+    prefs.begin("hive", true);
+    size_t len = prefs.getBytes("artworks", saved, sizeof(saved));
+    prefs.end();
+    if (len != sizeof(saved)) return;
+    memcpy(artworks, saved, sizeof(saved));
+}
+
+bool Chamber::artwork_spot_free(int cx, int cy) const {
+    if (!in_bounds(cx, cy) || cx < 2 || cx >= Cfg::GRID_WIDTH - 2
+            || cy < 3 || cy >= Cfg::GRID_HEIGHT - 2) return false;
+    if (has_queen && queen_obj.alive
+            && abs(cx - queen_obj.x) <= Cfg::QUEEN_BODY_HALF_W + 1
+            && abs(cy - queen_obj.y) <= Cfg::QUEEN_BODY_HALF_H + 1) return false;
+    if (_food_pile_index(cx, cy) >= 0) return false;
+    for (int i = 0; i < Cfg::GARDEN_PLOTS; i++)
+        if (is_garden && abs(plants[i].x - cx) <= 1 && abs(plants[i].y - cy) <= 1)
+            return false;
+    for (int i = 0; i < Cfg::MAX_ARTWORKS; i++)
+        if (artworks[i].active
+                && abs(artworks[i].x - cx) <= 1 && abs(artworks[i].y - cy) <= 1)
+            return false;
+    return true;
+}
+
+int Chamber::nearest_artwork(int cx, int cy, int radius) const {
+    int best = -1, best_d = radius + 1;
+    for (int i = 0; i < Cfg::MAX_ARTWORKS; i++) {
+        if (!artworks[i].active) continue;
+        int d = abs(artworks[i].x - cx) + abs(artworks[i].y - cy);
+        if (d < best_d) { best_d = d; best = i; }
+    }
+    return best;
+}
+
+int Chamber::place_artwork(const Artwork& piece, Artwork* weathered_out) {
+    if (weathered_out) weathered_out->active = false;
+    int slot = -1;
+    for (int i = 0; i < Cfg::MAX_ARTWORKS; i++)
+        if (!artworks[i].active) { slot = i; break; }
+    if (slot < 0) {
+        // Full: the oldest work weathers away — hand it to the caller so
+        // its passing can be told ("Fern's old carving finally crumbled")
+        uint32_t oldest = 0xFFFFFFFF;
+        for (int i = 0; i < Cfg::MAX_ARTWORKS; i++) {
+            if (artworks[i].created_unix < oldest) {
+                oldest = artworks[i].created_unix;
+                slot = i;
+            }
+        }
+        if (weathered_out) *weathered_out = artworks[slot];
+    }
+    artworks[slot] = piece;
+    artworks[slot].active = true;
+    _artworks_save(artworks);
+    return slot;
+}
+
+void Chamber::artwork_admired(int idx) {
+    if (idx < 0 || idx >= Cfg::MAX_ARTWORKS || !artworks[idx].active) return;
+    artworks[idx].admired++;
+    if ((artworks[idx].admired & 0x1F) == 0) _artworks_save(artworks);  // every 32nd
 }

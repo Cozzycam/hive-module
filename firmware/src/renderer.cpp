@@ -568,7 +568,8 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
     // Layer 2: floor-level sprites (food, brood) — Y-sorted
     _build_floor_sprites(ch);
     _draw_sorted_sprites(_floor_sprites, _floor_sprite_count, ch);
-    _draw_plants(ch);   // garden crops sit on the floor layer too
+    _draw_plants(ch);     // garden crops sit on the floor layer too
+    _draw_artworks(ch);   // conker-made works, in their makers' colours
 
     // Layer 3: living agents (workers, queen) — Y-sorted, queen +2 cell bias
     _build_agent_sprites(ch, lerp_t);
@@ -1329,6 +1330,17 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
                 _mark_dirty(fx - 2, fy - 2, 5, 5);
             }
 
+            // At work on a piece: little glints fly as the maker works
+            if (w.state == STATE_CRAFTING && w.anim_type == LG_ANIM_GROOMING
+                    && (_frame % 16) < 3) {
+                uint16_t glint = _rgb565(255, 240, 200);
+                int gx = sd.render_x + w.anim_lean_dx * 7 + ((_frame >> 2) & 1) * 2 - 1;
+                int gy = sd.render_y + w.anim_lean_dy * 7 - ((_frame >> 3) & 1);
+                _gfx->drawPixel(gx, gy, glint);
+                _gfx->drawPixel(gx + 1, gy - 1, glint);
+                _mark_dirty(gx - 1, gy - 2, 4, 4);
+            }
+
             // Grief tear: a single slow tear while standing vigil
             if (w.state == STATE_MOURNING) {
                 float tphase = (millis() % 2400) / 2400.0f;
@@ -1688,6 +1700,30 @@ void Renderer::receive_events(const Event* events, int count, const Chamber& ch)
             break;
         }
 
+        case EVT_CRAFTED: {
+            static const char* const KINDS[] =
+                { "a sculpture", "a cairn", "a painting", "a memorial" };
+            char msg[64];
+            if (ev.crafted.kind == 3 && ev.crafted.honoree[0])
+                snprintf(msg, sizeof(msg), "%s carved a memorial for %s",
+                         ev.crafted.who, ev.crafted.honoree);
+            else
+                snprintf(msg, sizeof(msg), "%s finished %s",
+                         ev.crafted.who, KINDS[ev.crafted.kind & 3]);
+            banner(msg);
+            break;
+        }
+
+        case EVT_ART_WEATHERED: {
+            static const char* const KINDS[] =
+                { "sculpture", "cairn", "painting", "memorial" };
+            char msg[64];
+            snprintf(msg, sizeof(msg), "%s's old %s crumbled away",
+                     ev.crafted.who, KINDS[ev.crafted.kind & 3]);
+            banner(msg);
+            break;
+        }
+
         default:
             break;
         }
@@ -1828,6 +1864,96 @@ void Renderer::_draw_critters(const Chamber& ch, float lerp_t) {
             _gfx->fillRect(px - 2, py - 1, 5, 3, shell);
             _gfx->drawPixel(px, py - 1, back);
             _mark_dirty(px - 3, py - 2, 8, 6);
+            break;
+        }
+        }
+    }
+}
+
+// The maker's palette — same derivation as the body tint, so a work is
+// recognisably "a Foxglove piece" from across the room.
+void Renderer::_maker_colors(uint8_t tint_seed, uint16_t* main_out, uint16_t* dark_out) {
+    uint32_t hs = (uint32_t)tint_seed * 2654435761u;
+    float ur = (hs & 0xFFFF) / 65535.0f;
+    float uh = ((hs >> 16) & 0xFFFF) / 65535.0f;
+    float rare = ur * ur; rare = rare * rare * rare;
+    float spread = 85.0f + 155.0f * rare;
+    float hue = 28.0f + (uh * 2.0f - 1.0f) * spread;
+    while (hue < 0.0f)    hue += 360.0f;
+    while (hue >= 360.0f) hue -= 360.0f;
+    int r, g, b;
+    _hue_vivid(hue, r, g, b);
+    float dim = 1.0f - 0.45f * _nf;   // night softens the gallery
+    *main_out = _rgb565((uint8_t)(r * dim), (uint8_t)(g * dim), (uint8_t)(b * dim));
+    *dark_out = _rgb565((uint8_t)(r * dim * 0.55f), (uint8_t)(g * dim * 0.55f),
+                        (uint8_t)(b * dim * 0.55f));
+}
+
+// Artifacts — procedural placeholders until artist sprites land. Each is
+// small, floor-level, and unmistakably its maker's colour.
+void Renderer::_draw_artworks(const Chamber& ch) {
+    for (int i = 0; i < Cfg::MAX_ARTWORKS; i++) {
+        const Artwork& a = ch.artworks[i];
+        if (!a.active) continue;
+        int px = a.x * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
+        int py = a.y * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
+        uint16_t hue, hue_dark;
+        _maker_colors(a.maker_tint, &hue, &hue_dark);
+        uint16_t stone = _rgb565(_lerp8(150, 85, _nf), _lerp8(146, 84, _nf), _lerp8(140, 90, _nf));
+        uint16_t stone_dark = _rgb565(_lerp8(110, 62, _nf), _lerp8(107, 61, _nf), _lerp8(102, 66, _nf));
+
+        switch (a.kind) {
+        case ART_SCULPTURE: {
+            // Stone pedestal, maker-hue form on top (motif varies the form)
+            _gfx->fillRect(px - 2, py, 5, 3, stone);
+            _gfx->drawFastHLine(px - 2, py + 2, 5, stone_dark);
+            switch (a.motif % 3) {
+            case 0:  _gfx->fillCircle(px, py - 3, 2, hue);
+                     _gfx->drawPixel(px - 1, py - 4, hue_dark); break;   // orb
+            case 1:  _gfx->drawFastVLine(px, py - 5, 5, hue);
+                     _gfx->drawPixel(px, py - 6, hue_dark); break;       // spire
+            default: _gfx->drawFastVLine(px - 2, py - 4, 4, hue);
+                     _gfx->drawFastVLine(px + 2, py - 4, 4, hue);
+                     _gfx->drawFastHLine(px - 2, py - 4, 5, hue_dark); break; // arch
+            }
+            _mark_dirty(px - 4, py - 7, 9, 11);
+            break;
+        }
+        case ART_CAIRN: {
+            _gfx->fillRoundRect(px - 4, py, 8, 3, 1, stone);
+            _gfx->fillRoundRect(px - 3, py - 3, 6, 3, 1, stone_dark);
+            _gfx->fillRoundRect(px - 1, py - 5, 3, 2, 1, hue);   // maker's capstone
+            _mark_dirty(px - 5, py - 6, 11, 10);
+            break;
+        }
+        case ART_PAINTING: {
+            // Pigment laid into the floor — motif picks the pattern
+            switch (a.motif % 3) {
+            case 0:  // dots
+                _gfx->drawPixel(px - 2, py - 2, hue); _gfx->drawPixel(px + 2, py - 2, hue);
+                _gfx->drawPixel(px, py, hue_dark);
+                _gfx->drawPixel(px - 2, py + 2, hue); _gfx->drawPixel(px + 2, py + 2, hue);
+                break;
+            case 1:  // diagonal strokes
+                for (int d = -2; d <= 2; d++) _gfx->drawPixel(px + d, py + d, hue);
+                _gfx->drawPixel(px - 2, py + 2, hue_dark); _gfx->drawPixel(px + 2, py - 2, hue_dark);
+                break;
+            default: // ring
+                _gfx->drawCircle(px, py, 3, hue);
+                _gfx->drawPixel(px, py, hue_dark);
+                break;
+            }
+            _mark_dirty(px - 4, py - 4, 9, 9);
+            break;
+        }
+        case ART_MEMORIAL: {
+            // A quiet stone with the maker's mark and one pale flower
+            _gfx->fillRoundRect(px - 3, py - 3, 7, 6, 2, stone);
+            _gfx->drawFastHLine(px - 2, py + 2, 5, stone_dark);
+            _gfx->drawPixel(px, py - 1, hue);                    // the mark
+            _gfx->drawPixel(px + 3, py - 4, _rgb565(240, 238, 225));  // the flower
+            _gfx->drawPixel(px + 3, py - 3, _rgb565(_lerp8(95, 45, _nf), _lerp8(150, 85, _nf), _lerp8(75, 50, _nf)));
+            _mark_dirty(px - 4, py - 5, 10, 10);
             break;
         }
         }

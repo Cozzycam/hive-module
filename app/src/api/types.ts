@@ -168,7 +168,7 @@ export type EventType =
   | 'tended_by_assigned' | 'bond_formed' | 'bond_broken'
   | 'challenge_start' | 'challenge_end' | 'trait_earned'
   | 'mourning' | 'play' | 'discovery' | 'became_best_friends'
-  | 'crop_sown';
+  | 'crop_sown' | 'crafted' | 'art_weathered';
 
 export interface ColonyEvent {
   tick: number;

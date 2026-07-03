@@ -13,6 +13,7 @@ import { Empty } from './screens/Empty';
 import { Settings, notificationManager } from './screens/Settings';
 import { critterEmoji } from './data/critters';
 import { FieldGuide } from './screens/FieldGuide';
+import { Gallery } from './screens/Gallery';
 import { HIVE } from './theme/palette';
 import { SIZES } from './theme/fonts';
 import type { ColonyEvent, DataSource } from './api/types';
@@ -67,6 +68,7 @@ export function App() {
   const [tab, setTab] = useState<Tab>('home');
   const [showSettings, setShowSettings] = useState(false);
   const [showFieldGuide, setShowFieldGuide] = useState(false);
+  const [showGallery, setShowGallery] = useState(false);
   const [navParams, setNavParams] = useState<Record<string, unknown>>({});
 
   // Gift toast — a neighbouring kingdom sent us a care package (royal diplomacy).
@@ -179,10 +181,15 @@ export function App() {
       setShowFieldGuide(true);
       return;
     }
+    if (target === 'gallery') {
+      setShowGallery(true);
+      return;
+    }
     setTab(target as Tab);
     setNavParams(params || {});
     setShowSettings(false);
     setShowFieldGuide(false);
+    setShowGallery(false);
   }, []);
 
   // Newest "care package from a neighbour" event, if any.
@@ -346,6 +353,8 @@ export function App() {
                     onBack={() => setShowFieldGuide(false)}
                     initialKind={navParams.kind as string | undefined}
                   />
+                ) : showGallery ? (
+                  <Gallery onBack={() => setShowGallery(false)} />
                 ) : (
                   <>
                     {tab === 'home' && <Home onNavigate={handleNavigate} />}

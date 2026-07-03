@@ -54,6 +54,41 @@ struct Critter {
     bool     active = false;
 };
 
+// ---- Making (artifacts) ----
+// Conkers author the world: sculptures, cairns, paintings, memorials.
+// Each work carries its maker's identity — rendered in their tint, with
+// the moment of its making (storm, plenty, grief...) stored as provenance.
+enum ArtKind : uint8_t {
+    ART_SCULPTURE = 0,
+    ART_CAIRN     = 1,
+    ART_PAINTING  = 2,
+    ART_MEMORIAL  = 3,   // carved by a grieving friend, names the departed
+    ART_KIND_COUNT
+};
+
+enum ArtContext : uint8_t {
+    CTX_PLENTY   = 0,   // a time of plenty
+    CTX_STORM    = 1,   // as a storm battered the colony
+    CTX_HEATWAVE = 2,   // in a scorching spell
+    CTX_RAIN     = 3,   // on a rain-soaked day
+    CTX_NIGHT    = 4,   // by firefly light
+    CTX_GRIEF    = 5,   // in memory of someone
+};
+
+struct Artwork {
+    bool     active = false;
+    uint8_t  kind = 0;           // ArtKind
+    int8_t   x = 0, y = 0;
+    uint32_t maker_id = 0;
+    char     maker_name[16] = {};
+    uint8_t  maker_tint = 0;     // rendered in the maker's own hue
+    uint32_t created_unix = 0;
+    uint8_t  context = 0;        // ArtContext at the moment of making
+    uint8_t  motif = 0;          // procedural look variant
+    char     honoree[16] = {};   // memorials: who it remembers
+    uint16_t admired = 0;        // times a passerby stopped for it
+};
+
 // ---- Garden farming ----
 // Crops grow on WALL-CLOCK time (the lifecycle clock): sown by a
 // green-thumbed conker, they pass sprout → growing → mature, then drop a
@@ -123,6 +158,15 @@ public:
     void _tick_plants();
     int  free_plot() const;             // -1 if none sowable
     bool sow_plot(int idx, uint32_t by_id, const char* by_name);
+
+    // Making — artifacts placed by conkers (any module)
+    Artwork artworks[Cfg::MAX_ARTWORKS];
+    // Places a work (evicting the oldest if full — the eviction is the
+    // caller's story to tell via the returned index). Returns slot or -1.
+    int  place_artwork(const Artwork& piece, Artwork* weathered_out);
+    bool artwork_spot_free(int cx, int cy) const;   // clear of plots/food/queen/art
+    int  nearest_artwork(int cx, int cy, int radius) const;  // -1 if none
+    void artwork_admired(int idx);                  // count + occasional persist
 
     // Finger scent shimmer — visual echo of a swipe, fades over TTL
     struct ScentMark { int8_t x, y; uint8_t ttl; };

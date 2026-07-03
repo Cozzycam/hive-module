@@ -43,6 +43,8 @@ export function epithet(
   if (survived.length === 1) return SURVIVAL_EPITHETS[survived[0]] ?? null;
 
   if (events && events.length > 0) {
+    const works = events.filter(e => e.type === 'crafted').length;
+    if (works >= 3) return 'the Maker';
     const sows = events.filter(e => e.type === 'crop_sown').length;
     if (sows >= 10) return 'the Green-Thumbed';
     const parades = events.filter(e => e.type === 'play').length;
@@ -132,6 +134,8 @@ export function buildLifeStory(
   let lastParadeUnix = 0;
   let sows = 0;
   let lastSowUnix = 0;
+  let works = 0;
+  let lastWorkUnix = 0;
 
   for (const ev of events) {
     const data = ev.data as Record<string, unknown>;
@@ -180,6 +184,21 @@ export function buildLifeStory(
         lastSowUnix = ev.unix;
         break;
       }
+      case 'crafted': {
+        // Memorials are named individually — they're acts of love, not
+        // output; other works aggregate into an oeuvre line below
+        if (data.honoree) {
+          story.push({
+            unix: ev.unix,
+            icon: '\u{1FAA6}',
+            text: `Carved a memorial for ${data.honoree}.`,
+          });
+        } else {
+          works++;
+          lastWorkUnix = ev.unix;
+        }
+        break;
+      }
       case 'death':
         story.push({
           unix: ev.unix,
@@ -219,6 +238,14 @@ export function buildLifeStory(
       icon: '\u{1F33E}',
       text: sows === 1 ? 'Sowed their first crop in the garden.'
                        : `Has sown ${sows} crops in the garden.`,
+    });
+  }
+  if (works > 0) {
+    story.push({
+      unix: lastWorkUnix,
+      icon: '\u{1F3A8}',
+      text: works === 1 ? 'Made something that will outlast the day.'
+                        : `Has made ${works} works — the chamber carries their colours.`,
     });
   }
 

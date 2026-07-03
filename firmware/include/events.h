@@ -33,6 +33,8 @@ enum EventType : uint8_t {
     EVT_CHALLENGE_STARTED   = 17,   // weather challenge began (banner)
     EVT_CHALLENGE_ENDED     = 18,   // weather challenge passed (banner)
     EVT_CROP_SOWN           = 19,   // a farmer planted a garden plot
+    EVT_CRAFTED             = 20,   // a maker finished a work
+    EVT_ART_WEATHERED       = 21,   // an old work crumbled to make room
 };
 
 // ---- Interaction subtypes ----
@@ -122,6 +124,14 @@ struct CropSownData {
     char     who[16];
 };
 
+struct CraftedData {            // crafted + art_weathered
+    uint8_t  kind;              // ArtKind
+    uint8_t  context;           // ArtContext (crafted only)
+    uint32_t maker_id;
+    char     who[16];
+    char     honoree[16];       // memorials
+};
+
 // ---- Event struct (tagged union) ----
 
 struct Event {
@@ -142,6 +152,7 @@ struct Event {
         MourningData           mourning;  // mourning
         ChallengeEventData     challenge; // challenge_started, challenge_ended
         CropSownData           crop;      // crop_sown
+        CraftedData            crafted;   // crafted, art_weathered
     };
 };
 

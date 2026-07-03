@@ -116,6 +116,23 @@ export function Home({ onNavigate }: HomeProps) {
         <div style={{ fontSize: SIZES.base, color: tod.dimText }}>{'›'}</div>
       </Card>
 
+      {/* Gallery — what the makers have left in the world */}
+      <Card
+        style={{ background: tod.cardBg, display: 'flex', alignItems: 'center', gap: 12 }}
+        onClick={() => onNavigate('gallery')}
+      >
+        <div style={{ fontSize: 26, minWidth: 34, textAlign: 'center' }}>{'\u{1F3A8}'}</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: SIZES.base, fontWeight: 600, color: tod.text }}>
+            Gallery
+          </div>
+          <div style={{ fontSize: SIZES.sm, color: tod.dimText }}>
+            Works the colony has made
+          </div>
+        </div>
+        <div style={{ fontSize: SIZES.base, color: tod.dimText }}>{'›'}</div>
+      </Card>
+
       {/* Topology mini-map */}
       {modules.length > 0 && (
         <Card style={{ background: tod.cardBg, display: 'flex', alignItems: 'center', gap: 16 }}

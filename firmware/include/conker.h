@@ -165,6 +165,12 @@ struct Conker {
     uint8_t  intent_need          = NEED_COUNT;  // loudest need this tick (arbiter); NEED_COUNT = none
     uint16_t afterglow_ticks      = 0;           // satisfied beat after a need is met
     uint8_t  catches              = 0;           // critters caught — earns the Catcher trait
+
+    // Making (STATE_CRAFTING) + mourning context
+    uint8_t  craft_kind           = 0;           // ArtKind being made
+    uint8_t  craft_context        = 0;           // ArtContext at inspiration
+    int16_t  craft_ticks          = 0;           // work remaining at the spot
+    char     mourning_for[16]     = {};          // who the vigil (and any memorial) honours
     bool     daytime_nap          = false;       // this sleep began in the day (a nap, not a night's sleep)
     float    nap_wake_target      = 0.0f;        // tiredness a daytime nap restores down to (short top-up, not drained to empty)
 
@@ -186,6 +192,13 @@ struct Conker {
     // Elder: past 70% of lifespan — huddle magnet, gets groomed, never climbed on
     bool is_elder() const {
         return lifespan_ms > 0 && lived_ms >= static_cast<uint32_t>(lifespan_ms * 0.7f);
+    }
+
+    // Making aptitude — the colony's artists: playful imagination with a
+    // wandering eye. Emergent from personality, no new dims.
+    float muse() const {
+        return 0.6f * personality[PERS_PLAYFULNESS]
+             + 0.4f * personality[PERS_EXPLORATION];
     }
 
     // Chronotype: the curious, unhurried ones keep late hours — pottering
@@ -252,6 +265,9 @@ struct Conker {
     void _do_zoomies(Chamber& ch);
     void _do_mourning(Chamber& ch);
     void _do_farming(Chamber& ch);
+    void _do_crafting(Chamber& ch);
+    bool _start_crafting(Chamber& ch, uint8_t kind, uint8_t context,
+                         int near_x, int near_y);  // find a spot, set out
     bool _target_still_valid(Chamber& ch);
 
     // Marker sampling -- returns true and sets out_dx/out_dy if gradient found

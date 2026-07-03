@@ -31,6 +31,8 @@ enum JournalType : uint8_t {
     JEVT_DISCOVERY,   // a conker found a visiting critter
     JEVT_BOND_MUTUAL, // a one-way bond got reciprocated — the pair are best friends now
     JEVT_CROP_SOWN,   // a green-thumbed farmer planted a garden plot
+    JEVT_CRAFTED,     // a maker finished a work (kind/context/honoree in payload)
+    JEVT_ART_WEATHERED, // an old work crumbled to make room for a new one
     JEVT_COUNT
 };
 
@@ -62,6 +64,7 @@ struct JournalEntry {
             // for dead_id (name rides along — the roster forgets the dead)
         struct { uint8_t kind; uint8_t participants; } play;  // kind 0=parade
         struct { uint8_t critter; } discovery;  // CritterKind found
+        struct { uint8_t kind; uint8_t context; char honoree[16]; } crafted;
     };
 };
 

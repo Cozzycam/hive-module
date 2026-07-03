@@ -4,6 +4,7 @@ import { Card } from '../components/Card';
 import { Chip } from '../components/Chip';
 import { nameFromId } from '../data/plantNames';
 import { critterEmoji, critterPlural } from '../data/critters';
+import { artKindEmoji, artContextPhrase } from '../data/artworks';
 import { HIVE, TOD_PALETTES } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 import type { ColonyEvent, EventType } from '../api/types';
@@ -411,6 +412,22 @@ function formatEvent(ev: ColonyEvent, rosterNames: Map<number, string>): { icon:
       return {
         icon: '\u{1F331}',
         description: `${name} sowed a crop in the garden.`,
+      };
+    case 'crafted': {
+      const kind = String(data.kind || 'work');
+      const phrase = artContextPhrase(String(data.context || 'plenty'),
+        data.honoree ? String(data.honoree) : undefined);
+      return {
+        icon: artKindEmoji(kind),
+        description: data.honoree
+          ? `${name} carved a memorial for ${data.honoree}.`
+          : `${name} finished a ${kind}, made ${phrase}.`,
+      };
+    }
+    case 'art_weathered':
+      return {
+        icon: '\u{1F342}',
+        description: `${name}'s old ${String(data.kind || 'work')} finally crumbled away.`,
       };
     case 'sow_group' as EventType: {
       const count = (ev as unknown as { count: number }).count;

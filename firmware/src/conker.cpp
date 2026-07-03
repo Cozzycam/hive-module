@@ -4,6 +4,7 @@
 #include "bonds.h"
 #include "rng.h"
 #include "time_of_day.h"
+#include "weather.h"
 #include <Arduino.h>
 #include <cmath>
 
@@ -399,6 +400,7 @@ void Conker::tick(Chamber& ch, float dt) {
             case STATE_ZOOMIES:     _do_zoomies(ch);     break;
             case STATE_MOURNING:    _do_mourning(ch);    break;
             case STATE_FARMING:     _do_farming(ch);     break;
+            case STATE_CRAFTING:    _do_crafting(ch);    break;
             default:                _do_idle(ch);        break;
         }
     }
@@ -1272,6 +1274,15 @@ void Conker::_do_mourning(Chamber& ch) {
     // zoomie_ticks is repurposed as the vigil timer (states are exclusive)
     zoomie_ticks--;
     if (zoomie_ticks <= 0) {
+        // Grief makes makers: sometimes the vigil ends not in walking away
+        // but in carving something that stays — a memorial with their
+        // friend's name on it
+        if (muse() >= Cfg::MUSE_MIN && mourning_for[0]
+                && g_rng.rand_float() < Cfg::CRAFT_GRIEF_CHANCE
+                && _start_crafting(ch, ART_MEMORIAL, CTX_GRIEF,
+                                   target_x, target_y)) {
+            return;   // mourning_for carries the honoree into the stone
+        }
         state = STATE_IDLE;
         has_target = false;
         has_target_cell = false;
@@ -1300,6 +1311,118 @@ void Conker::_do_mourning(Chamber& ch) {
             anim_lean_dx = 0; anim_lean_dy = (bdy >= 0) ? 1 : -1;
         }
     }
+}
+
+// The moment of a work's making, read from the sky (grief is set by the
+// mourning path instead — it outranks weather).
+static uint8_t _craft_context_now() {
+    if (g_weather.valid) {
+        if (g_weather.condition == WX_THUNDERSTORM || g_weather.wind >= WIND_HIGH)
+            return CTX_STORM;
+        if (g_weather.temp >= TEMP_HOT) return CTX_HEATWAVE;
+        if (g_weather.condition >= WX_DRIZZLE && g_weather.condition <= WX_HEAVY_RAIN)
+            return CTX_RAIN;
+    }
+    if (g_tod.phase == PHASE_NIGHT) return CTX_NIGHT;
+    return CTX_PLENTY;
+}
+
+// Find a clear spot near (near_x, near_y) and set out to make something.
+bool Conker::_start_crafting(Chamber& ch, uint8_t kind, uint8_t context,
+                             int near_x, int near_y) {
+    for (int attempt = 0; attempt < 12; attempt++) {
+        int sx = near_x + g_rng.rand_int(-3, 3);
+        int sy = near_y + g_rng.rand_int(-3, 3);
+        if (!ch.artwork_spot_free(sx, sy)) continue;
+        state = STATE_CRAFTING;
+        craft_kind = kind;
+        craft_context = context;
+        craft_ticks = Cfg::CRAFT_DURATION_TICKS;
+        target_x = (int8_t)sx;
+        target_y = (int8_t)sy;
+        has_target = true;
+        has_target_cell = false;
+        zoomie_target = -1;
+        zoomie_ticks = Cfg::CRAFT_MAX_TICKS;   // repurposed: trip failsafe
+        idle_ticks_remaining = 0;
+        return true;
+    }
+    return false;
+}
+
+// At work on a piece: walk to the chosen spot, lean in and make (visible
+// craftsmanship over real minutes), then the object joins the world in the
+// maker's own colours.
+void Conker::_do_crafting(Chamber& ch) {
+    zoomie_ticks--;
+    if (zoomie_ticks <= 0) {   // trip failsafe — abandon gracefully
+        state = STATE_IDLE;
+        anim_type = LG_ANIM_NONE;
+        has_target = false;
+        has_target_cell = false;
+        idle_repoll_tick = Cfg::IDLE_REPOLL_INTERVAL;
+        return;
+    }
+
+    int cx = cell_x(), cy = cell_y();
+    if (abs(target_x - cx) + abs(target_y - cy) > 1) {
+        _step_toward_cell(target_x, target_y, ch);
+        return;
+    }
+
+    // At the spot — lean in and work
+    if (anim_type != LG_ANIM_GROOMING) {
+        anim_type = LG_ANIM_GROOMING;   // bent over the piece
+        anim_remaining_ticks = 0;       // persistent pose, not a timed anim
+        float bdx = (target_x + 0.5f) - x, bdy = (target_y + 0.5f) - y;
+        if (fabsf(bdx) >= fabsf(bdy)) {
+            anim_lean_dx = (bdx >= 0) ? 1 : -1; anim_lean_dy = 0;
+        } else {
+            anim_lean_dx = 0; anim_lean_dy = (bdy >= 0) ? 1 : -1;
+        }
+    }
+    if (craft_ticks > 0) { craft_ticks--; return; }
+
+    // Finished — the work exists
+    Artwork piece;
+    piece.kind = craft_kind;
+    piece.x = target_x;
+    piece.y = target_y;
+    piece.maker_id = id;
+    strlcpy(piece.maker_name, name, sizeof(piece.maker_name));
+    piece.maker_tint = tint_seed;
+    piece.created_unix = g_tod.unix_time;
+    piece.context = craft_context;
+    piece.motif = (uint8_t)g_rng.rand_int(0, 255);
+    if (craft_kind == ART_MEMORIAL)
+        strlcpy(piece.honoree, mourning_for, sizeof(piece.honoree));
+
+    Artwork weathered;
+    ch.place_artwork(piece, &weathered);
+    if (weathered.active) {
+        Event wv = {};
+        wv.type = EVT_ART_WEATHERED;
+        wv.tick = ch.tick_num;
+        wv.crafted.kind = weathered.kind;
+        strlcpy(wv.crafted.who, weathered.maker_name, sizeof(wv.crafted.who));
+        ch.emit(wv);
+    }
+    Event ev = {};
+    ev.type = EVT_CRAFTED;
+    ev.tick = ch.tick_num;
+    ev.crafted.kind = piece.kind;
+    ev.crafted.maker_id = id;
+    ev.crafted.context = piece.context;
+    strlcpy(ev.crafted.who, name, sizeof(ev.crafted.who));
+    strlcpy(ev.crafted.honoree, piece.honoree, sizeof(ev.crafted.honoree));
+    ch.emit(ev);
+
+    anim_type = LG_ANIM_NONE;
+    state = STATE_IDLE;
+    has_target = false;
+    has_target_cell = false;
+    afterglow_ticks = Cfg::AFTERGLOW_TICKS;   // making feels good
+    idle_repoll_tick = Cfg::IDLE_REPOLL_INTERVAL;
 }
 
 // Off to the allotment: walk to the claimed plot, lean over the soil for a
@@ -1388,6 +1511,45 @@ void Conker::_tick_idle(Chamber& ch) {
             has_target_cell = false;
             idle_ticks_remaining = 0;
             return;
+        }
+    }
+
+    // The muse strikes: with a deep pantry, a maker drifts off to craft —
+    // something of this moment, in their own colours
+    if (!sleeping && stack_on < 0 && anim_type == LG_ANIM_NONE
+            && muse() >= Cfg::MUSE_MIN
+            && ch.colony->play_surplus() > 0.4f
+            && g_rng.rand_float() < Cfg::CRAFT_CHANCE_PER_TICK * muse()) {
+        uint8_t kind = (personality[PERS_ROUTE_STICKINESS] > 0.6f) ? ART_CAIRN
+                     : (personality[PERS_PLAYFULNESS] >= personality[PERS_EXPLORATION])
+                        ? ART_SCULPTURE : ART_PAINTING;
+        if (_start_crafting(ch, kind, _craft_context_now(), cell_x(), cell_y()))
+            return;
+    }
+
+    // Pause to admire a nearby work — taste runs on playfulness + curiosity.
+    // Admiring warms the admirer toward the maker: art connects strangers.
+    if (!sleeping && stack_on < 0 && anim_type == LG_ANIM_NONE) {
+        float taste = 0.5f * personality[PERS_PLAYFULNESS]
+                    + 0.5f * personality[PERS_EXPLORATION];
+        if (g_rng.rand_float() < Cfg::ADMIRE_CHANCE_PER_TICK * taste) {
+            int ai = ch.nearest_artwork(cell_x(), cell_y(), 4);
+            if (ai >= 0 && ch.artworks[ai].maker_id != id) {
+                const Artwork& a = ch.artworks[ai];
+                anim_type = LG_ANIM_GROOMING;   // lean in for a look
+                anim_remaining_ticks = Cfg::GREETING_DURATION_TICKS;
+                float bdx = (a.x + 0.5f) - x, bdy = (a.y + 0.5f) - y;
+                if (fabsf(bdx) >= fabsf(bdy)) {
+                    anim_lean_dx = (bdx >= 0) ? 1 : -1; anim_lean_dy = 0;
+                } else {
+                    anim_lean_dx = 0; anim_lean_dy = (bdy >= 0) ? 1 : -1;
+                }
+                needs[NEED_BOREDOM] -= Cfg::ADMIRE_BOREDOM_RELIEF;
+                if (needs[NEED_BOREDOM] < 0.0f) needs[NEED_BOREDOM] = 0.0f;
+                if (ch.bonds)
+                    ch.bonds->increment(id, a.maker_id, Cfg::ADMIRE_BOND_NUDGE);
+                ch.artwork_admired(ai);
+            }
         }
     }
 
@@ -1885,7 +2047,8 @@ bool Conker::_target_still_valid(Chamber& ch) {
     if (state == STATE_IDLE || state == STATE_TO_FOOD
             || state == STATE_TO_HOME || state == STATE_CANNIBALIZE
             || state == STATE_ZOOMIES || state == STATE_EATING
-            || state == STATE_MOURNING)
+            || state == STATE_MOURNING || state == STATE_FARMING
+            || state == STATE_CRAFTING)
         return true;
     if (!has_target) return false;
     if (state == STATE_TEND_QUEEN) {

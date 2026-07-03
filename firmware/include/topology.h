@@ -217,10 +217,11 @@ struct __attribute__((packed)) JournalRelayMessage {
     uint8_t  jtype;
     uint32_t lilguy_id;
     char     who[16];
-    uint8_t  extra;
+    uint8_t  extra;       // per-type detail (critter kind / plot / kind|ctx<<4)
+    char     honoree[16]; // crafted memorials
 };
 struct PendingJournalRelay {
-    uint8_t data[32];
+    uint8_t data[48];
     int     len;
 };
 int  topology_drain_journal_relays(PendingJournalRelay* out, int max_out);
