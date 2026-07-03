@@ -198,6 +198,12 @@ private:
     uint32_t _last_gardener_summon_ms = 0;
     void _gardener_summon_tick();
 
+    // Garden self-staffing (satellite) — draft a green thumb already on the
+    // module; foragers never re-run task selection here, so passers-through
+    // would otherwise slip home without ever noticing the vacant post
+    uint32_t _last_garden_draft_ms = 0;
+    void _garden_draft_tick();
+
     // Milestone decor bits (renderer reads via getter each frame)
     uint8_t _milestone_bits = 0;
 

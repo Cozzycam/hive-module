@@ -128,6 +128,9 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
     // ---- Fill a vacant garden post next door (queen only) ----
     if (is_queen()) _gardener_summon_tick();
 
+    // ---- Garden staffs itself from passing traffic (garden satellite) ----
+    _garden_draft_tick();
+
     // ---- Receive care packages from neighbouring kingdoms (queen only) ----
     if (is_queen()) _receive_gifts();
 
@@ -2889,6 +2892,44 @@ void Coordinator::_gardener_summon_tick() {
     Serial.printf("[garden] post vacant — %s (green thumb %.2f) sent across\r\n",
                   w.name, best_gt);
 #endif
+}
+
+// Garden self-staffing (satellite side): when the post sits vacant by day
+// and a qualified green thumb is already on the module — usually a forager
+// passing through, who would never re-run task selection here — draft them
+// on the spot. Their next task pick claims the post and heads for a plot.
+// Keeps the garden staffed even when the queen's summon channel is flaky.
+void Coordinator::_garden_draft_tick() {
+    if (is_queen() || role != MODULE_GARDEN) return;
+    uint32_t now_ms = millis();
+    if (now_ms - _last_garden_draft_ms < 2000) return;
+    _last_garden_draft_ms = now_ms;
+    if (g_tod.phase != PHASE_DAY) return;
+    if (chamber.garden_post_filled()) return;
+
+    int best = -1;
+    float best_gt = 0.0f;
+    for (int i = 0; i < chamber.conker_count; i++) {
+        const Conker& w = chamber.conkers[i];
+        if (!w.alive || w.departing || w.sleeping || w.seeking_company) continue;
+        if (w.food_carried > 0) continue;
+        if (w.state != STATE_IDLE && w.state != STATE_TO_FOOD
+                && w.state != STATE_TO_HOME) continue;
+        float gt = w.green_thumb();
+        if (gt < Cfg::GREEN_THUMB_MIN) continue;
+        if (gt > best_gt) { best_gt = gt; best = i; }
+    }
+    if (best < 0) return;
+
+    Conker& w = chamber.conkers[best];
+    w.state = STATE_IDLE;
+    w.has_target = false;
+    w.has_target_cell = false;
+    w.stack_on = -1;
+    w.idle_ticks_remaining = 0;
+    w.idle_repoll_tick = 0;
+    Serial.printf("[garden] %s drafted off the trail to keep the garden\r\n",
+                  w.name);
 }
 
 // Display-bus mirror of JEVT_TRAIT_EARNED — sparkle + HUD banner on the glass.

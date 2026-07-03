@@ -152,6 +152,11 @@ struct Conker {
     int16_t  zoomie_ticks         = 0;   // countdown to end
     uint8_t  zoomie_style         = 0;   // 0=chase (sprint), 1=parade (trot)
 
+    // Farming: the sow lean is a timed animation the generic freeze handler
+    // counts down (and clears anim_type on completion), so _do_farming can't
+    // read anim_type to tell "mid-sow" from "done" — this flag tracks it.
+    bool     sowing               = false;
+
     // Forage flair (cosmetic; reset on every task pick)
     uint8_t  flair_kind           = 0;   // 0=none, 1=search cast, 2=pile inspect linger
     uint8_t  flair_ticks          = 0;   // countdown while holding a flair pause

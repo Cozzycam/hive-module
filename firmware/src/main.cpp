@@ -643,6 +643,24 @@ static void process_serial_line(const char* line) {
     } else if (strcmp(line, "daytime") == 0) {
         force_daytime = !force_daytime;
         Serial.printf("[debug] force daytime: %s\r\n", force_daytime ? "ON" : "OFF");
+    } else if (strcmp(line, "dump garden") == 0) {
+        auto& cham = sim.coordinator.chamber;
+        static const char* STAGE_NAMES[] = {"soil","sprout","growing","mature"};
+        Serial.printf("[garden] is_garden=%d posted_gardener=%lu\r\n",
+                      cham.is_garden, (unsigned long)cham.posted_gardener);
+        for (int i = 0; i < Cfg::GARDEN_PLOTS; i++) {
+            const Plant& p = cham.plants[i];
+            Serial.printf("[garden] plot %d @(%d,%d) stage=%s by=%s\r\n",
+                          i, p.x, p.y,
+                          p.stage <= PLOT_MATURE ? STAGE_NAMES[p.stage] : "?",
+                          p.sown_by_name);
+        }
+    } else if (strcmp(line, "sow reset") == 0) {
+        // Debug: bare every plot so a posted gardener re-sows from scratch.
+        auto& cham = sim.coordinator.chamber;
+        for (int i = 0; i < Cfg::GARDEN_PLOTS; i++)
+            cham.plants[i].stage = PLOT_SOIL;
+        Serial.println("[garden] all plots reset to soil");
     } else if (strcmp(line, "topology") == 0) {
         sim.coordinator.print_topology();
     } else if (strcmp(line, "topo status") == 0) {

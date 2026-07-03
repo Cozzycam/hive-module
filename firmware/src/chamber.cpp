@@ -1205,6 +1205,8 @@ bool Chamber::sow_plot(int idx, uint32_t by_id, const char* by_name) {
     p.sown_by = by_id;
     strlcpy(p.sown_by_name, by_name, sizeof(p.sown_by_name));
     _plants_save(plants);
+    Serial.printf("[garden] %s sows plot %d at (%d,%d)\r\n",
+                  by_name, idx, p.x, p.y);
     return true;
 }
 

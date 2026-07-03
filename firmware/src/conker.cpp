@@ -498,6 +498,7 @@ void Conker::_pick_task(Chamber& ch) {
     zoomie_target = -1;
     zoomie_ticks = 0;
     zoomie_style = 0;
+    sowing = false;
     flair_kind = 0;
     flair_ticks = 0;
     flair_casts_used = 0;
@@ -1534,6 +1535,7 @@ void Conker::_do_farming(Chamber& ch) {
         state = STATE_IDLE;
         has_target = false;
         has_target_cell = false;
+        sowing = false;
         anim_type = LG_ANIM_NONE;
         anim_remaining_ticks = 0;
         idle_repoll_tick = Cfg::IDLE_REPOLL_INTERVAL;
@@ -1547,8 +1549,13 @@ void Conker::_do_farming(Chamber& ch) {
         return;
     }
 
-    // At the plot — settle into the sowing lean
-    if (anim_type != LG_ANIM_GROOMING) {
+    // At the plot — settle into the sowing lean. The generic animation-freeze
+    // block owns the countdown and clears anim_type the tick it completes, so
+    // by the time we run again anim_type is already NONE — we can't use it to
+    // tell "still sowing" from "just finished" (that bug looped the lean and
+    // never sowed). Track our own progress with `sowing` instead.
+    if (!sowing) {
+        sowing = true;
         anim_type = LG_ANIM_GROOMING;
         anim_remaining_ticks = Cfg::SOW_DURATION_TICKS;
         float bdx = (p.x + 0.5f) - x, bdy = (p.y + 0.5f) - y;
@@ -1559,9 +1566,10 @@ void Conker::_do_farming(Chamber& ch) {
         }
         return;
     }
-    if (anim_remaining_ticks > 1) return;   // still planting
+    if (anim_remaining_ticks > 0) return;   // freeze block still counting the lean down
 
     // Done — seed in the ground
+    sowing = false;
     anim_type = LG_ANIM_NONE;
     anim_remaining_ticks = 0;
     if (ch.sow_plot(plot, id, name)) {
