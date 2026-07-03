@@ -1094,25 +1094,39 @@ void loop() {
                 gfx->drawCircle(px, py, radius, 0xFFFF);
                 gfx->drawCircle(px, py, radius + 1, 0xFFFF);
 
-                // Name label above head
+                // Name + what they're up to, stacked in a pill above the head
                 const char* name = w.name[0] ? w.name : "???";
-                {
-                    gfx->setTextSize(1);
-                    gfx->setTextWrap(false);
-                    int tw = 0;
-                    for (const char* p = name; *p; p++) tw += 6;
-                    int lx = px - tw / 2;
-                    int ly = py - radius - 12;
-                    if (ly < 2) ly = 2;
-                    // Background pill for readability
-                    gfx->fillRoundRect(lx - 3, ly - 1, tw + 6, 11, 3, 0x0000);
-                    gfx->setCursor(lx, ly);
-                    gfx->setTextColor(0xFFFF);
-                    gfx->print(name);
-                }
+                const char* act  = conker_activity_short(
+                    conker_activity(w, sim.coordinator.chamber));
+                gfx->setTextSize(1);
+                gfx->setTextWrap(false);
+                int nw = 0; for (const char* p = name; *p; p++) nw += 6;
+                int aw = 0; for (const char* p = act;  *p; p++) aw += 6;
+                int tw = (nw > aw) ? nw : aw;
+                const int pill_h = 20;               // two 8px glyph rows + padding
+                int lx = px - tw / 2;
+                if (lx < 3) lx = 3;
+                if (lx + tw + 3 > 480) lx = 480 - tw - 3;
+                int top = py - radius - 3 - pill_h;
+                if (top < 2) top = 2;
+                // Background pill for readability
+                gfx->fillRoundRect(lx - 3, top, tw + 6, pill_h, 3, 0x0000);
+                gfx->setCursor(lx + (tw - nw) / 2, top + 2);
+                gfx->setTextColor(0xFFFF);           // name — bright
+                gfx->print(name);
+                gfx->setCursor(lx + (tw - aw) / 2, top + 11);
+                gfx->setTextColor(0xC618);           // activity — soft grey
+                gfx->print(act);
 
-                renderer.mark_dirty_external(px - radius - 5, py - radius - 16,
-                                              radius * 2 + 10, radius * 2 + 28);
+                // Dirty rect must cover both the (possibly wide) pill and circle
+                int dl = (lx - 4 < px - radius - 5) ? lx - 4 : px - radius - 5;
+                int dr = (lx + tw + 4 > px + radius + 5) ? lx + tw + 4
+                                                         : px + radius + 5;
+                int dt = (top - 1 < py - radius - 5) ? top - 1 : py - radius - 5;
+                if (dl < 0) dl = 0;
+                if (dt < 0) dt = 0;
+                renderer.mark_dirty_external(dl, dt, dr - dl,
+                                             py + radius + 5 - dt);
             } else {
                 sim.selected_conker_id = 0;  // died while selected
             }

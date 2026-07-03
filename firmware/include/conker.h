@@ -58,6 +58,35 @@ enum ConkerMood : uint8_t {
     MOOD_COUNT    = 7,
 };
 
+// "What are they up to right now" — a single readable activity derived from
+// state + sub-state, shared by the on-screen boop label and the app's
+// character detail. ACTIVITY_KEY[] (snake_case, stable — the app maps it to
+// flavour text) and ACTIVITY_SHORT[] (the terse on-glass label) are indexed by
+// this and MUST stay in lockstep with it. See conker_activity().
+enum ConkerActivity : uint8_t {
+    ACT_IDLING = 0,
+    ACT_SLEEPING,
+    ACT_NAPPING,
+    ACT_SEEKING_COMPANY,
+    ACT_FORAGING,
+    ACT_CARRYING_FOOD,
+    ACT_HEADING_HOME,
+    ACT_EATING,
+    ACT_CHASING_FIREFLY,
+    ACT_PLAYING,
+    ACT_PARADING,
+    ACT_SOWING,
+    ACT_GARDENING,
+    ACT_TO_GARDEN,
+    ACT_TENDING_BROOD,
+    ACT_FEEDING_QUEEN,
+    ACT_CRAFTING,
+    ACT_MOURNING,
+    ACT_CLEARING,
+    ACT_AWAY,
+    ACT_COUNT,
+};
+
 // How a conker chooses to act on its loudest need. The arbiter picks the need;
 // this picks the flavour of response, coloured by personality. Built whole;
 // only the boredom/rest styles are reachable while those needs are the live ones.
@@ -315,3 +344,9 @@ struct Conker {
     bool _nearest_active_entry(Chamber& ch, int max_dist, int exclude_face,
                                int8_t& out_x, int8_t& out_y);
 };
+
+// Current activity of a live conker (needs the chamber for the garden-post
+// check). Callers: the on-screen boop label and the /lilguys API.
+ConkerActivity conker_activity(const Conker& w, const Chamber& ch);
+const char* conker_activity_key(ConkerActivity a);    // stable snake_case (API)
+const char* conker_activity_short(ConkerActivity a);  // terse label (on glass)

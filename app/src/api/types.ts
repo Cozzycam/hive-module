@@ -113,6 +113,14 @@ export interface LilGuySummary {
 // Readable summary of a conker's loudest unmet need (firmware ConkerMood)
 export type ConkerMood = 'content' | 'restless' | 'bored' | 'playing' | 'sleepy' | 'happy' | 'lonely';
 
+// What a conker is doing right now (firmware ConkerActivity / ACTIVITY_KEY[]).
+// 'away' means it's on another module / not in the reporting chamber.
+export type ConkerActivity =
+  | 'idling' | 'sleeping' | 'napping' | 'seeking_company' | 'foraging'
+  | 'carrying_food' | 'heading_home' | 'eating' | 'chasing_firefly' | 'playing'
+  | 'parading' | 'sowing' | 'gardening' | 'heading_to_garden' | 'tending_brood'
+  | 'feeding_queen' | 'crafting' | 'mourning' | 'clearing' | 'away';
+
 // ---- LilGuy detail (queen LAN: GET /api/v1/lilguys/:id) ----
 
 export interface LilGuyDetail {
@@ -130,6 +138,8 @@ export interface LilGuyDetail {
   bonds: Bond[];
   last_pos: { module: string; x: number; y: number };
   event_count: number;
+  state?: string;              // coarse firmware state (idle/gathering/…)
+  activity?: ConkerActivity;   // what they're doing right now
 }
 
 export interface Personality {

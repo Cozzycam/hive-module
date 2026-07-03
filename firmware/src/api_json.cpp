@@ -51,6 +51,18 @@ static const char* conker_state_str(Coordinator& coord, uint32_t id) {
     return "away";
 }
 
+// Richer "what are they doing right now" — a stable key the app maps to flavour
+// text. More specific than state (sowing, chasing a firefly, minding the garden,
+// carrying food home, ...). "away" when the conker isn't in this chamber.
+static const char* conker_activity_str(Coordinator& coord, uint32_t id) {
+    for (int i = 0; i < coord.chamber.conker_count; i++) {
+        const Conker& c = coord.chamber.conkers[i];
+        if (c.id != id) continue;
+        return conker_activity_key(conker_activity(c, coord.chamber));
+    }
+    return "away";
+}
+
 static const char* phase_str(DayPhase p) {
     switch (p) {
         case PHASE_DAY:   return "day";
@@ -327,6 +339,7 @@ size_t api_lilguys_json(Coordinator& coord, char* buf, size_t buflen,
         entry["scale_factor"] = r.scale_factor;
         entry["tint_seed"] = r.tint_seed;
         entry["state"] = conker_state_str(coord, r.id);
+        entry["activity"] = conker_activity_str(coord, r.id);
     }
 
     return serializeJson(doc, buf, buflen);
@@ -359,6 +372,7 @@ size_t api_lilguy_detail_json(Coordinator& coord, uint32_t id,
     doc["tint_seed"] = rec->tint_seed;
 
     doc["state"] = conker_state_str(coord, id);
+    doc["activity"] = conker_activity_str(coord, id);
 
     // Tended by
     if (rec->tended_by != 0) {

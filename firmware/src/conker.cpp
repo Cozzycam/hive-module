@@ -2468,3 +2468,57 @@ bool Conker::_nearest_active_entry(Chamber& ch, int max_dist, int exclude_face,
     }
     return found;
 }
+
+// ================================================================
+//  Current activity — one readable "what are they doing right now"
+// ================================================================
+
+ConkerActivity conker_activity(const Conker& w, const Chamber& ch) {
+    // Sleep and the lonely-amble sit on top of whatever state is underneath.
+    if (w.sleeping)         return w.daytime_nap ? ACT_NAPPING : ACT_SLEEPING;
+    if (w.seeking_company)  return ACT_SEEKING_COMPANY;
+
+    switch (w.state) {
+        case STATE_TO_FOOD:     return ACT_FORAGING;
+        case STATE_TO_HOME:     return w.food_carried > 0 ? ACT_CARRYING_FOOD
+                                                          : ACT_HEADING_HOME;
+        case STATE_EATING:      return ACT_EATING;
+        case STATE_ZOOMIES:
+            if (w.zoomie_target <= -2) return ACT_CHASING_FIREFLY;  // firefly chase
+            return (w.zoomie_style == 1) ? ACT_PARADING : ACT_PLAYING;
+        case STATE_MOURNING:    return ACT_MOURNING;
+        case STATE_FARMING:     return ACT_SOWING;      // on a sow trip / at the plot
+        case STATE_CRAFTING:    return ACT_CRAFTING;
+        case STATE_TO_GARDEN:   return ACT_TO_GARDEN;
+        case STATE_TEND_BROOD:  return ACT_TENDING_BROOD;
+        case STATE_TEND_QUEEN:  return ACT_FEEDING_QUEEN;
+        case STATE_CANNIBALIZE: return ACT_CLEARING;
+        case STATE_IDLE:
+        default:
+            // A green thumb holding the post but with nothing to sow is minding
+            // the garden, not merely idling.
+            if (ch.is_garden && ch.posted_gardener == w.id) return ACT_GARDENING;
+            return ACT_IDLING;
+    }
+}
+
+// Indexed by ConkerActivity — keep in lockstep with the enum.
+static const char* const ACTIVITY_KEY[ACT_COUNT] = {
+    "idling", "sleeping", "napping", "seeking_company", "foraging",
+    "carrying_food", "heading_home", "eating", "chasing_firefly", "playing",
+    "parading", "sowing", "gardening", "heading_to_garden", "tending_brood",
+    "feeding_queen", "crafting", "mourning", "clearing", "away",
+};
+static const char* const ACTIVITY_SHORT[ACT_COUNT] = {
+    "Pottering about", "Sleeping", "Napping", "Finding company", "Foraging",
+    "Carrying food", "Heading home", "Eating", "Firefly chase", "Playing chase",
+    "Parading", "Gardening", "Minding garden", "Off to garden", "Tending brood",
+    "Feeding queen", "Crafting", "Mourning", "Tidying up", "Away",
+};
+
+const char* conker_activity_key(ConkerActivity a) {
+    return (a < ACT_COUNT) ? ACTIVITY_KEY[a] : "away";
+}
+const char* conker_activity_short(ConkerActivity a) {
+    return (a < ACT_COUNT) ? ACTIVITY_SHORT[a] : "Away";
+}

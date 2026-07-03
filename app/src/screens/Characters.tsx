@@ -14,7 +14,7 @@ import { epithet, buildLifeStory } from '../data/biography';
 import { HIVE, TOD_PALETTES } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 import { fetchLilguyDetail, fetchLilguyEvents, sendCommand } from '../api/client';
-import type { ColonyEvent, LilGuyDetail, Personality, Bond, ConkerMood } from '../api/types';
+import type { ColonyEvent, LilGuyDetail, Personality, Bond, ConkerMood, ConkerActivity } from '../api/types';
 
 // Trait metadata now lives in data/traits.ts (shared with biography.ts).
 
@@ -90,6 +90,78 @@ const MOOD_BLURB: Record<ConkerMood, string> = {
   sleepy: 'Worn out — heading for bed. A boop will rouse them if you must.',
   happy: 'Just had a lovely time — content and glowing.',
   lonely: 'Feeling a bit alone — would love some company.',
+};
+
+// What they're up to right now (firmware ConkerActivity). Emoji + short title +
+// a flavourful, name-prefixed blurb.
+const ACTIVITY_EMOJI: Record<ConkerActivity, string> = {
+  idling: '\u{1F33C}',           // blossom
+  sleeping: '\u{1F634}',         // sleeping face
+  napping: '\u{1F4A4}',          // zzz
+  seeking_company: '\u{1F97A}',  // pleading
+  foraging: '\u{1F50E}',         // magnifier
+  carrying_food: '\u{1F330}',    // chestnut (a conker!)
+  heading_home: '\u{1F3E0}',     // house
+  eating: '\u{1F37D}\u{FE0F}',   // plate & cutlery
+  chasing_firefly: '\u{2728}',   // sparkles
+  playing: '\u{1F4A8}',          // dash
+  parading: '\u{1F389}',         // party popper
+  sowing: '\u{1F331}',           // seedling
+  gardening: '\u{1FAB4}',        // potted plant
+  heading_to_garden: '\u{1F6B6}',// walker
+  tending_brood: '\u{1F95A}',    // egg
+  feeding_queen: '\u{1F451}',    // crown
+  crafting: '\u{1F3A8}',         // palette
+  mourning: '\u{1F56F}\u{FE0F}', // candle
+  clearing: '\u{1F9F9}',         // broom
+  away: '\u{1F32B}\u{FE0F}',     // fog
+};
+
+const ACTIVITY_TITLE: Record<ConkerActivity, string> = {
+  idling: 'Pottering about',
+  sleeping: 'Fast asleep',
+  napping: 'Having a nap',
+  seeking_company: 'Looking for company',
+  foraging: 'Foraging',
+  carrying_food: 'Carrying food home',
+  heading_home: 'Heading home',
+  eating: 'Having a bite',
+  chasing_firefly: 'Chasing a firefly',
+  playing: 'Playing chase',
+  parading: 'Leading a parade',
+  sowing: 'Sowing a seed',
+  gardening: 'Minding the garden',
+  heading_to_garden: 'Off to the garden',
+  tending_brood: 'Tending the brood',
+  feeding_queen: 'Feeding the queen',
+  crafting: 'Crafting',
+  mourning: 'In mourning',
+  clearing: 'Tidying up',
+  away: 'Away',
+};
+
+// Prefixed with the conker's name → "Marigold is out on the trail, foraging…"
+const ACTIVITY_BLURB: Record<ConkerActivity, string> = {
+  idling: 'is pottering about with nothing much to do.',
+  sleeping: 'is fast asleep, dreaming of crumbs.',
+  napping: 'is curled up for a little daytime nap.',
+  seeking_company: 'is feeling a bit alone, off to find a friend to huddle with.',
+  foraging: 'is out on the trail, foraging for food.',
+  carrying_food: 'is hauling a hard-won morsel back to the nest.',
+  heading_home: 'is ambling back home.',
+  eating: 'is tucking into a well-earned meal.',
+  chasing_firefly: 'is darting through the dark, chasing a firefly.',
+  playing: 'is full of beans, zooming about after a friend.',
+  parading: 'is leading a merry little parade around the chamber.',
+  sowing: 'is down in the soil, pressing a fresh seed into a plot.',
+  gardening: 'is minding the garden, waiting for a bare patch to sow.',
+  heading_to_garden: 'is making the long walk over to tend the garden next door.',
+  tending_brood: 'is fussing over the eggs and grubs in the nursery.',
+  feeding_queen: 'is bringing the queen her royal ration.',
+  crafting: 'is lost in the muse, crafting a little keepsake.',
+  mourning: 'is standing vigil for a friend who has passed.',
+  clearing: 'is quietly clearing away what the colony can reclaim.',
+  away: 'is off in another chamber, out of sight for now.',
 };
 
 function buildCharactersFromEvents(events: ColonyEvent[]): Map<number, CharacterInfo> {
@@ -572,6 +644,27 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
               </div>
             </div>
           )}
+        </Card>
+      )}
+
+      {/* Currently doing (live conkers only; from the LAN detail fetch) */}
+      {!isDeceased && detail?.activity && (
+        <Card style={{ background: palette.cardBg }}>
+          <div style={{ fontSize: SIZES.xs, fontWeight: 600, color: palette.dimText,
+                        textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+            Right now
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 22 }}>{ACTIVITY_EMOJI[detail.activity]}</span>
+            <div>
+              <div style={{ fontSize: SIZES.base, color: palette.text }}>
+                {ACTIVITY_TITLE[detail.activity]}
+              </div>
+              <div style={{ fontSize: SIZES.xs, color: palette.dimText }}>
+                {char.name} {ACTIVITY_BLURB[detail.activity]}
+              </div>
+            </div>
+          </div>
         </Card>
       )}
 
