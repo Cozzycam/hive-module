@@ -63,6 +63,11 @@ enum ArtKind : uint8_t {
     ART_CAIRN     = 1,
     ART_PAINTING  = 2,
     ART_MEMORIAL  = 3,   // carved by a grieving friend, names the departed
+    // Accessories — worn, not placed; made FOR a best friend (honoree =
+    // the recipient). Never passed to place_artwork.
+    ART_HAT       = 4,   // petal hat
+    ART_PENDANT   = 5,   // seed pendant
+    ART_BAND      = 6,   // grass band
     ART_KIND_COUNT
 };
 

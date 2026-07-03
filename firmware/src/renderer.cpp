@@ -1259,6 +1259,26 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
                 _mark_dirty(mx - fs / 2, my - fs / 2, fs, fs);
             }
 
+            // Worn keepsake — a gift from a best friend, worn for life
+            if (w.accessory != 0) {
+                float rs = w.render_scale();
+                if (w.accessory == 1) {          // petal hat
+                    int hy = sd.render_y - (int)(rs * 4.5f);
+                    _gfx->drawFastHLine(sd.render_x - 2, hy, 5, _rgb565(240, 160, 190));
+                    _gfx->drawPixel(sd.render_x, hy - 1, _rgb565(255, 225, 150));
+                    _mark_dirty(sd.render_x - 3, hy - 2, 7, 4);
+                } else if (w.accessory == 2) {   // seed pendant
+                    int py2 = sd.render_y + (int)(rs * 1.0f);
+                    _gfx->fillRect(sd.render_x - 1, py2, 2, 2, _rgb565(210, 165, 70));
+                    _mark_dirty(sd.render_x - 2, py2 - 1, 4, 4);
+                } else {                          // grass band
+                    int bx = sd.render_x - (int)(rs * 2.5f);
+                    int by = sd.render_y - (int)(rs * 1.5f);
+                    _gfx->drawFastVLine(bx, by, 3, _rgb565(110, 190, 95));
+                    _mark_dirty(bx - 1, by - 1, 3, 5);
+                }
+            }
+
             // Floating Zs above sleeping ants
             if (w.anim_type == LG_ANIM_SNOOZE) {
                 unsigned long ms = millis();
@@ -1701,15 +1721,21 @@ void Renderer::receive_events(const Event* events, int count, const Chamber& ch)
         }
 
         case EVT_CRAFTED: {
-            static const char* const KINDS[] =
-                { "a sculpture", "a cairn", "a painting", "a memorial" };
+            static const char* const KINDS[] = {
+                "a sculpture", "a cairn", "a painting", "a memorial",
+                "a petal hat", "a seed pendant", "a grass band",
+            };
+            uint8_t k = (ev.crafted.kind < 7) ? ev.crafted.kind : 0;
             char msg[64];
-            if (ev.crafted.kind == 3 && ev.crafted.honoree[0])
+            if (k == 3 && ev.crafted.honoree[0])
                 snprintf(msg, sizeof(msg), "%s carved a memorial for %s",
                          ev.crafted.who, ev.crafted.honoree);
+            else if (k >= 4 && ev.crafted.honoree[0])
+                snprintf(msg, sizeof(msg), "%s made %s for %s",
+                         ev.crafted.who, KINDS[k], ev.crafted.honoree);
             else
                 snprintf(msg, sizeof(msg), "%s finished %s",
-                         ev.crafted.who, KINDS[ev.crafted.kind & 3]);
+                         ev.crafted.who, KINDS[k]);
             banner(msg);
             break;
         }

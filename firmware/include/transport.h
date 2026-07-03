@@ -40,6 +40,7 @@ struct __attribute__((packed)) ConkerTransfer {
     uint8_t  catches;            // critter catches — the Bug Hunter bank
                                  // crosses the tunnel too (v179 fix: crossings
                                  // used to zero it and thrash the title)
+    uint8_t  accessory;          // worn gift (petal hat etc) travels with them
     char     name[16];           // display name (truncated to fit payload)
 };
 
@@ -81,6 +82,7 @@ inline void conker_to_transfer(const Conker& w, ConkerTransfer& t,
     t.sleep_until_ms  = w.sleep_until_ms;
     t.tint_seed       = w.tint_seed;
     t.catches         = w.catches;
+    t.accessory       = w.accessory;
     memset(t.name, 0, sizeof(t.name));
     strncpy(t.name, w.name, sizeof(t.name) - 1);
 }
@@ -160,6 +162,7 @@ inline void transfer_to_conker(const ConkerTransfer& t, Conker& w,
     w.flair_ceremony_done  = false;
     w.tint_seed            = t.tint_seed;
     w.catches              = t.catches;
+    w.accessory            = t.accessory;
     memset(w.name, 0, sizeof(w.name));
     strncpy(w.name, t.name, sizeof(w.name) - 1);
     w.arrival_face         = static_cast<int8_t>(t.arrival_face);

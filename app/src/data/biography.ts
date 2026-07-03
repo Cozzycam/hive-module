@@ -7,6 +7,7 @@ import type { ColonyEvent, Personality } from '../api/types';
 import { nameFromId } from './plantNames';
 import { traitLabel, SURVIVAL_TRAITS } from './traits';
 import { CRITTER_PLURALS } from './critters';
+import { isAccessory, artKindLabel } from './artworks';
 
 // ---- Epithets ----------------------------------------------------------
 
@@ -191,13 +192,20 @@ export function buildLifeStory(
         break;
       }
       case 'crafted': {
-        // Memorials are named individually — they're acts of love, not
-        // output; other works aggregate into an oeuvre line below
-        if (data.honoree) {
+        // Memorials and gifts are named individually — they're acts of
+        // love, not output; other works aggregate into an oeuvre line
+        const kind = String(data.kind || 'work');
+        if (kind === 'memorial' && data.honoree) {
           story.push({
             unix: ev.unix,
             icon: '\u{1FAA6}',
             text: `Carved a memorial for ${data.honoree}.`,
+          });
+        } else if (isAccessory(kind)) {
+          story.push({
+            unix: ev.unix,
+            icon: '\u{1F49D}',
+            text: `Made a ${artKindLabel(kind)} for ${data.honoree || 'a friend'}.`,
           });
         } else {
           works++;

@@ -2166,6 +2166,7 @@ void Coordinator::_persist_restore_from_disk() {
             chamber.conkers[idx].tint_seed = r.tint_seed;
         // Restore cumulative catch count (Catcher trait progress)
         chamber.conkers[idx].catches = r.catches;
+        chamber.conkers[idx].accessory = r.accessory;
         // Restore name from registry. Heal the RECORD if it has no name (a
         // partial/malformed write — same family as the zero-lifespan records):
         // otherwise the conker renders "???" forever, and _persist_tick won't
@@ -2619,6 +2620,9 @@ void Coordinator::_trait_tick(uint32_t tick_num) {
         // restore from the bank instead of nuking it.
         if (w.catches > rec->catches) { rec->catches = w.catches; rec->dirty = true; }
         else if (w.catches < rec->catches) w.catches = rec->catches;
+
+        // Worn accessory: gifts persist within the minute
+        if (w.accessory != rec->accessory) { rec->accessory = w.accessory; rec->dirty = true; }
 
         // Emit trait_earned for newly set bits
         uint32_t new_bits = rec->traits & ~prev_traits;

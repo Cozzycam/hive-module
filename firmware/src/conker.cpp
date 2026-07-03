@@ -1387,7 +1387,41 @@ void Conker::_do_crafting(Chamber& ch) {
     }
     if (craft_ticks > 0) { craft_ticks--; return; }
 
-    // Finished — the work exists
+    // Finished. Accessories are gifts — worn, not placed: find the friend,
+    // put the petal hat on them, and let the whole colony know.
+    if (craft_kind >= ART_HAT && craft_kind <= ART_BAND) {
+        for (int i = 0; i < ch.conker_count; i++) {
+            Conker& o = ch.conkers[i];
+            if (o.id != craft_for || !o.alive) continue;
+            if (o.accessory == 0) {
+                o.accessory = (uint8_t)(craft_kind - ART_HAT + 1);
+                if (ch.bonds) {   // a gift deepens the bond, both ways
+                    ch.bonds->increment(id, o.id, Cfg::GIFT_BOND_BOOST);
+                    ch.bonds->increment(o.id, id, Cfg::GIFT_BOND_BOOST);
+                }
+                Event ev = {};
+                ev.type = EVT_CRAFTED;
+                ev.tick = ch.tick_num;
+                ev.crafted.kind = craft_kind;
+                ev.crafted.context = craft_context;
+                ev.crafted.maker_id = id;
+                strlcpy(ev.crafted.who, name, sizeof(ev.crafted.who));
+                strlcpy(ev.crafted.honoree, o.name, sizeof(ev.crafted.honoree));
+                ch.emit(ev);
+            }
+            break;
+        }
+        craft_for = 0;
+        anim_type = LG_ANIM_NONE;
+        state = STATE_IDLE;
+        has_target = false;
+        has_target_cell = false;
+        afterglow_ticks = Cfg::AFTERGLOW_TICKS;
+        idle_repoll_tick = Cfg::IDLE_REPOLL_INTERVAL;
+        return;
+    }
+
+    // Placed works — the piece joins the world
     Artwork piece;
     piece.kind = craft_kind;
     piece.x = target_x;
@@ -1519,16 +1553,33 @@ void Conker::_tick_idle(Chamber& ch) {
     }
 
     // The muse strikes: with a deep pantry, a maker drifts off to craft —
-    // something of this moment, in their own colours
+    // something of this moment, in their own colours. Sometimes the muse
+    // is a person: a best friend without a keepsake gets a gift instead.
     if (!sleeping && stack_on < 0 && anim_type == LG_ANIM_NONE
             && muse() >= Cfg::MUSE_MIN
             && ch.colony->play_surplus() > 0.4f
             && g_rng.rand_float() < Cfg::CRAFT_CHANCE_PER_TICK * muse()) {
-        uint8_t kind = (personality[PERS_ROUTE_STICKINESS] > 0.6f) ? ART_CAIRN
-                     : (personality[PERS_PLAYFULNESS] >= personality[PERS_EXPLORATION])
-                        ? ART_SCULPTURE : ART_PAINTING;
+        uint32_t gift_for = 0;
+        if (ch.bonds) {
+            for (int i = 0; i < ch.conker_count; i++) {
+                const Conker& o = ch.conkers[i];
+                if (&o == this || !o.alive || o.accessory != 0) continue;
+                if (_is_best_friend(ch, o.id)) { gift_for = o.id; break; }
+            }
+        }
+        uint8_t kind;
+        if (gift_for != 0 && g_rng.rand_float() < Cfg::CRAFT_GIFT_CHANCE) {
+            kind = (uint8_t)(ART_HAT + g_rng.rand_int(0, 2));
+            craft_for = gift_for;
+        } else {
+            kind = (personality[PERS_ROUTE_STICKINESS] > 0.6f) ? ART_CAIRN
+                 : (personality[PERS_PLAYFULNESS] >= personality[PERS_EXPLORATION])
+                    ? ART_SCULPTURE : ART_PAINTING;
+            craft_for = 0;
+        }
         if (_start_crafting(ch, kind, _craft_context_now(), cell_x(), cell_y()))
             return;
+        craft_for = 0;
     }
 
     // Pause to admire a nearby work — taste runs on playfulness + curiosity.

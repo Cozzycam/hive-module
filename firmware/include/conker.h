@@ -170,7 +170,12 @@ struct Conker {
     uint8_t  craft_kind           = 0;           // ArtKind being made
     uint8_t  craft_context        = 0;           // ArtContext at inspiration
     int16_t  craft_ticks          = 0;           // work remaining at the spot
+    uint32_t craft_for            = 0;           // accessory gifts: recipient id
     char     mourning_for[16]     = {};          // who the vigil (and any memorial) honours
+
+    // Worn accessory (0 = none, 1 = petal hat, 2 = seed pendant,
+    // 3 = grass band) — a gift from a best friend, worn for life
+    uint8_t  accessory            = 0;
     bool     daytime_nap          = false;       // this sleep began in the day (a nap, not a night's sleep)
     float    nap_wake_target      = 0.0f;        // tiredness a daytime nap restores down to (short top-up, not drained to empty)
 

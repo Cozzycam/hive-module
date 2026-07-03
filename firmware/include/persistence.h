@@ -42,6 +42,7 @@ struct IdentityRecord {
     float    scale_factor = 3.2f;     // per-conker render scale
     uint8_t  tint_seed    = 0;        // per-conker colour variation (1-255)
     uint8_t  catches      = 0;        // cumulative critters caught (feeds the colony-wide Bug Hunter title, 5-step bar)
+    uint8_t  accessory    = 0;        // worn gift (1=petal hat, 2=seed pendant, 3=grass band)
     bool     is_founder   = false;    // first FOUNDER_COHORT_SIZE hatches
     uint16_t chamber_id   = 0;        // module that owns this worker
     float    last_x       = 0;

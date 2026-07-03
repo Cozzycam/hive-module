@@ -4,7 +4,7 @@ import { Card } from '../components/Card';
 import { HIVE, TOD_PALETTES } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 import { fetchEvents } from '../api/client';
-import { buildGallery, artKindEmoji, artContextPhrase } from '../data/artworks';
+import { buildGallery, artKindEmoji, artKindLabel, artProvenance } from '../data/artworks';
 import type { ColonyEvent } from '../api/types';
 
 // The Gallery — every work the colony's makers have left in the world,
@@ -57,7 +57,7 @@ export function Gallery({ onBack }: { onBack: () => void }) {
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: SIZES.base, fontWeight: 600, color: palette.text }}>
-                {w.maker}{'’'}s {w.kind}
+                {w.maker}{'’'}s {artKindLabel(w.kind)}
                 {w.weathered && (
                   <span style={{ fontWeight: 400, fontSize: SIZES.xs, color: palette.dimText }}>
                     {' '}· crumbled
@@ -65,7 +65,7 @@ export function Gallery({ onBack }: { onBack: () => void }) {
                 )}
               </div>
               <div style={{ fontSize: SIZES.sm, color: palette.text, marginTop: 2 }}>
-                Made {artContextPhrase(w.context, w.honoree)}.
+                Made {artProvenance(w.kind, w.context, w.honoree)}.
               </div>
               <div style={{ fontSize: SIZES.xs, color: palette.dimText, marginTop: 4 }}>
                 {dateStr(w.unix)}

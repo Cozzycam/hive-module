@@ -27,7 +27,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 184;
+constexpr uint32_t FW_VERSION = 185;
 
 namespace Cfg {
 
@@ -122,6 +122,8 @@ constexpr int   CRAFT_MAX_TICKS       = 2400;    // failsafe for the whole trip
 constexpr float ADMIRE_CHANCE_PER_TICK = 0.002f; // idle near art (×taste)
 constexpr float ADMIRE_BOREDOM_RELIEF = 8.0f;
 constexpr float ADMIRE_BOND_NUDGE     = 0.010f;  // toward the maker, if alive
+constexpr float CRAFT_GIFT_CHANCE     = 0.5f;    // muse strikes FOR a giftless best friend
+constexpr float GIFT_BOND_BOOST       = 0.08f;   // receiving a keepsake, both ways
 
 // ---- Night life ----
 // The night is a register, not an absence: owls potter and firefly-watch,
