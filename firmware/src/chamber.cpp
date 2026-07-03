@@ -806,8 +806,14 @@ void Chamber::remove_conker(int idx) {
         } else if (conkers[k].stack_on == last) {
             conkers[k].stack_on = idx;
         }
-        if (conkers[k].zoomie_target == idx)       conkers[k].zoomie_target = -1;
-        else if (conkers[k].zoomie_target == last) conkers[k].zoomie_target = idx;
+        // zoomie_target is only a conker index for ZOOMIES chasers. Other
+        // states repurpose it (FARMING: plot, TO_GARDEN: face) — patching
+        // those here silently corrupted every farming trip and summoned
+        // gardener the moment anyone crossed a border (v193 root-cause).
+        if (conkers[k].state == STATE_ZOOMIES) {
+            if (conkers[k].zoomie_target == idx)       conkers[k].zoomie_target = -1;
+            else if (conkers[k].zoomie_target == last) conkers[k].zoomie_target = idx;
+        }
     }
 }
 

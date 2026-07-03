@@ -491,6 +491,8 @@ void Conker::_on_enter_cell(int cx, int cy, Chamber& ch) {
 // ================================================================
 
 void Conker::_pick_task(Chamber& ch) {
+    if (state == STATE_TO_GARDEN)
+        Serial.printf("[garden] %s re-tasked off the trip mid-walk\r\n", name);
     speed = base_speed();
     idle_ticks_remaining = 0;
     zoomie_target = -1;
@@ -1595,8 +1597,10 @@ void Conker::_do_to_garden(Chamber& ch) {
     int face = zoomie_target;           // repurposed: face toward the garden
     bool face_ok = face >= 0 && face < FACE_COUNT && ch.entries[face] >= 0;
     if (zoomie_ticks <= 0 || !face_ok) {
-        Serial.printf("[garden] %s abandons the trip (%s)\r\n",
-                      name, face_ok ? "took too long" : "border closed");
+        Serial.printf("[garden] %s abandons the trip (face=%d entries=%d ticks=%d)\r\n",
+                      name, face,
+                      (face >= 0 && face < FACE_COUNT) ? ch.entries[face] : -99,
+                      zoomie_ticks);
         state = STATE_IDLE;
         has_target = false;
         has_target_cell = false;
