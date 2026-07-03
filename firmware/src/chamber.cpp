@@ -281,11 +281,16 @@ void Chamber::_detect_proximity_interactions() {
                 auto& a = conkers[ai];
                 auto& b = conkers[bi];
 
-                // Trail protection: don't interrupt foraging workers
+                // Trail protection: don't interrupt foraging workers — or a
+                // summoned gardener walking to the post (v189: greetings were
+                // rolling into stack-hops that reset her to IDLE mid-commute,
+                // so no summoned gardener ever reached the garden)
                 bool a_on_job = (a.state == STATE_TO_FOOD)
-                             || (a.state == STATE_TO_HOME && a.food_carried > 0);
+                             || (a.state == STATE_TO_HOME && a.food_carried > 0)
+                             || (a.state == STATE_TO_GARDEN);
                 bool b_on_job = (b.state == STATE_TO_FOOD)
-                             || (b.state == STATE_TO_HOME && b.food_carried > 0);
+                             || (b.state == STATE_TO_HOME && b.food_carried > 0)
+                             || (b.state == STATE_TO_GARDEN);
 
                 // Trail courtesy: an outbound forager pauses and steps aside
                 // for a loaded carrier. Only the empty-handed one reacts —

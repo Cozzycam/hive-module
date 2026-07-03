@@ -226,8 +226,10 @@ void Conker::tick(Chamber& ch, float dt) {
     if (ch.has_queen) ticks_away = 0;
     else ticks_away++;
 
-    // Return-home timer — crisis overrides animation
-    if (ticks_away >= Cfg::RETURN_HOME_TICKS && state != STATE_TO_HOME) {
+    // Return-home timer — crisis overrides animation. The posted gardener is
+    // exempt: being away IS the job; her needs bring her home instead (v189).
+    if (ticks_away >= Cfg::RETURN_HOME_TICKS && state != STATE_TO_HOME
+            && !(ch.is_garden && ch.posted_gardener == id)) {
         state = STATE_TO_HOME;
         has_target = false;
         has_target_cell = false;
