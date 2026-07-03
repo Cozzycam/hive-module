@@ -2857,12 +2857,15 @@ void Coordinator::_gardener_summon_tick() {
     }
     if (garden_face < 0) return;
 
-    // Best available green thumb takes the walk
+    // Best available green thumb takes the walk. A company-seeker is mid-need
+    // (fulfilling need > gardening) — and the seek tick force-resets state to
+    // IDLE, which silently killed every draft in v188/189 one tick after the
+    // summon, so seekers are both ineligible and defensively cleared below.
     int best = -1;
     float best_gt = 0.0f;
     for (int i = 0; i < chamber.conker_count; i++) {
         const Conker& w = chamber.conkers[i];
-        if (!w.alive || w.departing || w.sleeping) continue;
+        if (!w.alive || w.departing || w.sleeping || w.seeking_company) continue;
         if (w.food_carried > 0) continue;
         if (w.state != STATE_IDLE && w.state != STATE_TO_FOOD) continue;
         float gt = w.green_thumb();
@@ -2878,6 +2881,8 @@ void Coordinator::_gardener_summon_tick() {
     w.has_target = false;
     w.has_target_cell = false;
     w.sleeping = false;
+    w.seeking_company = false;
+    w.seek_ticks = 0;
     w.stack_on = -1;
     w.idle_ticks_remaining = 0;
     _last_gardener_summon_ms = now_ms;
