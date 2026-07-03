@@ -100,6 +100,20 @@ The collection game. Native sizes; rendered ~1.5–2×.
 | Egg | 4×4 | pearly |
 | Seed (growing brood) | 6×6 | 2 growth stages if inspiration strikes |
 
+### D2. Artifacts — the works conkers make (priority 4, alongside D)
+
+Conkers craft objects that stand in the chamber permanently. **Sculptures,
+cairns and paintings follow the same neutral-ramp rule as worker bodies** —
+the engine re-colours each piece into its *maker's* personal hue, so one
+sprite renders as every artist's own work. Memorials keep fixed colours.
+
+| Item | Canvas | Palette | Notes |
+|---|---|---|---|
+| Sculpture ×3 motifs | ~10×12 each | neutral ramp | orb / spire / arch — small statues on plinths. Dignified but charming |
+| Cairn | 10×9 | neutral ramp | stacked stones, hand-balanced feel |
+| Floor painting ×2-3 motifs | 10×10 | neutral ramp | pigment pressed into the ground — pattern, not picture |
+| Memorial stone | 10×10 | **fixed** | a quiet grave marker with a small flower. Carved by a grieving friend, bears a name in the app — the most emotionally loaded sprite in the whole commission. Understated beats ornate |
+
 ### E. Queen — 44×44 (priority 5)
 
 Regal but warm; same neutral-ramp + eye rule as workers. `idle_a`, `idle_b`

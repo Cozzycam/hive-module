@@ -1889,74 +1889,46 @@ void Renderer::_maker_colors(uint8_t tint_seed, uint16_t* main_out, uint16_t* da
                         (uint8_t)(b * dim * 0.55f));
 }
 
-// Artifacts — procedural placeholders until artist sprites land. Each is
-// small, floor-level, and unmistakably its maker's colour.
+// Artifacts — placeholder sprites (v183). Neutral-ramp works go through
+// the same luma remap as conker bodies, so one sprite renders in every
+// maker's colours. Memorials keep their fixed stone palette (tint 0).
 void Renderer::_draw_artworks(const Chamber& ch) {
     for (int i = 0; i < Cfg::MAX_ARTWORKS; i++) {
         const Artwork& a = ch.artworks[i];
         if (!a.active) continue;
         int px = a.x * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
         int py = a.y * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
-        uint16_t hue, hue_dark;
-        _maker_colors(a.maker_tint, &hue, &hue_dark);
-        uint16_t stone = _rgb565(_lerp8(150, 85, _nf), _lerp8(146, 84, _nf), _lerp8(140, 90, _nf));
-        uint16_t stone_dark = _rgb565(_lerp8(110, 62, _nf), _lerp8(107, 61, _nf), _lerp8(102, 66, _nf));
+
+        const uint16_t* spr;
+        int sw, sh;
+        uint8_t tint = a.maker_tint;
+        float scale = 1.4f;
 
         switch (a.kind) {
-        case ART_SCULPTURE: {
-            // Stone pedestal, maker-hue form on top (motif varies the form)
-            _gfx->fillRect(px - 2, py, 5, 3, stone);
-            _gfx->drawFastHLine(px - 2, py + 2, 5, stone_dark);
+        case ART_SCULPTURE:
             switch (a.motif % 3) {
-            case 0:  _gfx->fillCircle(px, py - 3, 2, hue);
-                     _gfx->drawPixel(px - 1, py - 4, hue_dark); break;   // orb
-            case 1:  _gfx->drawFastVLine(px, py - 5, 5, hue);
-                     _gfx->drawPixel(px, py - 6, hue_dark); break;       // spire
-            default: _gfx->drawFastVLine(px - 2, py - 4, 4, hue);
-                     _gfx->drawFastVLine(px + 2, py - 4, 4, hue);
-                     _gfx->drawFastHLine(px - 2, py - 4, 5, hue_dark); break; // arch
+            case 0:  spr = ART_ORB;   sw = ART_ORB_W;   sh = ART_ORB_H;   break;
+            case 1:  spr = ART_SPIRE; sw = ART_SPIRE_W; sh = ART_SPIRE_H; break;
+            default: spr = ART_ARCH;  sw = ART_ARCH_W;  sh = ART_ARCH_H;  break;
             }
-            _mark_dirty(px - 4, py - 7, 9, 11);
+            break;
+        case ART_CAIRN:
+            spr = ART_CAIRN_SPR; sw = ART_CAIRN_SPR_W; sh = ART_CAIRN_SPR_H;
+            break;
+        case ART_PAINTING:
+            if (a.motif % 2) { spr = ART_PAINT_B; sw = ART_PAINT_B_W; sh = ART_PAINT_B_H; }
+            else             { spr = ART_PAINT_A; sw = ART_PAINT_A_W; sh = ART_PAINT_A_H; }
+            scale = 1.2f;   // paintings lie flat, subtler
+            break;
+        default:  // ART_MEMORIAL — fixed stone palette, never re-hued
+            spr = ART_MEMORIAL_SPR; sw = ART_MEMORIAL_SPR_W; sh = ART_MEMORIAL_SPR_H;
+            tint = 0;
             break;
         }
-        case ART_CAIRN: {
-            _gfx->fillRoundRect(px - 4, py, 8, 3, 1, stone);
-            _gfx->fillRoundRect(px - 3, py - 3, 6, 3, 1, stone_dark);
-            _gfx->fillRoundRect(px - 1, py - 5, 3, 2, 1, hue);   // maker's capstone
-            _mark_dirty(px - 5, py - 6, 11, 10);
-            break;
-        }
-        case ART_PAINTING: {
-            // Pigment laid into the floor — motif picks the pattern
-            switch (a.motif % 3) {
-            case 0:  // dots
-                _gfx->drawPixel(px - 2, py - 2, hue); _gfx->drawPixel(px + 2, py - 2, hue);
-                _gfx->drawPixel(px, py, hue_dark);
-                _gfx->drawPixel(px - 2, py + 2, hue); _gfx->drawPixel(px + 2, py + 2, hue);
-                break;
-            case 1:  // diagonal strokes
-                for (int d = -2; d <= 2; d++) _gfx->drawPixel(px + d, py + d, hue);
-                _gfx->drawPixel(px - 2, py + 2, hue_dark); _gfx->drawPixel(px + 2, py - 2, hue_dark);
-                break;
-            default: // ring
-                _gfx->drawCircle(px, py, 3, hue);
-                _gfx->drawPixel(px, py, hue_dark);
-                break;
-            }
-            _mark_dirty(px - 4, py - 4, 9, 9);
-            break;
-        }
-        case ART_MEMORIAL: {
-            // A quiet stone with the maker's mark and one pale flower
-            _gfx->fillRoundRect(px - 3, py - 3, 7, 6, 2, stone);
-            _gfx->drawFastHLine(px - 2, py + 2, 5, stone_dark);
-            _gfx->drawPixel(px, py - 1, hue);                    // the mark
-            _gfx->drawPixel(px + 3, py - 4, _rgb565(240, 238, 225));  // the flower
-            _gfx->drawPixel(px + 3, py - 3, _rgb565(_lerp8(95, 45, _nf), _lerp8(150, 85, _nf), _lerp8(75, 50, _nf)));
-            _mark_dirty(px - 4, py - 5, 10, 10);
-            break;
-        }
-        }
+
+        _draw_sprite_scaled_tinted(px, py - 3, spr, sw, sh, scale, false, tint);
+        int dw = (int)(sw * scale), dh = (int)(sh * scale);
+        _mark_dirty(px - dw / 2 - 1, py - 3 - dh / 2 - 1, dw + 3, dh + 3);
     }
 }
 
@@ -1973,32 +1945,23 @@ void Renderer::_draw_plants(const Chamber& ch) {
         uint16_t soil = _rgb565(_lerp8(105, 60, _nf), _lerp8(82, 48, _nf), _lerp8(58, 38, _nf));
         _gfx->fillRoundRect(px - 6, py - 3, 12, 7, 2, soil);
 
-        uint16_t stem = _rgb565(_lerp8(95, 45, _nf), _lerp8(160, 85, _nf), _lerp8(80, 50, _nf));
-        uint16_t leaf = _rgb565(_lerp8(120, 60, _nf), _lerp8(190, 100, _nf), _lerp8(95, 60, _nf));
-        uint16_t berry = _rgb565(_lerp8(235, 130, _nf), _lerp8(120, 70, _nf), _lerp8(90, 55, _nf));
-
         switch (p.stage) {
         case PLOT_SPROUT:
-            _gfx->drawFastVLine(px, py - 3, 3, stem);
-            _gfx->drawPixel(px - 1, py - 3, leaf);
+            _draw_sprite_scaled_tinted(px, py - 2, PLANT_SPROUT,
+                                       PLANT_SPROUT_W, PLANT_SPROUT_H, 1.2f, false, 0);
             break;
         case PLOT_GROWING:
-            _gfx->drawFastVLine(px, py - 6, 6, stem);
-            _gfx->drawPixel(px - 1, py - 4, leaf);
-            _gfx->drawPixel(px + 1, py - 5, leaf);
-            _gfx->drawPixel(px - 2, py - 3, leaf);
+            _draw_sprite_scaled_tinted(px, py - 4, PLANT_GROWING,
+                                       PLANT_GROWING_W, PLANT_GROWING_H, 1.3f, false, 0);
             break;
         case PLOT_MATURE:
-            _gfx->drawFastVLine(px, py - 8, 8, stem);
-            _gfx->fillRect(px - 2, py - 8, 5, 3, leaf);
-            _gfx->drawPixel(px - 1, py - 9, berry);
-            _gfx->drawPixel(px + 1, py - 8, berry);
-            _gfx->drawPixel(px, py - 6, berry);
+            _draw_sprite_scaled_tinted(px, py - 5, PLANT_MATURE,
+                                       PLANT_MATURE_W, PLANT_MATURE_H, 1.4f, false, 0);
             break;
         default:
             break;   // bare soil
         }
-        _mark_dirty(px - 7, py - 10, 15, 15);
+        _mark_dirty(px - 9, py - 14, 19, 22);
     }
 }
 
