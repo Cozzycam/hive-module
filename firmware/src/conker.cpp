@@ -518,10 +518,13 @@ void Conker::_pick_task(Chamber& ch) {
     // (no food store here) or lonely with no company around steps down and
     // heads home; the vacancy is advertised via pop sync and the queen sends
     // a replacement. Priority: carrying food > fulfilling need > gardening > idling.
+    // (No famine gate here: the satellite's local food_store is always ~0 so
+    // its food_pressure() reads as permanent famine — v190 field bug that
+    // turned every arriving gardener straight home. The queen famine-gates
+    // the summons; local hunger below still brings the gardener home.)
     bool posted_here = false;
     if (ch.is_garden && !ch.has_queen
-            && green_thumb() >= Cfg::GREEN_THUMB_MIN
-            && ch.colony->food_pressure() <= Cfg::FAMINE_SLOWDOWN_PRESSURE) {
+            && green_thumb() >= Cfg::GREEN_THUMB_MIN) {
         bool hungry = hunger > Cfg::GARDENER_HUNGER_HOME;
         if (hungry || _wants_company_awake(ch)) {
             if (ch.posted_gardener == id) {
@@ -1592,6 +1595,8 @@ void Conker::_do_to_garden(Chamber& ch) {
     int face = zoomie_target;           // repurposed: face toward the garden
     bool face_ok = face >= 0 && face < FACE_COUNT && ch.entries[face] >= 0;
     if (zoomie_ticks <= 0 || !face_ok) {
+        Serial.printf("[garden] %s abandons the trip (%s)\r\n",
+                      name, face_ok ? "took too long" : "border closed");
         state = STATE_IDLE;
         has_target = false;
         has_target_cell = false;
