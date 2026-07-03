@@ -314,11 +314,18 @@ static void _on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int l
         g_tod.phase         = static_cast<DayPhase>(ss->phase);
         g_tod.local_hour    = ss->local_hour;
         g_tod.local_minute  = ss->local_minute;
-        // Weather fields (added later — check length for backwards compat)
-        if (len >= (int)sizeof(StateSyncMessage)) {
+        // Weather fields (added later — check length for backwards compat).
+        // Gated at the unix_time offset so appending unix_time didn't move the
+        // bar for weather.
+        if (len >= (int)offsetof(StateSyncMessage, unix_time)) {
             g_weather.condition     = static_cast<WeatherCondition>(ss->weather);
             g_weather.temperature_c = ss->temperature_c;
             g_weather.valid         = true;
+        }
+        // Wall clock (appended v196). Without it a queen-synced satellite freezes
+        // g_tod.unix_time at boot — crops stop aging, day counter stalls.
+        if (len >= (int)sizeof(StateSyncMessage) && ss->unix_time > 0) {
+            g_tod.unix_time = ss->unix_time;
         }
         _state_sync_last_ms = millis();
     } else if (msg_type == TOPO_POP_SYNC

@@ -1300,7 +1300,12 @@ void Conker::_do_zoomies(Chamber& ch) {
             needs[NEED_BOREDOM] -= Cfg::DISCOVERY_BOREDOM_RELIEF;
             if (needs[NEED_BOREDOM] < 0.0f) needs[NEED_BOREDOM] = 0.0f;
             afterglow_ticks = Cfg::AFTERGLOW_TICKS;   // a find is a delight
-            if (catches < 255) catches++;             // earns the Catcher trait
+            // A firefly is a night whimsy, not a bug you hunt — it still counts
+            // as a discovery (sparkle + after-dark notification, the whole point
+            // of the chase) but NOT toward the Bug Hunter title. Fireflies spawn
+            // ~17x faster than real critters, so counting them here pumped the
+            // catch tally and flipped the crown constantly. Only beetle/butterfly/
+            // worm catches (chamber.cpp) earn the Catcher trait now.
             Event fev;
             fev.type = EVT_DISCOVERY;
             fev.tick = ch.tick_num;

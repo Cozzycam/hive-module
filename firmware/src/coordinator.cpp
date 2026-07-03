@@ -319,6 +319,7 @@ void Coordinator::_broadcast_state() {
     msg.local_minute = g_tod.local_minute;
     msg.weather      = g_weather.valid ? g_weather.condition : 0;
     msg.temperature_c = g_weather.temperature_c;
+    msg.unix_time    = g_tod.unix_time;
 
     for (int f = 0; f < FACE_COUNT; f++) {
         if (chamber.entries[f] >= 0) {

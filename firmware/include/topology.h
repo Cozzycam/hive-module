@@ -143,6 +143,10 @@ struct __attribute__((packed)) StateSyncMessage {
     int      local_minute;
     uint8_t  weather;        // WeatherCondition enum
     float    temperature_c;
+    // Appended v196 — the wall clock. Satellites skip their own time tick while
+    // queen-synced, so without this g_tod.unix_time freezes at boot: crops never
+    // age (_tick_plants) and the day counter stalls. Length-gated on receive.
+    uint32_t unix_time;
 };
 
 // Boundary pheromone sync message — uint8_t-encoded values (0-255 maps to 0-20.0)
