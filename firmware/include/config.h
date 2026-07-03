@@ -28,7 +28,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 200;
+constexpr uint32_t FW_VERSION = 201;
 
 namespace Cfg {
 
@@ -93,7 +93,8 @@ constexpr uint32_t WX_CHALLENGE_COOLDOWN_MS = 3UL * 60UL * 60UL * 1000UL; // per
 constexpr float    WX_CHALLENGE_BURN_SCALE  = 0.35f;  // burn mult = 1 + scale * severity
 
 // ---- Garden module role ----
-constexpr float GARDEN_CRITTER_MULT  = 3.0f;       // critter spawn bias vs plain chamber
+constexpr float GARDEN_CRITTER_MULT  = 2.0f;       // critter spawn bias vs plain chamber
+                                                   // (garden ~6 finds/day vs plain ~3)
 
 // Farming (garden module only). Crops grow on WALL-CLOCK time (lifecycle
 // clock, not sim ticks). Balance target: a well-tended garden covers
@@ -431,7 +432,14 @@ constexpr int   SOCIAL_SEEK_TIMEOUT_TICKS = 1200; // give up groggy-seeking and 
 // conker to reach it "discovers" it — a burst of novelty that relieves boredom
 // and makes a "Dahlia found a beetle" moment. Reuses the firefly drift model.
 constexpr int   MAX_CRITTERS             = 2;
-constexpr float CRITTER_SPAWN_CHANCE     = 0.0012f; // per tick (daytime), gated by count
+// Spawn budget (v201): critters seek conkers and get found within seconds,
+// so finds/day ≈ spawns/day ≈ chance x 8tps x ~16 daylight hours (460,800
+// day-ticks). Design intent: a HANDFUL of finds a day colony-wide — visits
+// are occasions, the Bug Hunter bar takes real weeks to cross, and rare
+// guests (ladybird ~5% weight, dragonfly on warm garden days) land every
+// few days. The old 0.0012 worked out to ~550 finds/day per module — the
+// tally inflated invisibly behind the 10-min diary throttle.
+constexpr float CRITTER_SPAWN_CHANCE     = 0.0000065f; // ~3/day plain module
 constexpr int   CRITTER_TTL_MIN          = 320;     // ~40s — wanders off if undiscovered
 constexpr int   CRITTER_TTL_MAX          = 720;     // ~90s
 constexpr float CRITTER_SPEED_BEETLE     = 0.065f;
@@ -441,8 +449,9 @@ constexpr float CRITTER_SPEED_MOTH       = 0.11f;
 constexpr float CRITTER_SPEED_SNAIL      = 0.02f;   // takes its time (double TTL)
 constexpr float CRITTER_SPEED_LADYBIRD   = 0.06f;
 constexpr float CRITTER_SPEED_DRAGONFLY  = 0.22f;   // darts
-// Night visitors (moths) are rarer than the daytime parade
-constexpr float CRITTER_NIGHT_SPAWN_CHANCE = 0.0004f;
+// Night visitors (moths) are rarer than the daytime parade — about one
+// flutters in every other clear night (v201 rescale, same logic as above)
+constexpr float CRITTER_NIGHT_SPAWN_CHANCE = 0.000004f;
 constexpr float CRITTER_SEEK_CONKER      = 0.06f;   // homes toward the nearest guy
                                                     // (must beat the wander jitter
                                                     // or it never reaches the cluster)
