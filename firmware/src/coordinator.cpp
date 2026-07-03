@@ -2698,6 +2698,45 @@ void Coordinator::_trait_tick(uint32_t tick_num) {
         if (rec->traits != prev_traits) rec->dirty = true;
     }
 
+    // Deflation: the tally is unbounded on a uint8 — a sunny week pegs the
+    // whole roster at 255, the +5 bar lands above the cap, and the title
+    // freezes (the v199 pathology, banks re-pegging within days at ~4
+    // counting finds/hour). When the leader nears the cap, halve EVERYONE
+    // so ordering survives but headroom returns. Only when every living
+    // conker is home (usually overnight): the catch sync above is
+    // bidirectional-max, so a commuter's un-halved live copy would
+    // re-inflate its bank the moment it crossed back.
+    {
+        IdentityRecord* recs = registry.living_records();
+        int rn = registry.living_count();
+        uint8_t peak = 0;
+        for (int i = 0; i < rn; i++)
+            if (recs[i].catches > peak) peak = recs[i].catches;
+        if (peak > 200) {
+            bool all_home = true;
+            for (int i = 0; i < rn && all_home; i++) {
+                bool here = false;
+                for (int c = 0; c < chamber.conker_count; c++) {
+                    if (chamber.conkers[c].alive && chamber.conkers[c].id == recs[i].id) {
+                        here = true;
+                        break;
+                    }
+                }
+                if (!here) all_home = false;
+            }
+            if (all_home) {
+                for (int i = 0; i < rn; i++) {
+                    if (!recs[i].catches) continue;
+                    recs[i].catches /= 2;
+                    recs[i].dirty = true;
+                }
+                for (int c = 0; c < chamber.conker_count; c++)
+                    chamber.conkers[c].catches /= 2;
+                Serial.println("[trait] catch tallies halved (cap deflation)");
+            }
+        }
+    }
+
     _catcher_resolve(tick_num);
 
     // Wishes: at most one active colony-wide. A conker with a genuinely
@@ -2998,6 +3037,33 @@ void Coordinator::_catcher_resolve(uint32_t tick_num) {
         }
     }
 
+    // The crown sits for at least a day: challenges resolve at most once per
+    // 24h. Persisted — the reboot shuffle used to hand the badge out for
+    // free while the roster was still re-homing. Death is exempt: the hold
+    // only applies while a living holder is defending (holder_idx >= 0), so
+    // a vacated title refills immediately.
+    static uint32_t _last_award_unix = UINT32_MAX;   // UINT32_MAX = not yet loaded
+    if (_last_award_unix == UINT32_MAX) {
+        Preferences prefs;
+        prefs.begin("hive", true);
+        _last_award_unix = prefs.getULong("catcher_unix", 0);
+        prefs.end();
+    }
+    if (_last_award_unix == 0 && g_tod.unix_time > 1000000) {
+        // First run under this rule: start the clock now so a freshly
+        // flashed board doesn't hand the title out in its boot shuffle.
+        _last_award_unix = g_tod.unix_time;
+        Preferences prefs;
+        prefs.begin("hive", false);
+        prefs.putULong("catcher_unix", _last_award_unix);
+        prefs.end();
+    }
+    if (holder_idx >= 0 && _last_award_unix != 0
+        && g_tod.unix_time > _last_award_unix
+        && g_tod.unix_time - _last_award_unix < 24UL * 3600UL) {
+        return;
+    }
+
     // The bar is the next 5-multiple strictly above the holder's banked
     // catches (so the holder never qualifies as their own challenger), or 5
     // when the title is currently vacant.
@@ -3032,6 +3098,13 @@ void Coordinator::_catcher_resolve(uint32_t tick_num) {
     if (rec) {
         rec->traits |= TRAIT_CATCHER;
         rec->dirty = true;
+        if (g_tod.unix_time > 1000000) {
+            _last_award_unix = g_tod.unix_time;
+            Preferences prefs;
+            prefs.begin("hive", false);
+            prefs.putULong("catcher_unix", _last_award_unix);
+            prefs.end();
+        }
         JournalEntry je = {};
         je.tick = tick_num;
         je.unix_time = g_tod.unix_time;
