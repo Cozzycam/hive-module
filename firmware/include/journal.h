@@ -33,6 +33,7 @@ enum JournalType : uint8_t {
     JEVT_CROP_SOWN,   // a green-thumbed farmer planted a garden plot
     JEVT_CRAFTED,     // a maker finished a work (kind/context/honoree in payload)
     JEVT_ART_WEATHERED, // an old work crumbled to make room for a new one
+    JEVT_WISH_GRANTED, // the keeper granted a conker's wish (kind in payload)
     JEVT_COUNT
 };
 
@@ -67,6 +68,7 @@ struct JournalEntry {
         struct { uint8_t kind; uint8_t participants; } play;  // kind 0=parade
         struct { uint8_t critter; } discovery;  // CritterKind found
         struct { uint8_t kind; uint8_t context; char honoree[16]; } crafted;
+        struct { uint8_t kind; } wish;   // 1=treat, 2=boop
     };
 };
 

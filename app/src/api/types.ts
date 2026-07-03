@@ -7,6 +7,7 @@ export interface ColonySnapshot {
   fw_version?: number;   // module firmware version (fw v98+)
   founded_unix: number;
   now_unix: number;
+  wish?: { id: number; kind: 'treat' | 'boop'; name?: string };  // v186+
   world: World;
   population: Population;
   food: Food;
@@ -168,7 +169,7 @@ export type EventType =
   | 'tended_by_assigned' | 'bond_formed' | 'bond_broken'
   | 'challenge_start' | 'challenge_end' | 'trait_earned'
   | 'mourning' | 'play' | 'discovery' | 'became_best_friends'
-  | 'crop_sown' | 'crafted' | 'art_weathered';
+  | 'crop_sown' | 'crafted' | 'art_weathered' | 'wish_granted';
 
 export interface ColonyEvent {
   tick: number;

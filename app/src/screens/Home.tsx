@@ -116,6 +116,11 @@ export function Home({ onNavigate }: HomeProps) {
         <div style={{ fontSize: SIZES.base, color: tod.dimText }}>{'›'}</div>
       </Card>
 
+      {/* A wish — one conker wants something the keeper can grant */}
+      {snapshot.wish && (
+        <WishCard wish={snapshot.wish} colonyId={colonyId} tod={tod} />
+      )}
+
       {/* The Saga — the colony's story so far */}
       <Card
         style={{ background: tod.cardBg, display: 'flex', alignItems: 'center', gap: 12 }}
@@ -341,5 +346,53 @@ function StatRow({ label, value, color, dimColor }: {
       <div style={{ fontSize: SIZES.xs, color: dimColor }}>{label}</div>
       <div style={{ fontSize: SIZES.md, fontWeight: 600, color }}>{value}</div>
     </div>
+  );
+}
+
+// A conker's wish, surfaced for the keeper — grant it and the kindness
+// lands on that one wee guy (and in their story).
+function WishCard({ wish, colonyId, tod }: {
+  wish: { id: number; kind: 'treat' | 'boop'; name?: string };
+  colonyId: string | null;
+  tod: { cardBg: string; text: string; dimText: string };
+}) {
+  const [state, setState] = useState<'idle' | 'sending' | 'granted' | 'failed'>('idle');
+  const name = wish.name || nameFromId(wish.id);
+  const wants = wish.kind === 'treat' ? 'is craving a treat' : 'wants a boop';
+
+  const grant = async () => {
+    if (!colonyId || state === 'sending' || state === 'granted') return;
+    setState('sending');
+    const ok = await sendCommand(colonyId, 'grant_wish', { id: wish.id });
+    setState(ok ? 'granted' : 'failed');
+  };
+
+  return (
+    <Card style={{ background: '#F3E9D2', borderLeft: `3px solid ${HIVE.accent}`, display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ fontSize: 24, minWidth: 32, textAlign: 'center' }}>{'\u{1F4AD}'}</div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: SIZES.base, fontWeight: 600, color: tod.text }}>
+          {name} {wants}
+        </div>
+        <div style={{ fontSize: SIZES.xs, color: tod.dimText }}>
+          {state === 'granted' ? 'Granted — they felt that. ✨'
+            : state === 'failed' ? 'Couldn’t reach the colony — try again.'
+            : 'A little kindness goes in the diary.'}
+        </div>
+      </div>
+      {state !== 'granted' && (
+        <button
+          onClick={grant}
+          disabled={state === 'sending'}
+          style={{
+            padding: '8px 14px', borderRadius: 10, border: 'none',
+            background: HIVE.accent, color: HIVE.white, fontSize: SIZES.sm,
+            fontWeight: 600, cursor: 'pointer', opacity: state === 'sending' ? 0.6 : 1,
+          }}
+        >
+          {state === 'sending' ? '…' : 'Grant'}
+        </button>
+      )}
+    </Card>
   );
 }

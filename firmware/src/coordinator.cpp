@@ -1614,6 +1614,49 @@ bool Coordinator::cmd_gift_care_package(uint16_t target_id) {
 #endif
 }
 
+// The keeper answers a wish: the effect lands on that ONE conker (a
+// personal kindness, not a colony broadcast), it's journaled, and the
+// glass announces it.
+bool Coordinator::cmd_grant_wish(uint32_t id) {
+    if (wish.kind == 0 || wish.conker_id != id) return false;
+    for (int i = 0; i < chamber.conker_count; i++) {
+        Conker& w = chamber.conkers[i];
+        if (w.id != id || !w.alive) continue;
+
+        if (wish.kind == 1) {           // a treat, hand-delivered
+            w.hunger -= 50.0f;
+            if (w.hunger < 0.0f) w.hunger = 0.0f;
+        } else {                        // a boop from beyond the glass
+            w.needs[NEED_BOREDOM] -= Cfg::BOREDOM_BOOP_RELIEF;
+            if (w.needs[NEED_BOREDOM] < 0.0f) w.needs[NEED_BOREDOM] = 0.0f;
+            if (w.state == STATE_IDLE && w.stack_on < 0
+                    && w.anim_remaining_ticks == 0) {
+                w.anim_type = LG_ANIM_NOTICE;
+                w.anim_remaining_ticks = 12;
+                w.facing_dx = 0.0f; w.facing_dy = 1.0f;
+                w.last_dx = 0.0f;   w.last_dy = 1.0f;
+                w.has_target_cell = false;
+            }
+        }
+        w.afterglow_ticks = Cfg::AFTERGLOW_TICKS;
+
+        JournalEntry je = {};
+        je.tick = chamber.tick_num;
+        je.unix_time = g_tod.unix_time;
+        je.type = JEVT_WISH_GRANTED;
+        je.lilguy_id = w.id;
+        strlcpy(je.who, w.name, sizeof(je.who));
+        je.wish.kind = wish.kind;
+        journal.emit(je);
+
+        Serial.printf("[wish] granted: %s (%s)\r\n", w.name,
+                      wish.kind == 1 ? "treat" : "boop");
+        wish = Wish{};
+        return true;
+    }
+    return false;
+}
+
 // App pins → followed list. The renderer draws a small star over these
 // conkers so a favourite stays findable at a glance (readability lever as
 // the population grows). Persisted so it survives reboots.
@@ -2646,6 +2689,39 @@ void Coordinator::_trait_tick(uint32_t tick_num) {
     }
 
     _catcher_resolve(tick_num);
+
+    // Wishes: at most one active colony-wide. A conker with a genuinely
+    // unmet need sometimes wishes for something the keeper can grant —
+    // the app surfaces it, the keeper answers it, the diary remembers it.
+    {
+        uint32_t now_ms = millis();
+        // Expire an unanswered wish after 2h (they get over it)
+        if (wish.kind != 0 && now_ms - wish.set_ms > 7200000UL) {
+            wish = Wish{};
+        }
+        if (wish.kind == 0) {
+            for (int i = 0; i < chamber.conker_count; i++) {
+                Conker& w = chamber.conkers[i];
+                if (w.id == 0 || !w.alive) continue;
+                uint8_t kind = 0;
+                if (w.hunger > 55.0f) kind = 1;                          // a treat
+                else if (w.needs[NEED_BOREDOM] > 0.75f) kind = 2;        // a boop
+                if (kind != 0 && g_rng.rand_float() < 0.25f) {
+                    wish.conker_id = w.id;
+                    wish.kind = kind;
+                    wish.set_ms = now_ms;
+                    break;
+                }
+            }
+        } else {
+            // The wisher may have died or crossed away — let it lapse
+            bool present = false;
+            for (int i = 0; i < chamber.conker_count; i++)
+                if (chamber.conkers[i].id == wish.conker_id
+                        && chamber.conkers[i].alive) { present = true; break; }
+            if (!present) wish = Wish{};
+        }
+    }
 
     // Milestone decor unlocks — monotonic during runtime; recomputed from
     // living records on boot (a keepsake held only by the departed can

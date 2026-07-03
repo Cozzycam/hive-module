@@ -137,6 +137,8 @@ export function buildLifeStory(
   let lastSowUnix = 0;
   let works = 0;
   let lastWorkUnix = 0;
+  let wishes = 0;
+  let lastWishUnix = 0;
 
   for (const ev of events) {
     const data = ev.data as Record<string, unknown>;
@@ -213,6 +215,11 @@ export function buildLifeStory(
         }
         break;
       }
+      case 'wish_granted': {
+        wishes++;
+        lastWishUnix = ev.unix;
+        break;
+      }
       case 'death':
         story.push({
           unix: ev.unix,
@@ -261,6 +268,14 @@ export function buildLifeStory(
       icon: '\u{1F3A8}',
       text: works === 1 ? 'Made something that will outlast the day.'
                         : `Has made ${works} works — the chamber carries their colours.`,
+    });
+  }
+  if (wishes > 0) {
+    story.push({
+      unix: lastWishUnix,
+      icon: '\u{1F4AD}',
+      text: wishes === 1 ? 'Once made a wish — and the keeper answered.'
+                         : `Has had ${wishes} wishes answered by the keeper.`,
     });
   }
 

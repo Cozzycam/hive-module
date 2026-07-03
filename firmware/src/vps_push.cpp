@@ -330,6 +330,9 @@ static void _poll_commands(Coordinator& coord) {
             // until then; after the reboot the manifest reads "already current"
             // so it acks without re-flashing — no loop.
             vps_ota_update(coord);
+        } else if (strcmp(type, "grant_wish") == 0) {
+            uint32_t wid = cmd["payload"]["id"] | 0;
+            coord.cmd_grant_wish(wid);
         } else if (strcmp(type, "set_followed") == 0) {
             // App pins — star these conkers on the glass
             uint32_t ids[Chamber::MAX_FOLLOWED];

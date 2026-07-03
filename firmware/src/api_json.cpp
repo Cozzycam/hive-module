@@ -92,6 +92,19 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
     doc["founded_unix"] = coord.registry.manifest().founded_unix;
     doc["now_unix"] = g_tod.unix_time;
 
+    // Active wish, if a conker has one the keeper could grant
+    if (coord.wish.kind != 0) {
+        JsonObject ws = doc["wish"].to<JsonObject>();
+        ws["id"] = coord.wish.conker_id;
+        ws["kind"] = (coord.wish.kind == 1) ? "treat" : "boop";
+        for (int i = 0; i < coord.chamber.conker_count; i++) {
+            if (coord.chamber.conkers[i].id == coord.wish.conker_id) {
+                ws["name"] = coord.chamber.conkers[i].name;
+                break;
+            }
+        }
+    }
+
     // World
     JsonObject w = doc["world"].to<JsonObject>();
     JsonObject tod = w["tod"].to<JsonObject>();

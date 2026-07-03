@@ -89,6 +89,11 @@ public:
     bool cmd_set_floor_tint(uint16_t target_id, uint8_t r, uint8_t g, uint8_t b);
     bool cmd_gift_care_package(uint16_t target_id);
     void cmd_set_followed(const uint32_t* ids, int n);  // app pins → on-glass stars
+    bool cmd_grant_wish(uint32_t id);                   // keeper grants the active wish
+
+    // The active wish (at most one colony-wide; scarcity keeps it meaningful)
+    struct Wish { uint32_t conker_id = 0; uint8_t kind = 0; uint32_t set_ms = 0; };
+    Wish wish;
 
     // Journal — called from main.cpp with drained EventBus events
     void _journal_from_bus_events(const Event* events, int count, uint32_t tick_num);

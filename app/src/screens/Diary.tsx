@@ -437,6 +437,13 @@ function formatEvent(ev: ColonyEvent, rosterNames: Map<number, string>): { icon:
         icon: '\u{1F342}',
         description: `${name}'s old ${String(data.kind || 'work')} finally crumbled away.`,
       };
+    case 'wish_granted':
+      return {
+        icon: '\u{1F4AD}',
+        description: data.kind === 'treat'
+          ? `${name} wished for a treat — and the keeper provided.`
+          : `${name} wanted a boop — and got one, from beyond the glass.`,
+      };
     case 'sow_group' as EventType: {
       const count = (ev as unknown as { count: number }).count;
       const who = String(data.who || '');
