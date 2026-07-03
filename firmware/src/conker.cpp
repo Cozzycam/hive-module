@@ -401,6 +401,7 @@ void Conker::tick(Chamber& ch, float dt) {
             case STATE_MOURNING:    _do_mourning(ch);    break;
             case STATE_FARMING:     _do_farming(ch);     break;
             case STATE_CRAFTING:    _do_crafting(ch);    break;
+            case STATE_TO_GARDEN:   _do_to_garden(ch);   break;
             default:                _do_idle(ch);        break;
         }
     }
@@ -508,7 +509,30 @@ void Conker::_pick_task(Chamber& ch) {
         has_target_cell = false;
         return;
     }
-    if (!ch.has_queen) {
+
+    // The garden post: a green thumb on the garden module holds (or takes)
+    // the post instead of being swept home by the no-queen rule below. Their
+    // own needs still outrank the job — a posted gardener too hungry to work
+    // (no food store here) or lonely with no company around steps down and
+    // heads home; the vacancy is advertised via pop sync and the queen sends
+    // a replacement. Priority: carrying food > fulfilling need > gardening > idling.
+    bool posted_here = false;
+    if (ch.is_garden && !ch.has_queen
+            && green_thumb() >= Cfg::GREEN_THUMB_MIN
+            && ch.colony->food_pressure() <= Cfg::FAMINE_SLOWDOWN_PRESSURE) {
+        bool hungry = hunger > Cfg::GARDENER_HUNGER_HOME;
+        if (hungry || _wants_company_awake(ch)) {
+            if (ch.posted_gardener == id) {
+                ch.garden_post_release(id);
+                Serial.printf("[garden] %s steps down from the post (%s)\r\n",
+                              name, hungry ? "hungry" : "lonely");
+            }
+        } else if (ch.garden_post_claim(id)) {
+            posted_here = true;
+        }
+    }
+
+    if (!posted_here && !ch.has_queen) {
         state = STATE_TO_HOME;
         has_target = false;
         has_target_cell = false;
@@ -585,6 +609,34 @@ void Conker::_pick_task(Chamber& ch) {
                                                    Cfg::IDLE_REST_MAX_TICKS);
             return;
         }
+    }
+
+    // Gardening: the posted gardener works the plots by day — a real job,
+    // not an idle pastime. It yields to hauling food and to their own needs
+    // (both handled above) and pre-empts idling. With nothing to sow they
+    // stay at ease on the post rather than being drafted into other work.
+    if (posted_here) {
+        if (g_tod.phase == PHASE_DAY) {
+            int plot = ch.free_plot();
+            if (plot >= 0) {
+                state = STATE_FARMING;
+                zoomie_target = plot;              // repurposed: plot index
+                zoomie_ticks = Cfg::FARM_MAX_TICKS;
+                has_target = false;
+                has_target_cell = false;
+                return;
+            }
+        }
+        stack_on = was_stacked;
+        sleeping = was_sleeping;
+        state = STATE_IDLE;
+        has_target = false;
+        has_target_cell = false;
+        idle_ticks_remaining = g_rng.rand_int(Cfg::IDLE_REST_MIN_TICKS,
+                                               Cfg::IDLE_REST_MAX_TICKS);
+        idle_repoll_tick = Cfg::IDLE_REPOLL_INTERVAL;
+        if (was_stacked < 0 && !sleeping) _pick_idle_microstate(ch);
+        return;
     }
 
     // Idle budget — gates all non-critical tasks.
@@ -1520,6 +1572,33 @@ void Conker::_do_farming(Chamber& ch) {
     idle_repoll_tick = Cfg::IDLE_REPOLL_INTERVAL;
 }
 
+// Summoned to fill the vacant garden post: walk to the entry cell of the
+// garden-ward face — the edge-crossing scan hands us over the moment we
+// stand on it, and this state rides the transfer. On the garden side the
+// next _pick_task claims the post. Fails soft back to idle if the face
+// closes or the trip runs long.
+void Conker::_do_to_garden(Chamber& ch) {
+    zoomie_ticks--;   // repurposed: trip failsafe timer
+    if (ch.is_garden) {                 // arrived — settle in, claim on repoll
+        state = STATE_IDLE;
+        has_target = false;
+        has_target_cell = false;
+        idle_ticks_remaining = 0;
+        idle_repoll_tick = 0;
+        return;
+    }
+    int face = zoomie_target;           // repurposed: face toward the garden
+    bool face_ok = face >= 0 && face < FACE_COUNT && ch.entries[face] >= 0;
+    if (zoomie_ticks <= 0 || !face_ok) {
+        state = STATE_IDLE;
+        has_target = false;
+        has_target_cell = false;
+        idle_repoll_tick = Cfg::IDLE_REPOLL_INTERVAL;
+        return;
+    }
+    _step_toward_cell(Cfg::ENTRY_X[face], Cfg::ENTRY_Y[face], ch);
+}
+
 void Conker::_tick_idle(Chamber& ch) {
     idle_ticks_remaining--;
     idle_micro_ticks--;
@@ -1608,23 +1687,8 @@ void Conker::_tick_idle(Chamber& ch) {
         }
     }
 
-    // A steady pair of hands drifts to the allotment: a green-thumbed idler
-    // on the garden module heads off to sow an empty plot by day
-    if (ch.is_garden && g_tod.phase == PHASE_DAY && !sleeping && stack_on < 0
-            && anim_type == LG_ANIM_NONE
-            && green_thumb() >= Cfg::GREEN_THUMB_MIN
-            && g_rng.rand_float() < Cfg::SOW_CHANCE_PER_TICK * green_thumb()) {
-        int plot = ch.free_plot();
-        if (plot >= 0) {
-            state = STATE_FARMING;
-            zoomie_target = plot;              // repurposed: plot index
-            zoomie_ticks = Cfg::FARM_MAX_TICKS;
-            has_target = false;
-            has_target_cell = false;
-            idle_ticks_remaining = 0;
-            return;
-        }
-    }
+    // (Sowing is no longer an idle roll — the posted gardener picks it up as
+    // a job in _pick_task: carrying food > fulfilling need > gardening > idling.)
 
     // Joy sprint: a well-fed daytime idler sometimes just takes off — pure
     // high spirits, no partner needed. Bystanders may get swept into the
@@ -2103,7 +2167,7 @@ bool Conker::_target_still_valid(Chamber& ch) {
             || state == STATE_TO_HOME || state == STATE_CANNIBALIZE
             || state == STATE_ZOOMIES || state == STATE_EATING
             || state == STATE_MOURNING || state == STATE_FARMING
-            || state == STATE_CRAFTING)
+            || state == STATE_CRAFTING || state == STATE_TO_GARDEN)
         return true;
     if (!has_target) return false;
     if (state == STATE_TEND_QUEEN) {

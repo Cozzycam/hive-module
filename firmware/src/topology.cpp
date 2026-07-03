@@ -91,6 +91,7 @@ static volatile uint32_t _remote_pop_ms[FACE_COUNT] = {0, 0, 0, 0};
 static volatile uint16_t _remote_gatherers[FACE_COUNT] = {0, 0, 0, 0};
 static volatile uint8_t  _remote_role[FACE_COUNT] = {0, 0, 0, 0};
 static volatile uint32_t _remote_tint[FACE_COUNT] = {0, 0, 0, 0};
+static volatile uint8_t  _remote_gardener_wanted[FACE_COUNT] = {0, 0, 0, 0};
 
 // Role assignment (single-shot, set by ISR, read by main loop)
 static volatile bool _set_role_pending = false;
@@ -328,15 +329,17 @@ static void _on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int l
             if (_faces[f].link == LINK_CONNECTED && _faces[f].neighbour_id == ps->sender_id) {
                 _remote_pop[f] = ps->population;
                 _remote_pop_ms[f] = millis();
-                // Gatherers/role/tint fields (added later — length-gated)
+                // Gatherers/role/tint/gardener fields (added later — length-gated)
                 _remote_gatherers[f] = (len >= (int)offsetof(PopSyncMessage, role))
                                      ? ps->gatherers : 0;
                 _remote_role[f] = (len >= (int)offsetof(PopSyncMessage, tint_r))
                                 ? ps->role : 0;
-                _remote_tint[f] = (len >= (int)sizeof(PopSyncMessage))
+                _remote_tint[f] = (len >= (int)offsetof(PopSyncMessage, gardener_wanted))
                                 ? (((uint32_t)ps->tint_r << 16)
                                    | ((uint32_t)ps->tint_g << 8) | ps->tint_b)
                                 : 0;
+                _remote_gardener_wanted[f] = (len >= (int)sizeof(PopSyncMessage))
+                                ? ps->gardener_wanted : 0;
                 break;
             }
         }
@@ -863,6 +866,10 @@ bool topology_has_set_role(SetRoleMessage* out) {
 
 uint32_t topology_remote_tint(Face f) {
     return _remote_tint[f];
+}
+
+bool topology_remote_gardener_wanted(Face f) {
+    return _remote_gardener_wanted[f] != 0;
 }
 
 bool topology_has_set_tint(SetTintMessage* out) {

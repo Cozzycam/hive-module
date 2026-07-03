@@ -165,6 +165,15 @@ public:
     int  free_plot() const;             // -1 if none sowable
     bool sow_plot(int idx, uint32_t by_id, const char* by_name);
 
+    // The garden post: one green thumb holds it and stays ready to work the
+    // plots; the rest of the colony passes through as usual. Vacancy (holder
+    // left/died/disqualified) is advertised via pop sync so the queen can
+    // send a replacement. Not persisted — re-claimed within ~1s of any boot.
+    uint32_t posted_gardener = 0;       // conker id, 0 = vacant
+    bool garden_post_filled();          // holder still present, alive, qualified
+    bool garden_post_claim(uint32_t conker_id);   // hold or take the post
+    void garden_post_release(uint32_t conker_id); // step down (if holder)
+
     // Making — artifacts placed by conkers (any module)
     Artwork artworks[Cfg::MAX_ARTWORKS];
     // Places a work (evicting the oldest if full — the eviction is the

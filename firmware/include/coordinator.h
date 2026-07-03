@@ -193,6 +193,11 @@ private:
     uint32_t _last_anniv_check_ms = 0;
     void _anniversary_tick(uint32_t tick_num);
 
+    // Garden post staffing — queen answers a satellite's vacancy beacon by
+    // sending across the best available green thumb
+    uint32_t _last_gardener_summon_ms = 0;
+    void _gardener_summon_tick();
+
     // Milestone decor bits (renderer reads via getter each frame)
     uint8_t _milestone_bits = 0;
 

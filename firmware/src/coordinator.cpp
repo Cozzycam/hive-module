@@ -125,6 +125,9 @@ void Coordinator::tick(float dt, EventBus& bus, uint32_t tick_num) {
     // ---- Anniversary visits to memorials (all modules) ----
     _anniversary_tick(tick_num);
 
+    // ---- Fill a vacant garden post next door (queen only) ----
+    if (is_queen()) _gardener_summon_tick();
+
     // ---- Receive care packages from neighbouring kingdoms (queen only) ----
     if (is_queen()) _receive_gifts();
 
@@ -273,6 +276,9 @@ void Coordinator::_broadcast_population() {
     msg.population = chamber.conker_count;
     msg.gatherers  = colony.gatherer_count;  // local count (satellites don't aggregate)
     msg.role       = static_cast<uint8_t>(role);
+    // Garden post vacancy — daytime only; the queen answers with a green thumb
+    msg.gardener_wanted = (role == MODULE_GARDEN && g_tod.phase == PHASE_DAY
+                           && !chamber.garden_post_filled()) ? 1 : 0;
     {
         uint32_t tint = renderer_get_floor_tint();
         msg.tint_r = (tint >> 16) & 0xFF;
@@ -2816,6 +2822,68 @@ void Coordinator::_anniversary_tick(uint32_t tick_num) {
             break;
         }
     }
+}
+
+// Garden post staffing (queen only): a garden satellite whose post sits
+// vacant says so in its pop sync; the queen answers by sending across her
+// best available green thumb. "Available" honours the job ladder — carrying
+// food and fulfilling a need both outrank gardening, so haulers, eaters,
+// sleepers, mourners, crafters and players are never drafted; idlers and
+// empty-pawed foragers are. Daytime only, and famine keeps every hand home.
+void Coordinator::_gardener_summon_tick() {
+#ifdef ARDUINO
+    uint32_t now_ms = millis();
+    if (now_ms - _last_gardener_summon_ms < Cfg::GARDENER_SUMMON_COOLDOWN_MS)
+        return;
+    if (g_tod.phase != PHASE_DAY) return;
+    if (colony.food_pressure() > Cfg::FAMINE_SLOWDOWN_PRESSURE) return;
+
+    // A gardener already on their way covers any vacancy
+    for (int i = 0; i < chamber.conker_count; i++) {
+        const Conker& w = chamber.conkers[i];
+        if (w.alive && w.state == STATE_TO_GARDEN) return;
+    }
+
+    // Find a garden face asking for hands
+    int garden_face = -1;
+    for (int f = 0; f < FACE_COUNT; f++) {
+        if (!topology_neighbour(static_cast<Face>(f)).present) continue;
+        if (chamber.entries[f] < 0) continue;
+        if (!topology_pop_sync_fresh(static_cast<Face>(f))) continue;
+        if (topology_remote_role(static_cast<Face>(f)) != MODULE_GARDEN) continue;
+        if (!topology_remote_gardener_wanted(static_cast<Face>(f))) continue;
+        garden_face = f;
+        break;
+    }
+    if (garden_face < 0) return;
+
+    // Best available green thumb takes the walk
+    int best = -1;
+    float best_gt = 0.0f;
+    for (int i = 0; i < chamber.conker_count; i++) {
+        const Conker& w = chamber.conkers[i];
+        if (!w.alive || w.departing || w.sleeping) continue;
+        if (w.food_carried > 0) continue;
+        if (w.state != STATE_IDLE && w.state != STATE_TO_FOOD) continue;
+        float gt = w.green_thumb();
+        if (gt < Cfg::GREEN_THUMB_MIN) continue;
+        if (gt > best_gt) { best_gt = gt; best = i; }
+    }
+    if (best < 0) return;
+
+    Conker& w = chamber.conkers[best];
+    w.state = STATE_TO_GARDEN;
+    w.zoomie_target = static_cast<int16_t>(garden_face);  // repurposed: face
+    w.zoomie_ticks = Cfg::TO_GARDEN_MAX_TICKS;
+    w.has_target = false;
+    w.has_target_cell = false;
+    w.sleeping = false;
+    w.stack_on = -1;
+    w.idle_ticks_remaining = 0;
+    _last_gardener_summon_ms = now_ms;
+    Serial.printf("[garden] post vacant — %s (green thumb %.2f) sent across\r\n",
+                  w.name, best_gt);
+#endif
 }
 
 // Display-bus mirror of JEVT_TRAIT_EARNED — sparkle + HUD banner on the glass.

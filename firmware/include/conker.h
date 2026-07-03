@@ -282,6 +282,7 @@ struct Conker {
     void _do_zoomies(Chamber& ch);
     void _do_mourning(Chamber& ch);
     void _do_farming(Chamber& ch);
+    void _do_to_garden(Chamber& ch);
     void _do_crafting(Chamber& ch);
     bool _start_crafting(Chamber& ch, uint8_t kind, uint8_t context,
                          int near_x, int near_y);  // find a spot, set out

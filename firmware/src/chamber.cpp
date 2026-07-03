@@ -1192,6 +1192,43 @@ bool Chamber::sow_plot(int idx, uint32_t by_id, const char* by_name) {
     return true;
 }
 
+// ---- The garden post ----
+// One green thumb holds the post at a time. A holder who has crossed away,
+// died, or is hauling food no longer counts — the post reads vacant and the
+// pop-sync beacon asks the queen for a replacement.
+
+bool Chamber::garden_post_filled() {
+    if (!is_garden || posted_gardener == 0) return false;
+    for (int i = 0; i < conker_count; i++) {
+        const Conker& w = conkers[i];
+        if (w.id != posted_gardener) continue;
+        if (w.alive && !w.departing && w.food_carried <= 0
+                && w.green_thumb() >= Cfg::GREEN_THUMB_MIN)
+            return true;
+        break;
+    }
+    posted_gardener = 0;   // holder gone or disqualified
+    return false;
+}
+
+bool Chamber::garden_post_claim(uint32_t conker_id) {
+    if (!is_garden) return false;
+    if (posted_gardener == conker_id) return true;
+    if (garden_post_filled()) return false;   // someone else holds it
+    posted_gardener = conker_id;
+    for (int i = 0; i < conker_count; i++) {
+        if (conkers[i].id == conker_id) {
+            Serial.printf("[garden] %s takes the garden post\r\n", conkers[i].name);
+            break;
+        }
+    }
+    return true;
+}
+
+void Chamber::garden_post_release(uint32_t conker_id) {
+    if (posted_gardener == conker_id) posted_gardener = 0;
+}
+
 // Crops advance on the wall clock (lifecycle rule): sprout -> growing ->
 // mature -> drop yield -> soil. Rain hurries them along; a scorching dry
 // spell can wither a crop back to bare soil at each stage boundary —

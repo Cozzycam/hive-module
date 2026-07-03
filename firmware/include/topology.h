@@ -93,6 +93,9 @@ struct __attribute__((packed)) PopSyncMessage {
     uint8_t  role;       // ModuleRole
     // Floor tint echo (added v100 — length-gated like role)
     uint8_t  tint_r, tint_g, tint_b;
+    // Garden post vacancy (added v188 — length-gated): 1 = daytime garden
+    // with no qualified green thumb present; the queen sends a replacement
+    uint8_t  gardener_wanted;
 };
 
 // Chamber announcement (queen → satellite on connect)
@@ -234,6 +237,7 @@ uint16_t topology_remote_population(Face f);
 uint16_t topology_remote_gatherers(Face f);
 uint8_t  topology_remote_role(Face f);  // 0 = unknown/not yet synced
 uint32_t topology_remote_tint(Face f);  // 0xRRGGBB, 0 = none/unknown
+bool     topology_remote_gardener_wanted(Face f);  // garden post vacant over there
 
 // Role assignment — satellite reads this
 bool topology_has_set_role(SetRoleMessage* out);  // returns true + copies once, then clears

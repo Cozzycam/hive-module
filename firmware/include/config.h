@@ -22,12 +22,13 @@ enum AntState : uint8_t {
     STATE_EATING = 7,
     STATE_MOURNING = 8,  // bonded partner died — pay respects at the husk
     STATE_FARMING = 9,   // green thumb at work — off to sow a garden plot
-    STATE_CRAFTING = 10  // the muse struck — making something that lasts
+    STATE_CRAFTING = 10, // the muse struck — making something that lasts
+    STATE_TO_GARDEN = 11 // summoned to fill the vacant garden post next door
 };
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 187;
+constexpr uint32_t FW_VERSION = 188;
 
 namespace Cfg {
 
@@ -104,8 +105,14 @@ constexpr float    PLANT_YIELD             = 5.0f;      // food pile per mature 
 constexpr float    PLANT_RAIN_GROWTH_MULT  = 1.5f;      // rain is good for crops
 constexpr float    PLANT_WITHER_CHANCE     = 0.20f;     // per stage during heat/drought challenge
 constexpr float    GREEN_THUMB_MIN         = 0.55f;     // aptitude floor to ever sow
-constexpr float    SOW_CHANCE_PER_TICK     = 0.0006f;   // idle roll (×green_thumb): ~1 sow per few idle minutes
 constexpr int      SOW_DURATION_TICKS      = 24;        // ~3s planting pause
+// Gardening is a staffed job, not an idle pastime: the garden keeps one
+// green thumb posted by day (carrying food > fulfilling need > gardening >
+// idling). When the postholder leaves to meet a need, the queen sends the
+// next available green thumb across to fill the vacancy.
+constexpr float    GARDENER_HUNGER_HOME    = 40.0f;     // posted gardener heads home to eat past this
+constexpr uint32_t GARDENER_SUMMON_COOLDOWN_MS = 60000; // queen drafts at most one gardener a minute
+constexpr int      TO_GARDEN_MAX_TICKS     = 900;       // ~110s failsafe for the walk to the entry
 constexpr int      FARM_MAX_TICKS          = 600;       // failsafe: give up the trip after ~75s
 
 // Foraging stands down during deep night below this food pressure —
