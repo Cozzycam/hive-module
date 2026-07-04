@@ -53,6 +53,10 @@ struct IdentityRecord {
     float    last_tiredness  = 0;
     float    last_loneliness = 0;
     float    last_hunger     = 0;
+    // Personality drift: what grief took (positive magnitudes). A NEW best
+    // friend restores half of the credit and clears it.
+    float    grief_social = 0;
+    float    grief_play   = 0;
     bool     dirty        = false;    // RAM-only: needs flush to disk
 };
 

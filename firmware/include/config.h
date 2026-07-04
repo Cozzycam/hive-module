@@ -282,6 +282,16 @@ constexpr int   MOURN_ONEWAY_TICKS    = 100;    // ~12s — a one-way bond griev
 constexpr int   ELDER_HUDDLE_PULL     = 4;      // idlers prefer huddling near elders
                                                 // (distance bias, cells)
 
+// ---- Personality drift (event-driven, v1) ----
+// Major life events nudge personality permanently. Each nudge clamps its
+// dimension to [0,1]; lifetime drift is otherwise unbounded (values are
+// small — a ~21-day life makes runaway unlikely).
+constexpr float DRIFT_SURVIVE_BRAVERY   =  0.05f; // came through a challenge
+constexpr float DRIFT_SURVIVE_HARDINESS =  0.03f;
+constexpr float DRIFT_GRIEF_SOCIAL      = -0.05f; // best friend died — a visible quieting
+constexpr float DRIFT_GRIEF_PLAY        = -0.03f;
+constexpr float DRIFT_CROWN_EXPLORATION =  0.03f; // crowned Bug Hunter
+
 // ---- Friendship behaviour (bonds pull on everyday life) ----
 constexpr int   FRIEND_HUDDLE_PULL    = 6;      // idlers prefer huddling near friends
                                                 // (best friends pull 2x this), cells
