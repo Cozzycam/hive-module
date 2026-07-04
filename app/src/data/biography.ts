@@ -30,8 +30,11 @@ const DIM_EPITHETS: { key: keyof Personality; high: string; low: string }[] = [
 ];
 
 /** Earned titles trump flavour; flavour only for genuinely extreme dims.
- *  events is optional — the roster list can compute epithets from traits +
- *  personality alone; the profile refines with history. */
+ *  events is optional, but roster and profile must pass the SAME history —
+ *  the conker's own, via fetchLilguyHistory — or a conker wears different
+ *  names in the list and on their page (keeper #37). The colony-wide feed
+ *  is not a substitute: it's a rolling newest-200 window, so titles earned
+ *  before the window drop out of it while the per-conker fetch keeps them. */
 export function epithet(
   traits: string[],
   personality?: Personality,
