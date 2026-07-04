@@ -4,10 +4,43 @@
 #include "time_of_day.h"
 #include "topology.h"
 #include <Arduino.h>
+#include <Arduino_GFX_Library.h>
 #include <WiFi.h>
 #include <WiFiServer.h>
 #include <HTTPUpdate.h>
 #include <esp_ota_ops.h>
+
+// ================================================================
+//  Updating splash
+// ================================================================
+// Every OTA window below blocks the main loop for up to minutes with the
+// chamber frozen mid-frame — which reads as a crash (the v186->v187 keeper
+// pulled the plug on a healthy flash). Paint over the chamber before going
+// dark. Callers must reboot on every exit; the framebuffer is never restored.
+
+extern Arduino_Canvas* gfx;  // main.cpp's framebuffer canvas
+
+static inline uint16_t _splash_rgb(uint8_t r, uint8_t g, uint8_t b) {
+    return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+}
+
+static void _splash_line(int y, uint8_t size, uint16_t col, const char* s) {
+    int w = (int)strlen(s) * 6 * size;
+    gfx->setTextSize(size);
+    gfx->setTextColor(col);
+    gfx->setCursor((480 - w) / 2, y);
+    gfx->print(s);
+}
+
+void ota_splash(const char* detail) {
+    if (!gfx) return;
+    gfx->fillScreen(_splash_rgb(24, 18, 14));                        // deep bark
+    _splash_line(110, 3, _splash_rgb(228, 160, 60), "updating...");  // lantern amber
+    _splash_line(165, 2, _splash_rgb(235, 220, 195), detail);
+    // ASCII only — the GFX 5x7 font has no glyphs past 126
+    _splash_line(225, 2, _splash_rgb(140, 125, 105), "don't unplug - back soon");
+    gfx->flush();
+}
 
 // ================================================================
 //  Queen: push firmware to satellites
@@ -17,6 +50,7 @@ void ota_push() {
     size_t fw_size = ESP.getSketchSize();
     Serial.printf("[push] FW_VERSION=%lu, image=%u bytes\r\n",
                   (unsigned long)FW_VERSION, fw_size);
+    ota_splash("sending firmware to satellites");
 
     // Phase 1: Broadcast OTA announce on ESP-NOW (channel 1).
     // Satellites hear this and prepare to connect to WiFi.
@@ -130,6 +164,7 @@ void ota_push() {
 
 void ota_satellite_update() {
     Serial.printf("[ota-recv] Updating from FW v%lu...\r\n", (unsigned long)FW_VERSION);
+    ota_splash("fetching firmware from the queen");
 
     // Connect to home WiFi (same AP as queen = same channel)
     if (!tod_wifi_connect(15000)) {
