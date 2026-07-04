@@ -13,7 +13,7 @@ import { TRAIT_INFO, traitLabel } from '../data/traits';
 import { epithet, buildLifeStory } from '../data/biography';
 import { HIVE, TOD_PALETTES } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
-import { fetchLilguyDetail, fetchLilguyEvents, sendCommand } from '../api/client';
+import { fetchLilguyDetail, fetchLilguyHistory, sendCommand } from '../api/client';
 import type { ColonyEvent, LilGuyDetail, Personality, Bond, ConkerMood, ConkerActivity } from '../api/types';
 
 // Trait metadata now lives in data/traits.ts (shared with biography.ts).
@@ -327,20 +327,29 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
     return list;
   }, [characters, filter]);
 
-  // Per-conker event buckets so roster epithets see the same history the
-  // profile does — event-earned titles ('the Maker') trump personality
-  // flavour, so without history the list and profile disagree (keeper #37).
-  // Bucketed once here rather than filtering inside every row's render.
-  const eventsByConker = useMemo(() => {
-    const buckets = new Map<number, ColonyEvent[]>();
-    for (const ev of events) {
-      if (!ev.lilguy) continue;
-      let bucket = buckets.get(ev.lilguy);
-      if (!bucket) { bucket = []; buckets.set(ev.lilguy, bucket); }
-      bucket.push(ev);
+  // Per-conker histories so roster epithets see the same events the profile
+  // does — event-earned titles ('the Maker') trump personality flavour, so
+  // with different history the list and profile disagree (keeper #37).
+  // The colony feed is no use for this: it's a rolling newest-200 window
+  // colony-wide, so a title earned before the window shows on the profile
+  // (which reads the conker's own history) but not in the list — a
+  // persistent mismatch, not a deep-history edge case. Read the same
+  // per-conker endpoint the profile uses, through the shared cache.
+  const [historyByConker, setHistoryByConker] = useState<Map<number, ColonyEvent[]>>(new Map());
+  useEffect(() => {
+    if (!colonyId) return;
+    let cancelled = false;
+    for (const id of characters.keys()) {
+      fetchLilguyHistory(colonyId, id).then(evs => {
+        if (cancelled || !evs) return;
+        // Cache returns the same array while fresh — skip the no-op update
+        // so the poll-driven `characters` churn doesn't re-render the list
+        setHistoryByConker(prev =>
+          prev.get(id) === evs ? prev : new Map(prev).set(id, evs));
+      });
     }
-    return buckets;
-  }, [events]);
+    return () => { cancelled = true; };
+  }, [characters, colonyId]);
 
   // Load detail from LAN when a character is selected
   useEffect(() => {
@@ -351,8 +360,10 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
     }
     fetchLilguyDetail(selectedId).then(d => d && setDetail(d));
     if (colonyId) {
-      fetchLilguyEvents(colonyId, selectedId).then(r => {
-        if (r) setLilguyEvents(r.results.filter(e => e.type !== 'chamber_crossing'));
+      // Same cached fetch the roster rows use — list and profile epithets
+      // are computed from identical history by construction (keeper #37)
+      fetchLilguyHistory(colonyId, selectedId).then(evs => {
+        if (evs) setLilguyEvents(evs.filter(e => e.type !== 'chamber_crossing'));
       });
     }
   }, [selectedId, colonyId]);
@@ -437,7 +448,7 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
               {c.name}
               {(() => {
                 // Epithets make them memorable at a glance ("Bramble the Bold")
-                const ep = epithet(c.traits, c.personality, eventsByConker.get(c.id));
+                const ep = epithet(c.traits, c.personality, historyByConker.get(c.id));
                 return ep && (
                   <span style={{ fontWeight: 400, fontStyle: 'italic', color: palette.dimText }}>
                     {' '}{ep}

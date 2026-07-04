@@ -1,6 +1,7 @@
 import type {
   ColonySnapshot,
   ColoniesListResponse,
+  ColonyEvent,
   EventsResponse,
   HealthResponse,
   LilGuyListResponse,
@@ -194,6 +195,39 @@ export async function fetchLilguyEvents(
     `${VPS_BASE}/api/v1/colonies/${colonyId}/lilguys/${lilguyId}/events?since=${since}&limit=${limit}`,
     VPS_TIMEOUT,
   );
+}
+
+// Per-conker history, shared by the roster list AND the profile so both
+// compute epithets from the same events (keeper #37). The colony events feed
+// cannot serve here: it is a rolling newest-200 window colony-wide, so a
+// lifetime title ('the Maker') earned before the window has scrolled out of
+// it while this per-conker endpoint still returns it — the two views would
+// disagree persistently, not just on deep histories. Cached with in-flight
+// dedup so the list (one call per conker) doesn't refetch on every poll.
+const LILGUY_HISTORY_TTL_MS = 5 * 60_000;
+const lilguyHistoryCache = new Map<string, { at: number; promise: Promise<ColonyEvent[] | null> }>();
+
+export function fetchLilguyHistory(
+  colonyId: string,
+  lilguyId: number,
+): Promise<ColonyEvent[] | null> {
+  const key = `${colonyId}:${lilguyId}`;
+  const hit = lilguyHistoryCache.get(key);
+  if (hit && Date.now() - hit.at < LILGUY_HISTORY_TTL_MS) return hit.promise;
+  const promise: Promise<ColonyEvent[] | null> =
+    fetchLilguyEvents(colonyId, lilguyId).then(r => {
+      if (!r) {
+        // Failed fetch — drop it so the next caller retries instead of
+        // pinning a null for the whole TTL
+        if (lilguyHistoryCache.get(key)?.promise === promise) {
+          lilguyHistoryCache.delete(key);
+        }
+        return null;
+      }
+      return r.results;
+    });
+  lilguyHistoryCache.set(key, { at: Date.now(), promise });
+  return promise;
 }
 
 export async function fetchLilguys(
