@@ -19,3 +19,8 @@ void ota_push();
 
 // Satellite: download firmware from queen. Blocking, reboots on exit.
 void ota_satellite_update();
+
+// Full-screen "updating..." splash. Call BEFORE any blocking flash window so
+// a keeper reads the frozen screen as an update, not a crash. Paints over the
+// chamber framebuffer — only safe on paths that end in ESP.restart().
+void ota_splash(const char* detail);

@@ -2,6 +2,7 @@
 #include "vps_push.h"
 #include "api_json.h"
 #include "coordinator.h"
+#include "ota_push.h"
 #include "time_of_day.h"
 
 #include <Arduino.h>
@@ -121,16 +122,16 @@ static bool _post(const char* path, const char* body, int body_len) {
     _hmac_sha256(_secret, strlen(_secret), body, body_len, hmac, sizeof(hmac));
 
     WiFiClient client;
-    client.setTimeout(10);  // 10s socket timeout
 
     HTTPClient http;
+    http.setConnectTimeout(10000);
     http.begin(client, url);
     http.addHeader("Content-Type", "application/json");
     http.addHeader("X-HMAC-SHA256", hmac);
     // Until the VPS has adopted our secret, offer it for first-contact
     // enrollment. Dropped from all requests once enrolled.
     if (!_enrolled) http.addHeader("X-Enroll-Secret", _secret);
-    http.setTimeout(10000);
+    http.setTimeout(10000);  // ms — HTTPClient sets this on the socket at connect
 
     int code = http.POST((uint8_t*)body, body_len);
     http.end();
@@ -162,11 +163,11 @@ static bool _get_json(const char* path, JsonDocument& doc) {
     snprintf(url, sizeof(url), "%s%s", _endpoint, path);
 
     WiFiClient client;
-    client.setTimeout(10);
 
     HTTPClient http;
+    http.setConnectTimeout(10000);
     http.begin(client, url);
-    http.setTimeout(10000);
+    http.setTimeout(10000);  // ms — HTTPClient sets this on the socket at connect
 
     int code = http.GET();
     if (code < 200 || code >= 300) {
@@ -184,6 +185,13 @@ static bool _get_json(const char* path, JsonDocument& doc) {
 // our own secret, then verify the downloaded image against the (now-trusted)
 // MD5. A forged trigger can at worst cause a legitimate update — never a
 // malicious flash. Dual-bank means an interrupted download is harmless.
+
+static constexpr uint32_t OTA_HTTP_TIMEOUT_MS  = 10000;   // connect + per-read socket bound
+static constexpr uint32_t OTA_STALL_TIMEOUT_MS = 20000;   // zero bytes for this long = dead link
+static constexpr uint32_t OTA_DEADLINE_MS      = 180000;  // whole-download hard cap
+static constexpr size_t   OTA_CHUNK            = 4096;
+static constexpr uint8_t  OTA_MAX_ATTEMPTS     = 3;       // flash-window tries per image (md5)
+
 static bool _ota_from_vps(const char* colony_id) {
     if (_secret[0] == '\0' || WiFi.status() != WL_CONNECTED) {
         Serial.println("[ota] not ready (no secret / no WiFi)");
@@ -225,12 +233,46 @@ static bool _ota_from_vps(const char* colony_id) {
     Serial.printf("[ota] verified manifest — updating v%lu -> v%lu\r\n",
                   (unsigned long)FW_VERSION, (unsigned long)version);
 
-    // 4. Download + flash, verifying the authenticated MD5
+    // 3.5 Bound the retries. Every failure past the splash below reboots
+    // WITHOUT acking the ota_update command, so a deterministic failure —
+    // classic case: firmware.bin redeployed without regenerating latest.json,
+    // so the signed md5 no longer matches the served file — would re-trigger
+    // the identical splash-download-reboot cycle on every 30s poll, forever,
+    // re-applying every other command stuck in the same unacked batch each
+    // time. Count flash-window attempts per image (keyed by manifest md5) in
+    // NVS; once an image has burned OTA_MAX_ATTEMPTS we refuse it and return
+    // false so _poll_commands finally acks the command. Fixing the manifest
+    // changes the md5, which resets the count. Deliberately NOT cleared on
+    // success: if the new image flunks its boot trial and rolls back, the
+    // still-pending command re-flashes the same md5 — bounded by this same
+    // counter instead of looping flash-rollback-flash forever.
+    uint8_t tries = 0;
+    {
+        Preferences p;
+        p.begin("ota", true);
+        char tried[33] = {};
+        p.getString("try_md5", tried, sizeof(tried));
+        if (strncmp(tried, md5, 32) == 0) tries = p.getUChar("try_n", 0);
+        p.end();
+    }
+    if (tries >= OTA_MAX_ATTEMPTS) {
+        Serial.printf("[ota] image %.8s... already failed %u attempts — refusing until the manifest changes\r\n",
+                      md5, (unsigned)tries);
+        return false;
+    }
+
+    // 4. Download + flash, verifying the authenticated MD5.
+    // Hand-rolled copy loop instead of Update.writeStream(): on a WiFi stall
+    // writeStream retries zero-byte reads 300x against the full stream
+    // timeout — up to ~100 minutes of frozen screen with no serial and no
+    // watchdog (the v186->v187 wedge). Here every call is bounded (reads are
+    // non-blocking, flash writes are ms) and the whole download has a hard
+    // deadline, so a stall can never freeze the UI past OTA_DEADLINE_MS.
     WiFiClient client;
-    client.setTimeout(20);
     HTTPClient http;
+    http.setConnectTimeout(OTA_HTTP_TIMEOUT_MS);
     http.begin(client, url);
-    http.setTimeout(20000);
+    http.setTimeout(OTA_HTTP_TIMEOUT_MS);  // ms — applied to the socket at connect
     int code = http.GET();
     if (code != 200) { Serial.printf("[ota] download HTTP %d\r\n", code); http.end(); return false; }
     int len = http.getSize();
@@ -242,16 +284,69 @@ static bool _ota_from_vps(const char* colony_id) {
         return false;
     }
     Update.setMD5(md5);  // Update.end() fails if the image MD5 doesn't match
-    size_t written = Update.writeStream(*http.getStreamPtr());
+
+    // Record the attempt BEFORE the flash window opens: from the splash on,
+    // failure exits reboot without returning, so NVS is the only memory of
+    // how many times this image has already burned us.
+    {
+        Preferences p;
+        p.begin("ota", false);
+        p.putString("try_md5", md5);
+        p.putUChar("try_n", (uint8_t)(tries + 1));
+        p.end();
+    }
+
+    // Screen freezes for the whole download — tell the keeper it's deliberate.
+    // From the splash on, every failure exit REBOOTS instead of returning:
+    // the running image is untouched (a half-written inactive partition is
+    // safe to abandon) and rebooting is the only way back to a sane screen.
+    // Retries after such a reboot are bounded by the attempt counter above.
+    char note[48];
+    snprintf(note, sizeof(note), "new firmware v%lu -> v%lu",
+             (unsigned long)FW_VERSION, (unsigned long)version);
+    ota_splash(note);
+
+    WiFiClient* stream = http.getStreamPtr();
+    uint8_t* buf = (uint8_t*)malloc(OTA_CHUNK);
+    uint32_t start_ms = millis();
+    uint32_t last_data_ms = millis();
+    size_t written = 0;
+    const char* fail = buf ? nullptr : "no memory for download buffer";
+    while (!fail && written < (size_t)len) {
+        if (millis() - start_ms > OTA_DEADLINE_MS) { fail = "deadline (3 min)"; break; }
+        int avail = stream->available();
+        if (avail <= 0) {
+            if (!client.connected()) { fail = "connection lost"; break; }
+            if (millis() - last_data_ms > OTA_STALL_TIMEOUT_MS) { fail = "stalled"; break; }
+            delay(10);
+            continue;
+        }
+        size_t want = (size_t)avail;
+        if (want > OTA_CHUNK) want = OTA_CHUNK;
+        if (want > (size_t)len - written) want = (size_t)len - written;
+        int n = stream->read(buf, want);
+        if (n < 0) { fail = "socket error"; break; }
+        if (n > 0) {
+            if (Update.write(buf, (size_t)n) != (size_t)n) { fail = Update.errorString(); break; }
+            written += (size_t)n;
+            last_data_ms = millis();
+        }
+    }
+    free(buf);
     http.end();
-    if (written != (size_t)len) {
-        Serial.printf("[ota] short write %u/%d\r\n", (unsigned)written, len);
+
+    if (fail) {
+        Serial.printf("[ota] download aborted (%s) at %u/%d bytes — rebooting clean\r\n",
+                      fail, (unsigned)written, len);
         Update.abort();
-        return false;
+        delay(200);
+        ESP.restart();
     }
     if (!Update.end(true)) {
-        Serial.printf("[ota] verify/commit failed: %s\r\n", Update.errorString());
-        return false;
+        Serial.printf("[ota] verify/commit failed: %s — rebooting clean\r\n",
+                      Update.errorString());
+        delay(200);
+        ESP.restart();
     }
 
     // 5. Arm the rollback trial + satellite cascade, then reboot into the new image
@@ -326,9 +421,15 @@ static void _poll_commands(Coordinator& coord) {
             uint16_t target = (uint16_t)strtol(mod, nullptr, 16);  // 0 = any neighbour
             coord.cmd_gift_care_package(target);
         } else if (strcmp(type, "ota_update") == 0) {
-            // Reboots into the new image on success. The command stays pending
-            // until then; after the reboot the manifest reads "already current"
-            // so it acks without re-flashing — no loop.
+            // On success this reboots into the new image; the command stays
+            // pending until the post-reboot poll reads "already current" and
+            // acks it then. Failures before the update splash return false
+            // and ack now; failures after it reboot WITHOUT acking, so the
+            // command re-triggers on the next poll — bounded by the per-image
+            // attempt counter in _ota_from_vps (OTA_MAX_ATTEMPTS), after
+            // which it refuses the image and the ack finally lands. Note the
+            // retried batch re-applies any commands queued alongside this
+            // one, so that bound also caps their re-execution.
             vps_ota_update(coord);
         } else if (strcmp(type, "grant_wish") == 0) {
             uint32_t wid = cmd["payload"]["id"] | 0;
