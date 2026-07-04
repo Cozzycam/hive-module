@@ -86,7 +86,9 @@ db.exec(`
     body TEXT NOT NULL,
     context TEXT,
     created_at INTEGER DEFAULT (unixepoch()),
-    read_at INTEGER DEFAULT 0
+    read_at INTEGER DEFAULT 0,
+    status TEXT DEFAULT '',      -- triage outcome: '' (new) | open | fixed | wont_fix | junk
+    resolution TEXT DEFAULT ''   -- what happened to it (commit / version / backlog pointer)
   );
 
   CREATE TABLE IF NOT EXISTS push_subscriptions (
@@ -101,6 +103,8 @@ db.exec(`
 // Migrations for pre-existing databases (idempotent)
 try { db.exec(`ALTER TABLE push_subscriptions ADD COLUMN pref TEXT DEFAULT 'all'`); } catch {}
 try { db.exec(`ALTER TABLE colonies ADD COLUMN digest_sent_day TEXT DEFAULT ''`); } catch {}
+try { db.exec(`ALTER TABLE feedback ADD COLUMN status TEXT DEFAULT ''`); } catch {}
+try { db.exec(`ALTER TABLE feedback ADD COLUMN resolution TEXT DEFAULT ''`); } catch {}
 
 // Dedup index: remove duplicates first, then create unique index
 try {
