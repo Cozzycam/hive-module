@@ -127,6 +127,7 @@ struct CropSownData {
 struct CraftedData {            // crafted + art_weathered
     uint8_t  kind;              // ArtKind
     uint8_t  context;           // ArtContext (crafted only)
+    uint8_t  motif;             // Artwork.motif — the piece's rolled form
     uint32_t maker_id;
     char     who[16];
     char     honoree[16];       // memorials

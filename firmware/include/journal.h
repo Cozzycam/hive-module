@@ -67,7 +67,7 @@ struct JournalEntry {
             // forgets the dead); anniversary = a return visit to the stone
         struct { uint8_t kind; uint8_t participants; } play;  // kind 0=parade
         struct { uint8_t critter; } discovery;  // CritterKind found
-        struct { uint8_t kind; uint8_t context; char honoree[16]; } crafted;
+        struct { uint8_t kind; uint8_t context; uint8_t motif; char honoree[16]; } crafted;
         struct { uint8_t kind; } wish;   // 1=treat, 2=boop
     };
 };

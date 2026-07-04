@@ -43,12 +43,65 @@ export function artProvenance(kind: string, context: string, honoree?: string): 
   return artContextPhrase(context, kind === 'memorial' ? honoree : undefined);
 }
 
+// The concrete form a work took — mirrors the firmware's sprite pick
+// (renderer.cpp _draw_artworks): sculpture motif%3, painting motif%2.
+// 'lost' = the event predates the motif field, so the form went unrecorded;
+// null = accessories and unknown kinds, which have no placed form.
+export type ArtForm =
+  | 'orb' | 'spire' | 'arch'
+  | 'paint_diamonds' | 'paint_meander'
+  | 'cairn' | 'memorial'
+  | 'lost'
+  | null;
+
+export function artForm(kind: string, motif?: number): ArtForm {
+  switch (kind) {
+    case 'sculpture':
+      if (motif === undefined) return 'lost';
+      return (['orb', 'spire', 'arch'] as const)[motif % 3];
+    case 'painting':
+      if (motif === undefined) return 'lost';
+      return motif % 2 ? 'paint_meander' : 'paint_diamonds';
+    case 'cairn':    return 'cairn';
+    case 'memorial': return 'memorial';
+    default:         return null;
+  }
+}
+
+// A written portrait of the piece — form + kind + provenance — so the
+// gallery reads like a catalogue instead of a list of coloured things.
+export function artDescription(w: GalleryWork): string {
+  const prov = artProvenance(w.kind, w.context, w.honoree);
+  switch (artForm(w.kind, w.motif)) {
+    case 'orb':      return `A rounded orb, shaped by ${w.maker} ${prov}.`;
+    case 'spire':    return `A slender spire, raised by ${w.maker} ${prov}.`;
+    case 'arch':     return `A little arch to pass beneath, built by ${w.maker} ${prov}.`;
+    case 'cairn':    return `A stack of balanced stones, piled by ${w.maker} ${prov}.`;
+    case 'memorial': return `A carved stone, set by ${w.maker} ${prov}.`;
+    case 'paint_diamonds':
+      return `Pigment pressed into the floor in a scatter of diamonds, by ${w.maker} ${prov}.`;
+    case 'paint_meander':
+      return `Pigment pressed into the floor in winding trails, by ${w.maker} ${prov}.`;
+    case 'lost':
+      return w.kind === 'painting'
+        ? `A floor painting whose pattern is lost to time, made by ${w.maker} ${prov}.`
+        : `A sculpture whose form is lost to time, shaped by ${w.maker} ${prov}.`;
+  }
+  switch (w.kind) {
+    case 'petal_hat':    return `A petal hat, woven by ${w.maker} ${prov}.`;
+    case 'seed_pendant': return `A seed pendant, strung by ${w.maker} ${prov}.`;
+    case 'grass_band':   return `A grass band, plaited by ${w.maker} ${prov}.`;
+    default:             return `A ${artKindLabel(w.kind)}, made by ${w.maker} ${prov}.`;
+  }
+}
+
 export interface GalleryWork {
   kind: string;
   maker: string;
   makerId: number;
   context: string;
   honoree?: string;
+  motif?: number;   // absent on works that predate the field
   unix: number;
   weathered: boolean;
 }
@@ -68,6 +121,7 @@ export function buildGallery(events: ColonyEvent[]): GalleryWork[] {
         makerId: ev.lilguy,
         context: String(data.context || 'plenty'),
         honoree: data.honoree ? String(data.honoree) : undefined,
+        motif: typeof data.motif === 'number' ? data.motif : undefined,
         unix: ev.unix,
         weathered: false,
       });

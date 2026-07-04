@@ -1516,6 +1516,7 @@ void Conker::_do_crafting(Chamber& ch) {
     ev.crafted.kind = piece.kind;
     ev.crafted.maker_id = id;
     ev.crafted.context = piece.context;
+    ev.crafted.motif = piece.motif;   // the app mirrors the real form from this
     strlcpy(ev.crafted.who, name, sizeof(ev.crafted.who));
     strlcpy(ev.crafted.honoree, piece.honoree, sizeof(ev.crafted.honoree));
     ch.emit(ev);

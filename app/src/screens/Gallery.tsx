@@ -4,7 +4,8 @@ import { Card } from '../components/Card';
 import { HIVE, TOD_PALETTES } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 import { fetchEvents } from '../api/client';
-import { buildGallery, artKindEmoji, artKindLabel, artProvenance } from '../data/artworks';
+import { buildGallery, artKindLabel, artDescription } from '../data/artworks';
+import { ArtGlyph } from '../components/ArtGlyph';
 import type { ColonyEvent } from '../api/types';
 
 // The Gallery — every work the colony's makers have left in the world,
@@ -52,8 +53,8 @@ export function Gallery({ onBack }: { onBack: () => void }) {
       {works.map((w, i) => (
         <Card key={i} style={{ background: palette.cardBg, opacity: w.weathered ? 0.55 : 1 }}>
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-            <div style={{ fontSize: 30, lineHeight: '36px', minWidth: 40, textAlign: 'center' }}>
-              {artKindEmoji(w.kind)}
+            <div style={{ minWidth: 40, display: 'flex', justifyContent: 'center', paddingTop: 2 }}>
+              <ArtGlyph kind={w.kind} motif={w.motif} />
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: SIZES.base, fontWeight: 600, color: palette.text }}>
@@ -65,7 +66,7 @@ export function Gallery({ onBack }: { onBack: () => void }) {
                 )}
               </div>
               <div style={{ fontSize: SIZES.sm, color: palette.text, marginTop: 2 }}>
-                Made {artProvenance(w.kind, w.context, w.honoree)}.
+                {artDescription(w)}
               </div>
               <div style={{ fontSize: SIZES.xs, color: palette.dimText, marginTop: 4 }}>
                 {dateStr(w.unix)}

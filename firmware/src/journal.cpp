@@ -169,6 +169,7 @@ void EventJournal::_serialize_entry(const JournalEntry& e, char* buf, size_t buf
         if (e.type == JEVT_CRAFTED) {
             data["context"] = (e.crafted.context < 6)
                 ? ART_CONTEXT_NAMES[e.crafted.context] : "plenty";
+            data["motif"] = e.crafted.motif;
             if (e.crafted.honoree[0]) data["honoree"] = e.crafted.honoree;
         }
         break;
