@@ -190,6 +190,7 @@ static constexpr uint32_t OTA_HTTP_TIMEOUT_MS  = 10000;   // connect + per-read 
 static constexpr uint32_t OTA_STALL_TIMEOUT_MS = 20000;   // zero bytes for this long = dead link
 static constexpr uint32_t OTA_DEADLINE_MS      = 180000;  // whole-download hard cap
 static constexpr size_t   OTA_CHUNK            = 4096;
+static constexpr uint8_t  OTA_MAX_ATTEMPTS     = 3;       // flash-window tries per image (md5)
 
 static bool _ota_from_vps(const char* colony_id) {
     if (_secret[0] == '\0' || WiFi.status() != WL_CONNECTED) {
@@ -232,6 +233,34 @@ static bool _ota_from_vps(const char* colony_id) {
     Serial.printf("[ota] verified manifest — updating v%lu -> v%lu\r\n",
                   (unsigned long)FW_VERSION, (unsigned long)version);
 
+    // 3.5 Bound the retries. Every failure past the splash below reboots
+    // WITHOUT acking the ota_update command, so a deterministic failure —
+    // classic case: firmware.bin redeployed without regenerating latest.json,
+    // so the signed md5 no longer matches the served file — would re-trigger
+    // the identical splash-download-reboot cycle on every 30s poll, forever,
+    // re-applying every other command stuck in the same unacked batch each
+    // time. Count flash-window attempts per image (keyed by manifest md5) in
+    // NVS; once an image has burned OTA_MAX_ATTEMPTS we refuse it and return
+    // false so _poll_commands finally acks the command. Fixing the manifest
+    // changes the md5, which resets the count. Deliberately NOT cleared on
+    // success: if the new image flunks its boot trial and rolls back, the
+    // still-pending command re-flashes the same md5 — bounded by this same
+    // counter instead of looping flash-rollback-flash forever.
+    uint8_t tries = 0;
+    {
+        Preferences p;
+        p.begin("ota", true);
+        char tried[33] = {};
+        p.getString("try_md5", tried, sizeof(tried));
+        if (strncmp(tried, md5, 32) == 0) tries = p.getUChar("try_n", 0);
+        p.end();
+    }
+    if (tries >= OTA_MAX_ATTEMPTS) {
+        Serial.printf("[ota] image %.8s... already failed %u attempts — refusing until the manifest changes\r\n",
+                      md5, (unsigned)tries);
+        return false;
+    }
+
     // 4. Download + flash, verifying the authenticated MD5.
     // Hand-rolled copy loop instead of Update.writeStream(): on a WiFi stall
     // writeStream retries zero-byte reads 300x against the full stream
@@ -256,10 +285,22 @@ static bool _ota_from_vps(const char* colony_id) {
     }
     Update.setMD5(md5);  // Update.end() fails if the image MD5 doesn't match
 
+    // Record the attempt BEFORE the flash window opens: from the splash on,
+    // failure exits reboot without returning, so NVS is the only memory of
+    // how many times this image has already burned us.
+    {
+        Preferences p;
+        p.begin("ota", false);
+        p.putString("try_md5", md5);
+        p.putUChar("try_n", (uint8_t)(tries + 1));
+        p.end();
+    }
+
     // Screen freezes for the whole download — tell the keeper it's deliberate.
     // From the splash on, every failure exit REBOOTS instead of returning:
     // the running image is untouched (a half-written inactive partition is
     // safe to abandon) and rebooting is the only way back to a sane screen.
+    // Retries after such a reboot are bounded by the attempt counter above.
     char note[48];
     snprintf(note, sizeof(note), "new firmware v%lu -> v%lu",
              (unsigned long)FW_VERSION, (unsigned long)version);
@@ -380,9 +421,15 @@ static void _poll_commands(Coordinator& coord) {
             uint16_t target = (uint16_t)strtol(mod, nullptr, 16);  // 0 = any neighbour
             coord.cmd_gift_care_package(target);
         } else if (strcmp(type, "ota_update") == 0) {
-            // Reboots into the new image on success. The command stays pending
-            // until then; after the reboot the manifest reads "already current"
-            // so it acks without re-flashing — no loop.
+            // On success this reboots into the new image; the command stays
+            // pending until the post-reboot poll reads "already current" and
+            // acks it then. Failures before the update splash return false
+            // and ack now; failures after it reboot WITHOUT acking, so the
+            // command re-triggers on the next poll — bounded by the per-image
+            // attempt counter in _ota_from_vps (OTA_MAX_ATTEMPTS), after
+            // which it refuses the image and the ack finally lands. Note the
+            // retried batch re-applies any commands queued alongside this
+            // one, so that bound also caps their re-execution.
             vps_ota_update(coord);
         } else if (strcmp(type, "grant_wish") == 0) {
             uint32_t wid = cmd["payload"]["id"] | 0;
