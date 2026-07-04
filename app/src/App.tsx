@@ -12,9 +12,10 @@ import { Feedback } from './screens/Feedback';
 import { Empty } from './screens/Empty';
 import { Settings, notificationManager } from './screens/Settings';
 import { critterEmoji } from './data/critters';
+import { loadAnnals } from './data/chronicle';
 import { FieldGuide } from './screens/FieldGuide';
 import { Gallery } from './screens/Gallery';
-import { Saga } from './screens/Saga';
+import { Saga, type ChronicleSection } from './screens/Saga';
 import { HIVE } from './theme/palette';
 import { SIZES } from './theme/fonts';
 import type { ColonyEvent, DataSource } from './api/types';
@@ -41,6 +42,8 @@ const TAB_ICONS: Record<Tab, string> = {
 const GIFT_SEEN_KEY = 'hive_last_gift_seen_unix';
 // localStorage key: unix of the most recent critter discovery the user has seen.
 const DISCOVERY_SEEN_KEY = 'hive_last_discovery_seen_unix';
+// localStorage key: unix of the most recent recorded deed the user has seen.
+const DEED_SEEN_KEY = 'hive_last_deed_seen_unix';
 
 // Service worker registration. registerType is 'autoUpdate' (vite.config.ts), so
 // a new build activates and reloads on its own — no user-facing update prompt.
@@ -82,6 +85,9 @@ export function App() {
   );
   const [discoverySeenUnix, setDiscoverySeenUnix] = useState<number>(
     () => Number(localStorage.getItem(DISCOVERY_SEEN_KEY) || 0)
+  );
+  const [deedSeenUnix, setDeedSeenUnix] = useState<number>(
+    () => Number(localStorage.getItem(DEED_SEEN_KEY) || 0)
   );
   const [dormantDismissed, setDormantDismissed] = useState(false);
 
@@ -188,6 +194,7 @@ export function App() {
       return;
     }
     if (target === 'saga') {
+      setNavParams(params || {});
       setShowSaga(true);
       return;
     }
@@ -265,6 +272,43 @@ export function App() {
       setDiscoverySeenUnix(latestDiscovery.unix);
     }
   }, [latestDiscovery]);
+
+  // The Annals: fold the live window into the register so newly recorded
+  // deeds can toast. Long Memory deeds never toast — grief is record, not
+  // news. At most one toast is visible; the newest page wins.
+  const annals = useMemo(
+    () => (colonyId && colonyState.snapshot
+      ? loadAnnals(colonyId, colonyState.events, colonyState.snapshot)
+      : null),
+    [colonyId, colonyState.events, colonyState.snapshot]);
+
+  const latestDeed = useMemo(() => {
+    if (!annals) return null;
+    let best: { id: string; title: string; unix: number } | null = null;
+    for (const dd of annals.deeds) {
+      if (dd.state !== 'recorded' || dd.arc === 'memory' || !dd.unix) continue;
+      if (!best || dd.unix > best.unix) best = { id: dd.id, title: dd.title, unix: dd.unix };
+    }
+    return best;
+  }, [annals]);
+
+  // First run: baseline to existing history — connecting to a mature colony
+  // must produce zero toast avalanche.
+  useEffect(() => {
+    if (latestDeed && localStorage.getItem(DEED_SEEN_KEY) === null) {
+      localStorage.setItem(DEED_SEEN_KEY, String(latestDeed.unix));
+      setDeedSeenUnix(latestDeed.unix);
+    }
+  }, [latestDeed]);
+
+  const showDeedToast = !!latestDeed && latestDeed.unix > deedSeenUnix;
+
+  const dismissDeed = useCallback(() => {
+    if (latestDeed) {
+      localStorage.setItem(DEED_SEEN_KEY, String(latestDeed.unix));
+      setDeedSeenUnix(latestDeed.unix);
+    }
+  }, [latestDeed]);
 
   // "Eggs lie dormant" — driven by the live snapshot flag (the colony is at its
   // population cap with brood waiting). Using the snapshot rather than the one-shot
@@ -363,7 +407,12 @@ export function App() {
                 ) : showGallery ? (
                   <Gallery onBack={() => setShowGallery(false)} />
                 ) : showSaga ? (
-                  <Saga onBack={() => setShowSaga(false)} />
+                  <Saga
+                    key={String(navParams.deedId ?? '')}
+                    onBack={() => setShowSaga(false)}
+                    initialSection={navParams.section as ChronicleSection | undefined}
+                    initialDeedId={navParams.deedId as string | undefined}
+                  />
                 ) : (
                   <>
                     {tab === 'home' && <Home onNavigate={handleNavigate} />}
@@ -405,6 +454,32 @@ export function App() {
                   }}
                 >
                   {discoveryText}
+                </button>
+              )}
+
+              {/* Deed toast — a page of the Annals is written */}
+              {showDeedToast && (
+                <button
+                  onClick={() => {
+                    handleNavigate('saga', { section: 'deeds', deedId: latestDeed?.id });
+                    dismissDeed();
+                  }}
+                  style={{
+                    flexShrink: 0,
+                    margin: '0 12px 8px',
+                    padding: '12px 16px',
+                    background: HIVE.bark,
+                    color: HIVE.white,
+                    border: 'none',
+                    borderRadius: 12,
+                    fontSize: SIZES.sm,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                    textAlign: 'left',
+                  }}
+                >
+                  {'\u{1F4DC}'} A page of the Annals is written: {latestDeed?.title}. Tap to read.
                 </button>
               )}
 

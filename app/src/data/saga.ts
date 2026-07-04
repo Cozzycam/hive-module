@@ -6,6 +6,7 @@ import type { ColonyEvent } from '../api/types';
 import { traitLabel } from './traits';
 import { artKindLabel, isAccessory } from './artworks';
 import { nameFromId } from './plantNames';
+import type { Deed, Era } from './chronicle';
 
 export interface Chapter {
   title: string;
@@ -42,7 +43,12 @@ function targetName(ev: ColonyEvent): string {
 
 // ---- The composer ----
 
-export function composeSaga(events: ColonyEvent[], foundedUnix?: number): Chapter[] {
+export function composeSaga(
+  events: ColonyEvent[],
+  foundedUnix?: number,
+  annalsDeeds?: Deed[],
+  eras?: Era[],
+): Chapter[] {
   const sorted = [...events]
     .filter(e => e.type !== 'chamber_crossing')
     .sort((a, b) => a.unix - b.unix);
@@ -57,17 +63,58 @@ export function composeSaga(events: ColonyEvent[], foundedUnix?: number): Chapte
   }
 
   // The callback engine: remembered deeds, woven back in when a name
-  // resurfaces at a moment that matters (chiefly: their death).
+  // resurfaces at a moment that matters (chiefly: their death). The Annals'
+  // recorded Founding deeds seed it, so a protagonist's eventual death
+  // notice calls back ("who found the colony's first butterfly").
   const deeds = new Map<string, string>();
+  for (const dd of annalsDeeds ?? []) {
+    if (dd.arc !== 'founding' || dd.state !== 'recorded' || !dd.callback) continue;
+    const hero = dd.protagonists?.[0];
+    if (hero && !deeds.has(hero)) deeds.set(hero, dd.callback);
+  }
   let firstCritterFound = false;
+
+  // Deed pages by week — "It was this week the Annals gained a page."
+  // The First Visitor deed is subsumed by the composer's own first-critter
+  // line, so it never doubles up.
+  const ARC_PRIORITY = ['founding', 'memory', 'growing', 'trials', 'renown'];
+  const deedsByWeek = new Map<number, Deed[]>();
+  for (const dd of annalsDeeds ?? []) {
+    if (dd.state !== 'recorded' || !dd.unix || dd.id === 'first-visitor') continue;
+    const w = Math.floor((dd.unix - start) / WEEK);
+    if (w < 0) continue;
+    if (!deedsByWeek.has(w)) deedsByWeek.set(w, []);
+    deedsByWeek.get(w)!.push(dd);
+  }
+  for (const list of deedsByWeek.values()) {
+    list.sort((a, b) =>
+      ARC_PRIORITY.indexOf(a.arc) - ARC_PRIORITY.indexOf(b.arc) || (a.unix! - b.unix!));
+  }
 
   const chapters: Chapter[] = [];
   const weekIdxs = [...weeks.keys()].sort((a, b) => a - b);
   for (const w of weekIdxs) {
-    chapters.push(composeChapter(w, weeks.get(w)!, start, deeds, {
+    const chapter = composeChapter(w, weeks.get(w)!, start, deeds, {
       firstCritterFound: () => firstCritterFound,
       markFirstCritter: () => { firstCritterFound = true; },
-    }));
+    });
+
+    // Weave in the Annals: pages written this week (cap 2 per chapter)
+    for (const dd of (deedsByWeek.get(w) ?? []).slice(0, 2)) {
+      chapter.paragraphs.push(
+        `It was this week the Annals gained a page: ${dd.title} — ${dd.inscription}.`);
+    }
+    // Era turns close the chapter: "So ended the Founding Days."
+    if (eras) {
+      for (let i = 1; i < eras.length; i++) {
+        const turnW = Math.floor((eras[i].startUnix - start) / WEEK);
+        if (turnW === w) {
+          chapter.paragraphs.push(
+            `So ended ${eras[i - 1].name}. What came after, the colony would call ${eras[i].name}.`);
+        }
+      }
+    }
+    chapters.push(chapter);
   }
   return chapters.reverse();  // newest chapter first
 }
