@@ -1897,11 +1897,57 @@ bool Coordinator::cmd_set_floor_tint(uint16_t target_id, uint8_t r, uint8_t g, u
     return false;
 }
 
+// Event-driven personality drift (v1): a major life event nudges one
+// dimension, permanently. Updates the live conker AND its record (the app's
+// petals chart reads pushed values live), clamps to [0,1], marks the record
+// dirty so it persists. Returns the delta actually applied after clamping —
+// grief banks that as restore-credit.
+static float _drift_personality(Conker& w, IdentityRecord* rec,
+                                uint8_t dim, float delta) {
+    float before = w.personality[dim];
+    float v = before + delta;
+    if (v < 0.0f) v = 0.0f;
+    if (v > 1.0f) v = 1.0f;
+    w.personality[dim] = v;
+    if (rec) {
+        rec->personality[dim] = v;
+        rec->dirty = true;
+    }
+    return v - before;
+}
+
 void Coordinator::_persist_process_deaths() {
     for (int d = 0; d < chamber.death_count; d++) {
         uint32_t id = chamber.deaths[d].id;
         uint8_t cause = chamber.deaths[d].cause;
         char attended_by[16] = {};   // the friend at their side, if any
+
+        // Dead conker's bonds — fetched before remove_owner() erases them.
+        // Shared by the grief drift below and the vigil loop.
+        BondEntry bs[BondStore::PER_OWNER_CAP];
+        int bc = bonds.get_bonds(id, bs, BondStore::PER_OWNER_CAP);
+
+        // Personality drift: losing a BEST friend (mutual — both directions
+        // formed) quiets the survivor for good. Felt even when the colony is
+        // too stressed to hold a vigil; a later NEW best friend restores half
+        // (credit banked on the record).
+        for (int b = 0; b < bc; b++) {
+            if (!bs[b].formed || !bonds.is_formed(bs[b].target, id)) continue;
+            for (int i = 0; i < chamber.conker_count; i++) {
+                Conker& w = chamber.conkers[i];
+                if (w.id != bs[b].target || !w.alive) continue;
+                IdentityRecord* rec = registry.get(w.id);
+                float ds = _drift_personality(w, rec, PERS_SOCIAL_FREQUENCY,
+                                              Cfg::DRIFT_GRIEF_SOCIAL);
+                float dp = _drift_personality(w, rec, PERS_PLAYFULNESS,
+                                              Cfg::DRIFT_GRIEF_PLAY);
+                if (rec) {
+                    rec->grief_social += -ds;   // applied deltas are <= 0
+                    rec->grief_play   += -dp;
+                }
+                break;
+            }
+        }
 
         // Mourning: bonded partners pay respects at the husk. Must run
         // before bonds.remove_owner() erases the relationships. Skipped
@@ -1918,8 +1964,6 @@ void Coordinator::_persist_process_deaths() {
                     break;
                 }
             }
-            BondEntry bs[8];
-            int bc = bonds.get_bonds(id, bs, 8);
             int mourners = 0;
             for (int b = 0; b < bc && hx >= 0
                     && mourners < Cfg::MOURN_MAX_PARTNERS; b++) {
@@ -1939,9 +1983,10 @@ void Coordinator::_persist_process_deaths() {
                     w.has_target = true;
                     w.has_target_cell = false;
                     strlcpy(w.mourning_for, dead_name, sizeof(w.mourning_for));
-                    // Best friends (the bond was mutual) hold a full vigil; a
-                    // one-way attachment grieves only briefly.
-                    bool mutual = bonds.is_formed(w.id, id);
+                    // Best friends (the bond was mutual — BOTH directions
+                    // formed, bs[b] is dead->w) hold a full vigil; a one-way
+                    // attachment grieves only briefly.
+                    bool mutual = bs[b].formed && bonds.is_formed(w.id, id);
                     w.zoomie_ticks = mutual ? Cfg::MOURN_DURATION_TICKS
                                             : Cfg::MOURN_ONEWAY_TICKS;
                     w.zoomie_target = -1;
@@ -2414,6 +2459,23 @@ void Coordinator::_bond_detect_proximity(uint32_t tick_num) {
                 if ((formed_ab || formed_ba)
                         && bonds.is_formed(a.id, b.id)
                         && bonds.is_formed(b.id, a.id)) {
+                    // Personality drift: a NEW best friend restores half of
+                    // what grief took; the banked credit is spent either way
+                    // (the other half is gone for good).
+                    Conker* pair[2] = { &a, &b };
+                    for (int p = 0; p < 2; p++) {
+                        IdentityRecord* rec = registry.get(pair[p]->id);
+                        if (!rec || (rec->grief_social <= 0.0f
+                                  && rec->grief_play <= 0.0f)) continue;
+                        _drift_personality(*pair[p], rec, PERS_SOCIAL_FREQUENCY,
+                                           rec->grief_social * 0.5f);
+                        _drift_personality(*pair[p], rec, PERS_PLAYFULNESS,
+                                           rec->grief_play * 0.5f);
+                        rec->grief_social = 0.0f;
+                        rec->grief_play   = 0.0f;
+                        rec->dirty = true;
+                    }
+
                     JournalEntry je = {};
                     je.tick = tick_num;
                     je.unix_time = g_tod.unix_time;
@@ -3103,6 +3165,9 @@ void Coordinator::_catcher_resolve(uint32_t tick_num) {
     if (rec) {
         rec->traits |= TRAIT_CATCHER;
         rec->dirty = true;
+        // Personality drift: the crown emboldens — champions range wider.
+        _drift_personality(champ, rec, PERS_EXPLORATION,
+                           Cfg::DRIFT_CROWN_EXPLORATION);
         if (g_tod.unix_time > 1000000) {
             _last_award_unix = g_tod.unix_time;
             Preferences prefs;
@@ -3196,6 +3261,10 @@ void Coordinator::challenge_end(uint32_t tick_num) {
         if (w.id == 0 || !w.alive) continue;
         IdentityRecord* rec = registry.get(w.id);
         if (!rec) continue;
+        // Personality drift: every survival steels them a little — not just
+        // the first of each challenge type (the trait below fires once).
+        _drift_personality(w, rec, PERS_BRAVERY, Cfg::DRIFT_SURVIVE_BRAVERY);
+        _drift_personality(w, rec, PERS_HARDINESS, Cfg::DRIFT_SURVIVE_HARDINESS);
         if (!(rec->traits & survival_bit)) {
             rec->traits |= survival_bit;
             rec->dirty = true;
