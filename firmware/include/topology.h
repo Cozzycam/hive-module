@@ -226,6 +226,7 @@ struct __attribute__((packed)) JournalRelayMessage {
     char     who[16];
     uint8_t  extra;       // per-type detail (critter kind / plot / kind|ctx<<4)
     char     honoree[16]; // crafted memorials
+    uint8_t  motif;       // crafted works' rolled form (added later — length-gated)
 };
 struct PendingJournalRelay {
     uint8_t data[48];

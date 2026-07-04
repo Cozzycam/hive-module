@@ -1288,6 +1288,7 @@ void Coordinator::_journal_from_bus_events(const Event* events, int count,
             strlcpy(je.who, ev.crafted.who, sizeof(je.who));
             je.crafted.kind = ev.crafted.kind;
             je.crafted.context = ev.crafted.context;
+            je.crafted.motif = ev.crafted.motif;
             strlcpy(je.crafted.honoree, ev.crafted.honoree,
                     sizeof(je.crafted.honoree));
             journal.emit(je);
@@ -1710,6 +1711,7 @@ void Coordinator::_relay_bus_events(const Event* events, int count) {
             msg.jtype     = JEVT_CRAFTED;
             msg.lilguy_id = ev.crafted.maker_id;
             msg.extra     = (uint8_t)(ev.crafted.kind | (ev.crafted.context << 4));
+            msg.motif     = ev.crafted.motif;
             strlcpy(msg.who, ev.crafted.who, sizeof(msg.who));
             strlcpy(msg.honoree, ev.crafted.honoree, sizeof(msg.honoree));
         } else if (ev.type == EVT_ART_WEATHERED) {
@@ -1732,10 +1734,12 @@ void Coordinator::_receive_journal_relays() {
     PendingJournalRelay pending[8];
     int n = topology_drain_journal_relays(pending, 8);
     for (int i = 0; i < n; i++) {
-        if (pending[i].len < (int)sizeof(JournalRelayMessage)) continue;
+        // motif was appended later — accept the shorter pre-motif layout too
+        if (pending[i].len < (int)offsetof(JournalRelayMessage, motif)) continue;
         const JournalRelayMessage& msg =
             *reinterpret_cast<const JournalRelayMessage*>(pending[i].data);
         if (msg.msg_type != TOPO_JOURNAL_RELAY) continue;
+        bool has_motif = pending[i].len >= (int)sizeof(JournalRelayMessage);
 
         if (msg.jtype == JEVT_DISCOVERY) {
             // Same cadence as local discoveries — ≤1 per 10 min
@@ -1780,6 +1784,7 @@ void Coordinator::_receive_journal_relays() {
             ev.tick = chamber.tick_num;
             ev.crafted.kind = msg.extra & 0x0F;
             ev.crafted.context = (msg.extra >> 4) & 0x0F;
+            ev.crafted.motif = has_motif ? msg.motif : 0;
             ev.crafted.maker_id = msg.lilguy_id;
             strlcpy(ev.crafted.who, msg.who, sizeof(ev.crafted.who));
             strlcpy(ev.crafted.honoree, msg.honoree, sizeof(ev.crafted.honoree));

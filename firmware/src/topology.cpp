@@ -363,7 +363,9 @@ static void _on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int l
             _ds_write = (idx + 1) % DS_BUF_SIZE;
             _ds_count++;
         }
-    } else if (msg_type == TOPO_JOURNAL_RELAY && len >= (int)sizeof(JournalRelayMessage)) {
+    } else if (msg_type == TOPO_JOURNAL_RELAY
+               && len >= (int)offsetof(JournalRelayMessage, motif)) {
+        // motif field added later — pre-motif senders still pass
         // Satellite story beat — buffer for the queen's journal
         if (_jr_count < JR_BUF_SIZE) {
             int idx = _jr_write;
