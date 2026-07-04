@@ -327,6 +327,21 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
     return list;
   }, [characters, filter]);
 
+  // Per-conker event buckets so roster epithets see the same history the
+  // profile does — event-earned titles ('the Maker') trump personality
+  // flavour, so without history the list and profile disagree (keeper #37).
+  // Bucketed once here rather than filtering inside every row's render.
+  const eventsByConker = useMemo(() => {
+    const buckets = new Map<number, ColonyEvent[]>();
+    for (const ev of events) {
+      if (!ev.lilguy) continue;
+      let bucket = buckets.get(ev.lilguy);
+      if (!bucket) { bucket = []; buckets.set(ev.lilguy, bucket); }
+      bucket.push(ev);
+    }
+    return buckets;
+  }, [events]);
+
   // Load detail from LAN when a character is selected
   useEffect(() => {
     if (selectedId === null) {
@@ -422,7 +437,7 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
               {c.name}
               {(() => {
                 // Epithets make them memorable at a glance ("Bramble the Bold")
-                const ep = epithet(c.traits, c.personality);
+                const ep = epithet(c.traits, c.personality, eventsByConker.get(c.id));
                 return ep && (
                   <span style={{ fontWeight: 400, fontStyle: 'italic', color: palette.dimText }}>
                     {' '}{ep}
