@@ -1,12 +1,19 @@
 # Hive Module — Pixel Art Commission Brief
 
+> **Revised 2026-07-06.** Added **D3. Keepsake hats** — conkers now craft little
+> hats for their best friends, worn in the *maker's* colour. This is a live,
+> prominent feature (most of the colony is wearing one) currently running on
+> programmer-made placeholder shapes, so it's real art we need. Everything else
+> below is unchanged; the worker (A) and emotes (B) remain the priority.
+
 ## What this is
 
 A physical desk companion: a small 3D-printed module with a 3.5" screen housing a
 living virtual ant colony. Little creatures ("Conkers") hatch, work, nap, make best
-friends, hold vigils for their dead, chase fireflies, and survive real weather —
-the colony lives on the device 24/7 and the keeper checks in like tending a
-terrarium. Think *cozy ant farm meets Tamagotchi meets Dwarf Fortress*.
+friends, craft keepsakes and little hats for the friends they love, hold vigils for
+their dead, chase fireflies, and survive real weather — the colony lives on the
+device 24/7 and the keeper checks in like tending a terrarium. Think *cozy ant farm
+meets Tamagotchi meets Dwarf Fortress*.
 
 The art style is **chunky warm pixel art**: sprites are authored tiny and
 integer-upscaled ~2× on a 480×320 screen, so every pixel reads. Existing
@@ -25,12 +32,13 @@ colony's cast feel *alive and loveable* within the constraints below.
 | Naming | `worker_walk_a.png`, `worker_walk_b.png`, `critter_moth_a.png` … |
 | Ceiling | Nothing renders larger than 96×96 on screen (engine limit — respected by the sizes below) |
 
-### The body-tone rule (workers + queen only)
+### The body-tone rule (workers, queen, artifacts & hats)
 
-Every Conker gets its **own unique hue applied by the engine at runtime** — your
-art supplies *shape and shading only*. Paint worker/queen bodies in a **neutral
-desaturated warm brown ramp** and the engine re-colors each pixel by its
-brightness:
+Several things get their **hue applied by the engine at runtime** — your art
+supplies *shape and shading only*. This covers worker/queen bodies (each conker's
+own hue), the crafted artifacts in D2, and the keepsake hats in D3 (the *maker's*
+hue). Paint them all in a **neutral desaturated warm brown ramp** and the engine
+re-colors each pixel by its brightness:
 
 - shadow ≈ `#4A3B2F` · base/midtone ≈ `#665441` (aim mid-luma ~98/255) · highlight ≈ `#8C7660`
 - Use **3–5 ramp steps**, no hue variation within the body (hue gets replaced), no gradients
@@ -114,6 +122,35 @@ sprite renders as every artist's own work. Memorials keep fixed colours.
 | Floor painting ×2-3 motifs | 10×10 | neutral ramp | pigment pressed into the ground — pattern, not picture |
 | Memorial stone | 10×10 | **fixed** | a quiet grave marker with a small flower. Carved by a grieving friend, bears a name in the app — the most emotionally loaded sprite in the whole commission. Understated beats ornate |
 
+### D3. Keepsake hats — worn gifts (priority 4, alongside D)
+
+When two conkers become best friends, the muse sometimes moves one to make the
+other a **little hat** — a gift, worn on the head for as long as the friendship
+lasts (and *forever*, as a memorial, if the maker dies while they're still
+friends). Most of the colony ends up wearing one, so these are on screen
+constantly, sitting just above the head.
+
+**The maker's-colour rule (important):** a hat is rendered in the *maker's* own
+personal hue, not the wearer's — the same neutral-ramp trick as worker bodies and
+artifacts (see the body-tone rule and D2). Paint each hat in the **neutral
+desaturated warm-brown ramp**, no hue of its own, and the engine re-colours the
+whole hat into whoever made it. So Plum's gift reads as Plum's colour on whoever's
+head it lands. This is the whole point of the feature — *you can tell who made a
+hat by its colour* — so keep them **fully ramp-shaded with no fixed-colour accents**
+(a baked gold bud, say, would fight the recolour).
+
+| Item | Canvas | Palette | Notes |
+|---|---|---|---|
+| Petal hat | 12×9 | neutral ramp | a wide flower-brim with a small petal crown — soft and spring-like. The default, most common gift |
+| Seed cap | 10×9 | neutral ramp | a snug rounded dome-cap with a tiny sprout/leaf poking from the top — cute, close-fitting |
+| Grass hat | 14×8 | neutral ramp | a wide woven sun-brim (think little farmhand's straw hat) with a stray blade or two — the broadest of the three |
+
+**3 hats @ their sizes, neutral ramp.** Filenames: `hat_petal.png`,
+`hat_seed_cap.png`, `hat_grass.png`. Design them to sit **above** the head (the
+engine composites them on top of the worker sprite — you don't bake them into the
+worker frames), reading clearly against the chamber floor. They scale with the
+wearer, so a design that holds up small is ideal.
+
 ### E. Queen — 44×44 (priority 5)
 
 Regal but warm; same neutral-ramp + eye rule as workers. `idle_a`, `idle_b`
@@ -144,4 +181,6 @@ critter wings ~2–4×/sec). You never need to deliver timing — poses only.
 PNG per frame, native size, magenta background, zipped with the naming scheme
 above. We convert and flash within a day — you'll get photos of your art
 *running on the real device* for revision rounds. Suggested phasing: **A + B
-first** (the colony's soul), then C, then D/E.
+first** (the colony's soul), then C, then D (decor + artifacts + the D3 hats)
+and E. The three hats are small and self-contained — a quick, high-impact win if
+you want an early morale boost, since the whole colony wears them.
