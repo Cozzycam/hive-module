@@ -264,12 +264,17 @@ bool ConkerRegistry::_write_record(const IdentityRecord& rec, bool async,
     char path[80];
     _record_path(path, sizeof(path), "lilguys", rec.id);
 
-    // Ensure shard dir exists
-    char shard[64];
-    _shard_path(shard, sizeof(shard), "lilguys", rec.id);
-    chores_sd_lock();
-    if (!SD_MMC.exists(shard)) SD_MMC.mkdir(shard);
-    chores_sd_unlock();
+    // Ensure shard dir exists — synchronous path only. On the async path
+    // even this exists() check stalls the loop behind the worker's
+    // in-flight write (the mutex serializes the card), which quietly
+    // rebuilt most of the old 30s pause; the worker mkdirs on demand.
+    if (!async) {
+        char shard[64];
+        _shard_path(shard, sizeof(shard), "lilguys", rec.id);
+        chores_sd_lock();
+        if (!SD_MMC.exists(shard)) SD_MMC.mkdir(shard);
+        chores_sd_unlock();
+    }
 
     JsonDocument doc;
     doc["schema"]      = 1;

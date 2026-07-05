@@ -1939,7 +1939,10 @@ void Renderer::_draw_artworks(const Chamber& ch) {
         const uint16_t* spr;
         int sw, sh;
         uint8_t tint = a.maker_tint;
-        float scale = 1.4f;
+        // Sized against the conkers, not the grid: bodies render ~24px, so
+        // works at the old 1.4x (~14px) read as trinkets — an arch "to pass
+        // under" drew smaller than the one passing under it.
+        float scale = 2.2f;
 
         switch (a.kind) {
         case ART_SCULPTURE:
@@ -1951,15 +1954,17 @@ void Renderer::_draw_artworks(const Chamber& ch) {
             break;
         case ART_CAIRN:
             spr = ART_CAIRN_SPR; sw = ART_CAIRN_SPR_W; sh = ART_CAIRN_SPR_H;
+            scale = 2.0f;
             break;
         case ART_PAINTING:
             if (a.motif % 2) { spr = ART_PAINT_B; sw = ART_PAINT_B_W; sh = ART_PAINT_B_H; }
             else             { spr = ART_PAINT_A; sw = ART_PAINT_A_W; sh = ART_PAINT_A_H; }
-            scale = 1.2f;   // paintings lie flat, subtler
+            scale = 1.7f;   // paintings lie flat, subtler
             break;
         default:  // ART_MEMORIAL — fixed stone palette, never re-hued
             spr = ART_MEMORIAL_SPR; sw = ART_MEMORIAL_SPR_W; sh = ART_MEMORIAL_SPR_H;
             tint = 0;
+            scale = 2.0f;   // a stone that stands
             break;
         }
 

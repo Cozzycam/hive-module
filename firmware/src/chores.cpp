@@ -70,7 +70,20 @@ static int _do_sd_write(const ChoreItem& it) {
 
     chores_sd_lock();
     File f = SD_MMC.open(tmp_path, FILE_WRITE);
-    if (!f) { chores_sd_unlock(); return 0; }
+    if (!f) {
+        // Parent dir may not exist yet (record shard dirs are created on
+        // demand here, not on the main loop — an exists() there blocks
+        // behind our own in-flight writes). Make it and retry once.
+        char dir[140];
+        strlcpy(dir, it.path, sizeof(dir));
+        char* slash = strrchr(dir, '/');
+        if (slash && slash != dir) {
+            *slash = '\0';
+            SD_MMC.mkdir(dir);
+            f = SD_MMC.open(tmp_path, FILE_WRITE);
+        }
+        if (!f) { chores_sd_unlock(); return 0; }
+    }
     size_t written = f.write((const uint8_t*)it.payload, it.payload_len);
     f.flush();
     f.close();

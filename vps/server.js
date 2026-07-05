@@ -177,8 +177,14 @@ const stmts = {
   `),
 };
 
-// Command types the app may enqueue (queen applies them on her next poll)
-const COMMAND_TYPES = new Set(['name_conker', 'feed_colony', 'set_module_role', 'set_floor_tint', 'gift_care_package', 'ota_update', 'reset_to_satellite', 'set_followed', 'grant_wish']);
+// Command types the app may enqueue (queen applies them on her next poll).
+// The queue is deliberately unauthenticated (the app has no keeper login),
+// so nothing DESTRUCTIVE may live in this set: colony ids are listed by the
+// connect screen, so anyone can queue these against any colony.
+// reset_to_satellite (full colony wipe) is admin-only — queue it by hand:
+//   sqlite3 hive.db "INSERT INTO commands (colony_id,type,payload)
+//                    VALUES ('<id>','reset_to_satellite','{\"role\":\"garden\"}')"
+const COMMAND_TYPES = new Set(['name_conker', 'feed_colony', 'set_module_role', 'set_floor_tint', 'gift_care_package', 'ota_update', 'set_followed', 'grant_wish']);
 
 // ---- HMAC verification ----
 function verifyHmac(body, signature) {
@@ -187,13 +193,32 @@ function verifyHmac(body, signature) {
     .createHmac('sha256', HMAC_SECRET)
     .update(body)
     .digest('hex');
-  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature || ''));
+  // timingSafeEqual THROWS on length mismatch — a short/garbled signature
+  // header must read as "invalid", not a 500
+  try {
+    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature || ''));
+  } catch { return false; }
 }
 
 // ---- Express app ----
 const app = express();
 app.use(morgan('short'));
 app.use(express.raw({ type: 'application/json', limit: '1mb' }));
+
+// Light per-IP rate limit for the unauthenticated write endpoints
+// (commands, feedback, push). Two legitimate keepers exist; 60 writes per
+// hour per IP is generous for humans and a wall for scripts. In-memory —
+// resets on restart, which is fine for a nuisance control.
+const _rateBuckets = new Map();
+function rateLimit(req, res, next) {
+  const key = req.ip || 'unknown';
+  const now = Date.now();
+  let b = _rateBuckets.get(key);
+  if (!b || now - b.start > 3600_000) { b = { start: now, n: 0 }; _rateBuckets.set(key, b); }
+  if (++b.n > 60) return res.status(429).json({ error: 'slow down' });
+  if (_rateBuckets.size > 10000) _rateBuckets.clear();  // memory backstop
+  next();
+}
 
 // Auth middleware for POST endpoints
 function authMiddleware(req, res, next) {
@@ -393,7 +418,7 @@ app.get('/api/v1/push/vapid', (req, res) => {
 
 // Register a browser push subscription against a colony.
 // Accepts either a bare PushSubscription (legacy) or { sub, pref }.
-app.post('/api/v1/colonies/:colony_id/push/subscribe', (req, res) => {
+app.post('/api/v1/colonies/:colony_id/push/subscribe', rateLimit, (req, res) => {
   let parsed;
   try { parsed = JSON.parse(req.body.toString()); } catch { return res.status(400).json({ error: 'invalid json' }); }
   const sub = parsed && parsed.sub ? parsed.sub : parsed;
@@ -406,7 +431,7 @@ app.post('/api/v1/colonies/:colony_id/push/subscribe', (req, res) => {
 });
 
 // Fire a test push to all of a colony's subscriptions (app Settings button)
-app.post('/api/v1/colonies/:colony_id/push/test', (req, res) => {
+app.post('/api/v1/colonies/:colony_id/push/test', rateLimit, (req, res) => {
   if (!webpush || !VAPID.publicKey) return res.status(503).json({ error: 'push disabled' });
   const n = db.prepare(`SELECT COUNT(*) AS c FROM push_subscriptions WHERE colony_id = ?`)
     .get(req.params.colony_id).c;
@@ -417,7 +442,7 @@ app.post('/api/v1/colonies/:colony_id/push/test', (req, res) => {
 });
 
 // Remove a subscription (pref switched to Off in the app)
-app.post('/api/v1/colonies/:colony_id/push/unsubscribe', (req, res) => {
+app.post('/api/v1/colonies/:colony_id/push/unsubscribe', rateLimit, (req, res) => {
   let parsed;
   try { parsed = JSON.parse(req.body.toString()); } catch { return res.status(400).json({ error: 'invalid json' }); }
   if (!parsed || !parsed.endpoint) return res.status(400).json({ error: 'no endpoint' });
@@ -567,7 +592,7 @@ app.get('/api/v1/colonies/:colony_id/firmware', (req, res) => {
 });
 
 // POST /api/v1/colonies/:colony_id/commands  (from app — no HMAC, validated + capped)
-app.post('/api/v1/colonies/:colony_id/commands', (req, res) => {
+app.post('/api/v1/colonies/:colony_id/commands', rateLimit, (req, res) => {
   const { colony_id } = req.params;
   let parsed;
   try { parsed = JSON.parse(req.body.toString()); } catch { return res.status(400).json({ error: 'invalid json' }); }
@@ -608,7 +633,7 @@ app.post('/api/v1/colonies/:colony_id/commands/ack', colonyAuth, (req, res) => {
 
 // POST /api/v1/feedback  (from app — no HMAC; length-capped + daily rate cap)
 // body: { colony_id, text, context: { fw_version, app_version, ... } }
-app.post('/api/v1/feedback', (req, res) => {
+app.post('/api/v1/feedback', rateLimit, (req, res) => {
   let parsed;
   try { parsed = JSON.parse(req.body.toString()); } catch { return res.status(400).json({ error: 'invalid json' }); }
   const text = String(parsed.text || '').trim();
