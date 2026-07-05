@@ -370,6 +370,12 @@ static void _flushw_worker(void*) {
 #endif
         _flushw_inflight.fetch_sub(1);
         xSemaphoreGive(_flushw_done);
+        // MANDATORY yield: double-buffered, frames arrive faster than they
+        // push, so this loop otherwise never blocks — a priority-1 task that
+        // never blocks starves IDLE0 and the task watchdog reboots the board
+        // (v210 crash-looped at ~25s uptime on exactly this). 1 tick = ~1ms:
+        // IDLE0 gets a slice every frame, costs ~3% flush throughput.
+        vTaskDelay(1);
     }
 }
 
