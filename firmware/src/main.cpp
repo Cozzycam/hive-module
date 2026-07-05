@@ -706,6 +706,39 @@ static void process_serial_line(const char* line) {
         sim.coordinator.print_topology();
     } else if (strcmp(line, "topo status") == 0) {
         topology_status();
+    } else if (strncmp(line, "hat ", 4) == 0) {
+        // hat <wearer_id> [maker_id] — inspect or stamp a worn hat's maker.
+        // Backfill lever for pre-v212 hats (maker unrecorded, rendered in
+        // legacy colours); new gifts stamp themselves at crafting time.
+        uint32_t wid = 0, mid = 0;
+        int n = sscanf(line + 4, "%lu %lu", &wid, &mid);
+        auto& cham = sim.coordinator.chamber;
+        Conker* w = nullptr;
+        for (int i = 0; i < cham.conker_count; i++)
+            if (cham.conkers[i].id == wid && cham.conkers[i].alive) {
+                w = &cham.conkers[i]; break;
+            }
+        static const char* HAT_KIND[] = {"nothing", "petal hat", "seed cap", "grass hat"};
+        if (!w) {
+            Serial.println("[hat] wearer not local (away or unknown) — try when they're home");
+        } else if (w->accessory == 0 || w->accessory > 3) {
+            Serial.printf("[hat] %s wears nothing\r\n", w->name);
+        } else if (n < 2) {
+            Serial.printf("[hat] %s wears a %s: tint=%u from=%lu memorial=%d\r\n",
+                          w->name, HAT_KIND[w->accessory], w->accessory_tint,
+                          (unsigned long)w->accessory_from, (int)w->accessory_memorial);
+        } else {
+            IdentityRecord* mrec = sim.coordinator.registry.get(mid);
+            if (!mrec) {
+                Serial.println("[hat] maker not in the living registry");
+            } else {
+                w->accessory_from = mid;
+                w->accessory_tint = mrec->tint_seed;
+                Serial.printf("[hat] %s's %s now carries %s's colour (tint %u)\r\n",
+                              w->name, HAT_KIND[w->accessory],
+                              mrec->name, mrec->tint_seed);
+            }
+        }
     } else if (strcmp(line, "mem") == 0) {
         // Heap health at a glance. min_ever is the high-water mark that
         // matters: it captures the worst squeeze (TLS handshakes) since boot.
