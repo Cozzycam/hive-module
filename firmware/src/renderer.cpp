@@ -1265,28 +1265,53 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
             if (w.accessory != 0) {
                 float rs = w.render_scale();
                 if (w.accessory == 1) {          // petal hat
-                    int hw = (int)(rs * 1.6f); if (hw < 2) hw = 2;   // brim half-width
-                    int hy = sd.render_y - (int)(rs * 4.5f);
-                    _gfx->fillRect(sd.render_x - hw, hy, hw * 2 + 1, 2,
+                    // Wide-brimmed and proud — spans most of the head, with
+                    // thickness that scales too (a fixed 2px brim read as a
+                    // sliver on a grown conker).
+                    int hw = (int)(rs * 3.2f); if (hw < 4) hw = 4;   // brim half-width
+                    int bt = (int)(rs * 0.9f); if (bt < 2) bt = 2;   // brim thickness
+                    int ct = bt + 1;                                  // crown height
+                    int hy = sd.render_y - (int)(rs * 4.5f);          // brim top row
+                    _gfx->fillRect(sd.render_x - hw, hy, hw * 2 + 1, bt,
                                    _rgb565(240, 160, 190));            // brim
-                    _gfx->fillRect(sd.render_x - hw / 2, hy - 2, hw + 1, 2,
+                    _gfx->fillRect(sd.render_x - hw / 2, hy - ct, hw + 1, ct,
                                    _rgb565(250, 195, 215));            // crown petals
-                    _gfx->drawPixel(sd.render_x, hy - 3, _rgb565(255, 225, 150));
-                    _mark_dirty(sd.render_x - hw - 1, hy - 4, hw * 2 + 3, 7);
+                    _gfx->fillRect(sd.render_x - hw, hy - 1, 2, 1,
+                                   _rgb565(250, 195, 215));            // petal fringe L
+                    _gfx->fillRect(sd.render_x + hw - 1, hy - 1, 2, 1,
+                                   _rgb565(250, 195, 215));            // petal fringe R
+                    _gfx->fillRect(sd.render_x - 1, hy - ct - 2, 2, 2,
+                                   _rgb565(255, 225, 150));            // golden bud
+                    _mark_dirty(sd.render_x - hw - 1, hy - ct - 3,
+                                hw * 2 + 3, ct + bt + 4);
                 } else if (w.accessory == 2) {   // seed pendant
-                    int ps = (int)(rs * 0.8f); if (ps < 2) ps = 2;
+                    int ps = (int)(rs * 1.2f); if (ps < 3) ps = 3;
                     int py2 = sd.render_y + (int)(rs * 1.0f);
                     _gfx->fillRect(sd.render_x - ps / 2, py2, ps, ps,
                                    _rgb565(210, 165, 70));
-                    _gfx->drawPixel(sd.render_x - ps / 2, py2, _rgb565(245, 210, 120));
+                    _gfx->fillRect(sd.render_x - ps / 2, py2, ps, 1,
+                                   _rgb565(245, 210, 120));            // catch the light
                     _mark_dirty(sd.render_x - ps / 2 - 1, py2 - 1, ps + 2, ps + 2);
                 } else {                          // grass band
-                    int bh = (int)(rs * 1.5f); if (bh < 3) bh = 3;
-                    int bx = sd.render_x - (int)(rs * 2.5f);
-                    int by = sd.render_y - bh / 2;
-                    _gfx->drawFastVLine(bx, by, bh, _rgb565(110, 190, 95));
-                    _gfx->drawFastVLine(bx + 1, by + 1, bh - 1, _rgb565(150, 215, 130));
-                    _mark_dirty(bx - 1, by - 1, 4, bh + 2);
+                    // Worn as a woven sash across the middle — the old 2px
+                    // vertical tick vanished against the tinted body. Bright
+                    // core with a sunlit top edge and dark under-edge so it
+                    // reads on any body colour, knot and blade at the hip.
+                    int bw = (int)(rs * 4.0f); if (bw < 4) bw = 4;    // sash half-width
+                    int bt = (int)(rs * 0.8f); if (bt < 2) bt = 2;    // sash thickness
+                    int by = sd.render_y + (int)(rs * 0.5f);          // waist row
+                    _gfx->fillRect(sd.render_x - bw, by, bw * 2 + 1, bt,
+                                   _rgb565(120, 205, 90));             // woven grass
+                    _gfx->drawFastHLine(sd.render_x - bw, by - 1, bw * 2 + 1,
+                                        _rgb565(195, 235, 140));       // sunlit edge
+                    _gfx->drawFastHLine(sd.render_x - bw, by + bt, bw * 2 + 1,
+                                        _rgb565(45, 110, 40));         // shaded edge
+                    int kx = sd.render_x + bw - 1;                     // knot at the hip
+                    _gfx->fillRect(kx - 1, by - 1, 3, bt + 2, _rgb565(80, 160, 60));
+                    _gfx->drawFastVLine(kx, by - bt - 2, bt + 1,
+                                        _rgb565(150, 220, 110));       // blade poking up
+                    _mark_dirty(sd.render_x - bw - 1, by - bt - 3,
+                                bw * 2 + 4, bt * 2 + 6);
                 }
             }
 
