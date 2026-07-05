@@ -312,12 +312,68 @@ static inline void _floor_cache_put(int x, int y, uint16_t col) {
 static unsigned long _prof_frame_total = 0;
 static unsigned long _prof_floor_total = 0;
 static unsigned long _prof_sprites_total = 0;
-static unsigned long _prof_flush_total = 0;
+static unsigned long _prof_flush_total = 0;    // worker-side QSPI push time
+static unsigned long _prof_wait_total = 0;     // core-1 time blocked on the worker
 static unsigned long _prof_flush_pixels_total = 0;
 static int           _prof_full_redraw_count = 0;
 static int           _prof_frame_count = 0;
 static unsigned long _prof_last_report = 0;
 #endif
+
+// ================================================================
+//  Async flush worker (core 0)
+// ================================================================
+// The full-frame QSPI push costs ~35ms — the single biggest CPU item on
+// core 1 (v208 [perf]: 21ms render + 35ms flush per ~14fps frame). The
+// worker overlaps the push with the next cycle's sim/net work. Safety
+// invariant: the framebuffer is never WRITTEN while the worker READS it —
+// draw() blocks until the previous push completes (normally it already
+// has), and every canvas write in the codebase happens between draw()
+// entry and flush(). Same shape as the v206 chores worker: core 0
+// (idles between WiFi stack work), priority 1 (above idle, below WiFi),
+// synchronous fallback if task creation fails.
+static TaskHandle_t      _flushw_task = nullptr;
+static SemaphoreHandle_t _flushw_req  = nullptr;
+static SemaphoreHandle_t _flushw_done = nullptr;
+static Arduino_Canvas*   _flushw_canvas = nullptr;
+static Arduino_TFT*      _flushw_panel  = nullptr;
+// True while core 1 may write the canvas (between draw() and flush()).
+// Only toggled from core 1; the worker never touches it.
+static bool _flushw_owned = true;
+
+static void _flushw_worker(void*) {
+    for (;;) {
+        xSemaphoreTake(_flushw_req, portMAX_DELAY);
+        unsigned long t0 = millis();
+        _flushw_panel->draw16bitRGBBitmap(0, 0, _flushw_canvas->getFramebuffer(),
+                                          SCREEN_W, SCREEN_H);
+#if RENDERER_PROFILE
+        _prof_flush_total += millis() - t0;
+#else
+        (void)t0;
+#endif
+        xSemaphoreGive(_flushw_done);
+    }
+}
+
+// Block until the in-flight push (if any) completes and core 1 owns the
+// canvas again. Called at draw() entry and by modal paths via
+// renderer_flush_drain().
+static void _flushw_acquire() {
+    if (_flushw_owned || !_flushw_task) { _flushw_owned = true; return; }
+    unsigned long t0 = millis();
+    xSemaphoreTake(_flushw_done, portMAX_DELAY);
+    _flushw_owned = true;
+#if RENDERER_PROFILE
+    _prof_wait_total += millis() - t0;
+#else
+    (void)t0;
+#endif
+}
+
+void renderer_flush_drain() {
+    _flushw_acquire();
+}
 
 // ================================================================
 //  Init
@@ -329,6 +385,19 @@ void Renderer::init(Arduino_Canvas* canvas, Arduino_TFT* output) {
     _needs_full_redraw = true;
     _dirty_count = 0;
     _anim_count = 0;
+
+    // Spin up the async flush worker (see block above). On any failure the
+    // handles stay null and flush() falls back to the old synchronous push.
+    _flushw_canvas = canvas;
+    _flushw_panel  = output;
+    _flushw_req  = xSemaphoreCreateBinary();
+    _flushw_done = xSemaphoreCreateBinary();
+    if (!_flushw_req || !_flushw_done
+            || xTaskCreatePinnedToCore(_flushw_worker, "fbflush", 4096, nullptr,
+                                       1, &_flushw_task, 0) != pdPASS) {
+        _flushw_task = nullptr;
+        Serial.println("[renderer] flush worker unavailable — synchronous flush");
+    }
 
     // Precompute grain speck positions (deterministic)
     uint32_t seed = 0xDEADBEE5;
@@ -398,10 +467,6 @@ void Renderer::_union_bounds(FlushBounds& dst, const FlushBounds& src) {
 }
 
 void Renderer::flush() {
-#if RENDERER_PROFILE
-    unsigned long t0 = millis();
-#endif
-
     // Union current frame's dirty rects (new sprite positions) into flush bounds
     _union_dirty_into_bounds(_flush_bounds);
 
@@ -410,7 +475,27 @@ void Renderer::flush() {
     // + HUD, the dirty bounding box covers ~100% of the screen anyway, so the
     // windowed path provided no benefit. Keeping dirty-rect tracking infrastructure
     // for future use (clustered layouts, companion app rendering, fewer workers).
-    _gfx->flush();
+    //
+    // The push itself runs on the core-0 worker; core 1 is free the moment
+    // the request is posted. No canvas write may happen from here until
+    // draw() re-acquires ownership.
+    if (_flushw_task) {
+        if (_flushw_owned) {
+            _flushw_owned = false;
+            xSemaphoreGive(_flushw_req);
+        }
+        // else: previous push still in flight and nothing drew since —
+        // never fall through to a synchronous push here, it would race
+        // the worker on the QSPI bus.
+    } else {
+#if RENDERER_PROFILE
+        unsigned long t0 = millis();
+#endif
+        _gfx->flush();  // no worker — old synchronous path
+#if RENDERER_PROFILE
+        _prof_flush_total += millis() - t0;
+#endif
+    }
 
 #if RENDERER_PROFILE
     // Still compute flush bounds for diagnostic reporting
@@ -425,10 +510,6 @@ void Renderer::flush() {
     // Save current bounds for next frame (so restored floor regions get flushed)
     _prev_flush_bounds = {};
     _union_dirty_into_bounds(_prev_flush_bounds);
-
-#if RENDERER_PROFILE
-    _prof_flush_total += millis() - t0;
-#endif
 }
 
 // ================================================================
@@ -497,6 +578,11 @@ void Renderer::_clear_dirty() {
 // ================================================================
 
 void Renderer::draw(const Chamber& ch, float lerp_t) {
+    // The previous frame's push must finish before anything writes the
+    // canvas — this is the async-flush safety gate (normally a no-op: at
+    // ~30fps pacing the 35ms push has already completed).
+    _flushw_acquire();
+
     // Capture previous frame's dirty rects as flush bounds
     // (these regions were restored by floor blit but display still shows old sprites)
     _flush_bounds = {};
@@ -600,18 +686,25 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
         unsigned long avg_flush_px = _prof_flush_pixels_total / _prof_frame_count;
         int flush_pct = (int)(avg_flush_px * 100 / (SCREEN_W * SCREEN_H));
         int full_pct = _prof_full_redraw_count * 100 / _prof_frame_count;
-        Serial.printf("[perf] frames=%d avg_total=%lums avg_floor=%lums avg_sprites=%lums avg_flush=%lums flush=%d%% full=%d%% fps=%.1f\r\n",
+        // avg_flush is worker-side (concurrent with render since v209);
+        // avg_wait is what core 1 actually lost blocking on it. fps is
+        // wall-clock (frames / report window) — the old render-time-only
+        // fps read ~45 while the glass showed ~14.
+        unsigned long window_ms = now - _prof_last_report;
+        Serial.printf("[perf] frames=%d avg_total=%lums avg_floor=%lums avg_sprites=%lums avg_flush=%lums avg_wait=%lums flush=%d%% full=%d%% fps=%.1f\r\n",
             _prof_frame_count,
             _prof_frame_total / _prof_frame_count,
             _prof_floor_total / _prof_frame_count,
             _prof_sprites_total / _prof_frame_count,
             _prof_flush_total / _prof_frame_count,
+            _prof_wait_total / _prof_frame_count,
             flush_pct, full_pct,
-            1000.0f * _prof_frame_count / (_prof_frame_total > 0 ? _prof_frame_total : 1));
+            1000.0f * _prof_frame_count / (window_ms > 0 ? window_ms : 1));
         _prof_frame_total = 0;
         _prof_floor_total = 0;
         _prof_sprites_total = 0;
         _prof_flush_total = 0;
+        _prof_wait_total = 0;
         _prof_flush_pixels_total = 0;
         _prof_full_redraw_count = 0;
         _prof_frame_count = 0;

@@ -21,6 +21,12 @@ void     renderer_set_floor_tint(uint8_t r, uint8_t g, uint8_t b, bool persist);
 void     renderer_load_floor_tint();          // call once at boot
 uint32_t renderer_get_floor_tint();           // 0xRRGGBB, 0 = none
 
+// Async-flush drain: wait until no framebuffer push is in flight and take
+// permanent ownership of the canvas. Modal paths that paint + flush outside
+// the frame loop (OTA splash) MUST call this first; they never hand the
+// canvas back (every OTA window exits via reboot).
+void     renderer_flush_drain();
+
 // Compile-time flags
 #ifndef BOOT_SPLASH_ENABLED
 #define BOOT_SPLASH_ENABLED 1

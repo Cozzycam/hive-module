@@ -1105,13 +1105,13 @@ void loop() {
         g_telemetry.tick_bonds(sim.coordinator.bonds, sim.coordinator.registry, topology_my_id());
     }
 
-    // Render at ~15fps. The 33ms/30fps target was never reachable — a frame
-    // costs ~56ms (21ms render + 35ms full-frame QSPI flush), so frames ran
-    // back-to-back with zero idle and the measured rate was ~15fps anyway
-    // (v207 [perf]: 441 frames/30s). Pacing to what the hardware delivers
-    // changes nothing visible but gives the radio/network real slack each
-    // cycle. (Throttled harder under warp so the flush isn't the bottleneck.)
-    uint32_t frame_iv = g_warp_active ? Cfg::WARP_RENDER_MS : 66;
+    // Render at ~30fps. Reachable since v209: the ~35ms QSPI push runs on
+    // the core-0 flush worker, so a frame costs core 1 only ~21ms of render
+    // plus a small wait if the previous push hasn't finished (35ms push vs
+    // 33ms cadence → a couple ms). History: 33ms was fiction through v207
+    // (56ms serial render+flush → ~14fps), v208 paced honestly at 66ms.
+    // (Throttled harder under warp so the flush isn't the bottleneck.)
+    uint32_t frame_iv = g_warp_active ? Cfg::WARP_RENDER_MS : 33;
     if (now - last_frame_ms >= frame_iv) {
         last_frame_ms = now;
 

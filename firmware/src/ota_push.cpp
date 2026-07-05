@@ -1,6 +1,7 @@
 /* OTA cascade implementation. */
 #include "ota_push.h"
 #include "config.h"
+#include "renderer.h"
 #include "time_of_day.h"
 #include "topology.h"
 #include <Arduino.h>
@@ -34,6 +35,7 @@ static void _splash_line(int y, uint8_t size, uint16_t col, const char* s) {
 
 void ota_splash(const char* detail) {
     if (!gfx) return;
+    renderer_flush_drain();  // async flush may still be reading the canvas
     gfx->fillScreen(_splash_rgb(24, 18, 14));                        // deep bark
     _splash_line(110, 3, _splash_rgb(228, 160, 60), "updating...");  // lantern amber
     _splash_line(165, 2, _splash_rgb(235, 220, 195), detail);
