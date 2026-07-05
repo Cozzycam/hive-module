@@ -1386,3 +1386,32 @@ void Chamber::artwork_admired(int idx) {
     artworks[idx].admired++;
     if ((artworks[idx].admired & 0x1F) == 0) _artworks_save(artworks);  // every 32nd
 }
+
+int Chamber::weather_oldest_artworks(int n) {
+    int done = 0;
+    while (done < n) {
+        int slot = -1;
+        uint32_t oldest = 0xFFFFFFFF;
+        for (int i = 0; i < Cfg::MAX_ARTWORKS; i++) {
+            if (!artworks[i].active) continue;
+            if (artworks[i].kind == ART_MEMORIAL) continue;   // graves stand
+            if (artworks[i].created_unix < oldest) {
+                oldest = artworks[i].created_unix;
+                slot = i;
+            }
+        }
+        if (slot < 0) break;
+        // Same event the cap eviction tells — journal, relay and gallery
+        // all hear an ordinary weathering
+        Event wv = {};
+        wv.type = EVT_ART_WEATHERED;
+        wv.tick = tick_num;
+        wv.crafted.kind = artworks[slot].kind;
+        strlcpy(wv.crafted.who, artworks[slot].maker_name, sizeof(wv.crafted.who));
+        emit(wv);
+        artworks[slot] = Artwork{};
+        done++;
+    }
+    if (done > 0) _artworks_save(artworks);
+    return done;
+}

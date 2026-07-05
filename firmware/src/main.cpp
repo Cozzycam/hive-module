@@ -493,6 +493,25 @@ static void process_serial_line(const char* line) {
                 return true;
             }, nullptr);
         Serial.println("[journal] --- end ---");
+    } else if (strcmp(line, "art status") == 0) {
+        Chamber& ch = sim.coordinator.chamber;
+        Serial.println("[art] --- standing works ---");
+        for (int i = 0; i < Cfg::MAX_ARTWORKS; i++) {
+            const Artwork& a = ch.artworks[i];
+            if (!a.active) continue;
+            Serial.printf("[art] %d: kind=%d by %s at (%d,%d) admired=%u%s%s\r\n",
+                          i, a.kind, a.maker_name, a.x, a.y, a.admired,
+                          a.kind == ART_MEMORIAL ? " (memorial)" : "",
+                          a.honoree[0] ? a.honoree : "");
+        }
+        Serial.println("[art] --- end ---");
+    } else if (strncmp(line, "art weather", 11) == 0) {
+        // Keeper cleanup: "art weather" sweeps all non-memorial works,
+        // "art weather 3" the three oldest. Graves are never swept.
+        int n = Cfg::MAX_ARTWORKS;
+        if (line[11] == ' ') n = atoi(line + 12);
+        int done = sim.coordinator.chamber.weather_oldest_artworks(n);
+        Serial.printf("[art] weathered %d work(s); memorials left standing\r\n", done);
     } else if (strncmp(line, "challenge start ", 16) == 0) {
         const char* arg = line + 16;
         struct { const char* name; uint8_t type; } types[] = {
