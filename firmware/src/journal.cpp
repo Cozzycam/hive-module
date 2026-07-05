@@ -23,7 +23,9 @@ static const char* JEVT_NAMES[] = {
 // Keep in lockstep with ArtKind / ArtContext (chamber.h)
 static const char* ART_KIND_NAMES[] = {
     "sculpture", "cairn", "painting", "memorial",
-    "petal_hat", "seed_pendant", "grass_band",
+    // v212: all accessories are hats (old events keep the old strings on
+    // disk — the app understands both vocabularies)
+    "petal_hat", "seed_cap", "grass_hat",
 };
 static const char* ART_CONTEXT_NAMES[] = {
     "plenty", "storm", "heatwave", "rain", "night", "grief"

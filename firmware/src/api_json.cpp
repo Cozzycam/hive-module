@@ -210,8 +210,9 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
         if (r.accessory >= 1 && r.accessory <= 3) {
             // Same vocabulary as the crafted events, so the app can match
             // the worn keepsake to its gallery entry (and giver)
-            static const char* ACC_KIND[] = {"petal_hat", "seed_pendant", "grass_band"};
+            static const char* ACC_KIND[] = {"petal_hat", "seed_cap", "grass_hat"};
             lg["accessory"] = ACC_KIND[r.accessory - 1];
+            if (r.accessory_memorial) lg["accessory_memorial"] = true;
         }
         // What they're doing right now — same key the boop label maps. The
         // phone reads this snapshot via the VPS (the queen's LAN API sits

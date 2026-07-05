@@ -64,10 +64,13 @@ enum ArtKind : uint8_t {
     ART_PAINTING  = 2,
     ART_MEMORIAL  = 3,   // carved by a grieving friend, names the departed
     // Accessories — worn, not placed; made FOR a best friend (honoree =
-    // the recipient). Never passed to place_artwork.
+    // the recipient). Never passed to place_artwork. All three are HATS
+    // since v212 (pendant/sash drowned in the wearer's body tint; hats sit
+    // above the head against the floor and always read). Enum names kept
+    // for wire/persistence stability.
     ART_HAT       = 4,   // petal hat
-    ART_PENDANT   = 5,   // seed pendant
-    ART_BAND      = 6,   // grass band
+    ART_PENDANT   = 5,   // seed cap
+    ART_BAND      = 6,   // grass hat
     ART_KIND_COUNT
 };
 

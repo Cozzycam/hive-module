@@ -10,8 +10,10 @@ export function artKindEmoji(kind: string): string {
     case 'painting':     return '\u{1F3A8}';
     case 'memorial':     return '\u{1FAA6}';
     case 'petal_hat':    return '\u{1F338}';
-    case 'seed_pendant': return '\u{1F4FF}';
-    case 'grass_band':   return '\u{1F33F}';
+    case 'seed_cap':     return '\u{1F330}';   // v212+ (was seed_pendant)
+    case 'grass_hat':    return '\u{1F452}';   // v212+ (was grass_band)
+    case 'seed_pendant': return '\u{1F4FF}';   // legacy events, pre-v212
+    case 'grass_band':   return '\u{1F33F}';   // legacy events, pre-v212
     default:             return '\u{2728}';
   }
 }
@@ -21,7 +23,8 @@ export function artKindLabel(kind: string): string {
 }
 
 export function isAccessory(kind: string): boolean {
-  return kind === 'petal_hat' || kind === 'seed_pendant' || kind === 'grass_band';
+  return kind === 'petal_hat' || kind === 'seed_cap' || kind === 'grass_hat'
+      || kind === 'seed_pendant' || kind === 'grass_band';  // pre-v212 vocabulary
 }
 
 export function artContextPhrase(context: string, honoree?: string): string {
@@ -89,8 +92,10 @@ export function artDescription(w: GalleryWork): string {
   }
   switch (w.kind) {
     case 'petal_hat':    return `A petal hat, woven by ${w.maker} ${prov}.`;
-    case 'seed_pendant': return `A seed pendant, strung by ${w.maker} ${prov}.`;
-    case 'grass_band':   return `A grass band, plaited by ${w.maker} ${prov}.`;
+    case 'seed_cap':     return `A seed cap, shaped by ${w.maker} ${prov}.`;
+    case 'grass_hat':    return `A grass hat, plaited by ${w.maker} ${prov}.`;
+    case 'seed_pendant': return `A seed pendant, strung by ${w.maker} ${prov}.`;   // pre-v212
+    case 'grass_band':   return `A grass band, plaited by ${w.maker} ${prov}.`;    // pre-v212
     default:             return `A ${artKindLabel(w.kind)}, made by ${w.maker} ${prov}.`;
   }
 }

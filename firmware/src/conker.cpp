@@ -1475,6 +1475,9 @@ void Conker::_do_crafting(Chamber& ch) {
             if (o.id != craft_for || !o.alive) continue;
             if (o.accessory == 0) {
                 o.accessory = (uint8_t)(craft_kind - ART_HAT + 1);
+                o.accessory_tint = tint_seed;   // the hat wears the MAKER's colour
+                o.accessory_from = id;
+                o.accessory_memorial = false;
                 if (ch.bonds) {   // a gift deepens the bond, both ways
                     ch.bonds->increment(id, o.id, Cfg::GIFT_BOND_BOOST);
                     ch.bonds->increment(o.id, id, Cfg::GIFT_BOND_BOOST);

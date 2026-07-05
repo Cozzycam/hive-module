@@ -875,6 +875,23 @@ void Coordinator::_place_arrival(const ConkerTransfer& t, EventBus& bus,
         chamber.pheromones.deposit_food(entry_x, entry_y, Cfg::BASE_MARKER_INTENSITY * 0.5f);
     }
 
+    // Returning hat-wearer: the world may have moved on while they were
+    // away. Queen-only (bonds + registry live here; a satellite would
+    // misread its empty registry as "maker gone"). Maker gone from the
+    // living roster = they died while the wearer was away — the bond can
+    // no longer break, the hat becomes a memorial. Bond formally broken
+    // while away = the hat comes off quietly (no banner — it happened
+    // out of sight).
+    if (is_queen() && w.accessory != 0 && !w.accessory_memorial
+            && w.accessory_from != 0) {
+        if (!registry.get(w.accessory_from)) {
+            w.accessory_memorial = true;
+        } else if (!bonds.is_formed(w.id, w.accessory_from)) {
+            w.accessory = 0; w.accessory_tint = 0; w.accessory_from = 0;
+        }
+        // registry copy of the wearer syncs on the next persist tick
+    }
+
     g_handoffs_in++;
 
     Serial.printf("[handoff] IN id=%lu from 0x%04X face %s (state=%d food=%.1f%s)\r\n",
@@ -2027,6 +2044,51 @@ void Coordinator::_persist_process_deaths() {
             }
         }
 
+        // Hats made by the departed: if the friendship still held, the hat
+        // becomes a memorial — worn for life, never taken off. If the bond
+        // had already faded below formed, it comes off with the news. Must
+        // run before bonds.remove_owner() erases the relationship (and
+        // before mark_dead drops the maker's name from the living roster).
+        {
+            const IdentityRecord* dr = registry.get(id);
+            const char* dead_maker_name = dr ? dr->name : "";
+            for (int c = 0; c < chamber.conker_count; c++) {
+                Conker& w = chamber.conkers[c];
+                if (!w.alive || w.accessory == 0 || w.accessory_memorial
+                        || w.accessory_from != id) continue;
+                IdentityRecord* rw = registry.get(w.id);
+                if (bonds.is_formed(w.id, id)) {
+                    w.accessory_memorial = true;
+                    if (rw) { rw->accessory_memorial = true; rw->dirty = true; }
+                    if (_bus) {
+                        Event ev = {};
+                        ev.type = EVT_KEEPSAKE_VOW;
+                        ev.tick = chamber.tick_num;
+                        ev.keepsake.kind = w.accessory;
+                        strlcpy(ev.keepsake.who, w.name, sizeof(ev.keepsake.who));
+                        strlcpy(ev.keepsake.maker, dead_maker_name,
+                                sizeof(ev.keepsake.maker));
+                        _bus->emit(ev);
+                    }
+                } else {
+                    uint8_t kind = w.accessory;
+                    w.accessory = 0; w.accessory_tint = 0; w.accessory_from = 0;
+                    if (rw) {
+                        rw->accessory = 0; rw->accessory_tint = 0;
+                        rw->accessory_from = 0; rw->dirty = true;
+                    }
+                    if (_bus) {
+                        Event ev = {};
+                        ev.type = EVT_KEEPSAKE_OFF;
+                        ev.tick = chamber.tick_num;
+                        ev.keepsake.kind = kind;
+                        strlcpy(ev.keepsake.who, w.name, sizeof(ev.keepsake.who));
+                        _bus->emit(ev);
+                    }
+                }
+            }
+        }
+
         registry.mark_dead(id, g_tod.unix_time);
         registry.manifest().total_workers_died++;
         bonds.remove_owner(id);
@@ -2271,6 +2333,9 @@ void Coordinator::_persist_restore_from_disk() {
         // Restore cumulative catch count (Catcher trait progress)
         chamber.conkers[idx].catches = r.catches;
         chamber.conkers[idx].accessory = r.accessory;
+        chamber.conkers[idx].accessory_tint = r.accessory_tint;
+        chamber.conkers[idx].accessory_from = r.accessory_from;
+        chamber.conkers[idx].accessory_memorial = r.accessory_memorial;
         // Restore name from registry. Heal the RECORD if it has no name (a
         // partial/malformed write — same family as the zero-lifespan records):
         // otherwise the conker renders "???" forever, and _persist_tick won't
@@ -2346,6 +2411,38 @@ void Coordinator::_bond_tick(uint32_t tick_num) {
             IdentityRecord* rt = registry.get(broken_targets[i]);
             if (rt) strlcpy(je.bond.target_name, rt->name, sizeof(je.bond.target_name));
             journal.emit(je);
+        }
+
+        // A broken friendship takes the hat with it: if either side of the
+        // pair wears a hat MADE by the other, it comes off. Memorial hats
+        // (maker died a friend) are worn for life. A wearer away on another
+        // module is caught by the arrival check in _place_arrival instead.
+        for (int i = 0; i < broken_count; i++) {
+            for (int c = 0; c < chamber.conker_count; c++) {
+                Conker& w = chamber.conkers[c];
+                if (!w.alive || w.accessory == 0 || w.accessory_memorial
+                        || w.accessory_from == 0) continue;
+                bool made_by_lost_friend =
+                       (w.id == broken_owners[i]  && w.accessory_from == broken_targets[i])
+                    || (w.id == broken_targets[i] && w.accessory_from == broken_owners[i]);
+                if (!made_by_lost_friend) continue;
+                uint8_t kind = w.accessory;
+                w.accessory = 0; w.accessory_tint = 0; w.accessory_from = 0;
+                IdentityRecord* rw = registry.get(w.id);
+                if (rw) {
+                    rw->accessory = 0; rw->accessory_tint = 0;
+                    rw->accessory_from = 0; rw->accessory_memorial = false;
+                    rw->dirty = true;
+                }
+                if (_bus) {
+                    Event ev = {};
+                    ev.type = EVT_KEEPSAKE_OFF;
+                    ev.tick = tick_num;
+                    ev.keepsake.kind = kind;
+                    strlcpy(ev.keepsake.who, w.name, sizeof(ev.keepsake.who));
+                    _bus->emit(ev);
+                }
+            }
         }
     }
 
@@ -2752,7 +2849,16 @@ void Coordinator::_trait_tick(uint32_t tick_num) {
         else if (w.catches < rec->catches) w.catches = rec->catches;
 
         // Worn accessory: gifts persist within the minute
-        if (w.accessory != rec->accessory) { rec->accessory = w.accessory; rec->dirty = true; }
+        if (w.accessory != rec->accessory
+                || w.accessory_tint != rec->accessory_tint
+                || w.accessory_from != rec->accessory_from
+                || w.accessory_memorial != rec->accessory_memorial) {
+            rec->accessory          = w.accessory;
+            rec->accessory_tint     = w.accessory_tint;
+            rec->accessory_from     = w.accessory_from;
+            rec->accessory_memorial = w.accessory_memorial;
+            rec->dirty = true;
+        }
 
         // Emit trait_earned for newly set bits
         uint32_t new_bits = rec->traits & ~prev_traits;

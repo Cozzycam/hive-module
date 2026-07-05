@@ -71,7 +71,8 @@ interface CharacterInfo {
   mood?: ConkerMood;
   needs?: { boredom?: number; tiredness?: number; loneliness?: number };
   activity?: ConkerActivity;
-  accessory?: string;   // worn keepsake kind (petal_hat | seed_pendant | grass_band)
+  accessory?: string;   // worn hat kind (v212+: petal_hat | seed_cap | grass_hat; legacy: seed_pendant | grass_band)
+  accessoryMemorial?: boolean;  // maker died a friend — worn for life
   deathCause?: string;
 }
 
@@ -251,6 +252,7 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
           needs: l.needs,
           activity: l.activity,
           accessory: l.accessory,
+          accessoryMemorial: l.accessory_memorial,
         });
       }
     }
@@ -714,7 +716,9 @@ function CharacterProfile({ char, detail, events, keepsakeGiver, isPinned, onTog
         </Card>
       )}
 
-      {/* Worn keepsake — a gift from a best friend, worn for life */}
+      {/* Worn keepsake — a hat made by a best friend, in the maker's own
+          colours. Ordinary gifts come off if the friendship breaks; a
+          memorial hat (the maker died a friend) never does. */}
       {!isDeceased && char.accessory && (
         <Card style={{ background: palette.cardBg }}>
           <div style={{ fontSize: SIZES.xs, fontWeight: 600, color: palette.dimText,
@@ -725,12 +729,17 @@ function CharacterProfile({ char, detail, events, keepsakeGiver, isPinned, onTog
             <span style={{ fontSize: 22 }}>{artKindEmoji(char.accessory)}</span>
             <div>
               <div style={{ fontSize: SIZES.base, color: palette.text }}>
-                A {artKindLabel(char.accessory)}, worn for life
+                A {artKindLabel(char.accessory)},
+                {char.accessoryMemorial ? ' worn for life' : ' worn with pride'}
               </div>
               <div style={{ fontSize: SIZES.xs, color: palette.dimText }}>
-                {keepsakeGiver
-                  ? `Made for ${char.name} by ${keepsakeGiver}.`
-                  : 'A gift from a best friend.'}
+                {char.accessoryMemorial
+                  ? (keepsakeGiver
+                      ? `Made by ${keepsakeGiver}. Worn in their memory, always.`
+                      : 'Made by a best friend, now gone. Worn in their memory.')
+                  : (keepsakeGiver
+                      ? `Made for ${char.name} by ${keepsakeGiver}.`
+                      : 'A gift from a best friend.')}
               </div>
             </div>
           </div>

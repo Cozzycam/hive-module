@@ -40,7 +40,10 @@ struct __attribute__((packed)) ConkerTransfer {
     uint8_t  catches;            // critter catches — the Bug Hunter bank
                                  // crosses the tunnel too (v179 fix: crossings
                                  // used to zero it and thrash the title)
-    uint8_t  accessory;          // worn gift (petal hat etc) travels with them
+    uint8_t  accessory;          // worn hat travels with them
+    uint8_t  accessory_tint;     // maker's tint_seed — the hat keeps its colour
+    uint32_t accessory_from;     // maker's id — friendship-loss checks
+    uint8_t  accessory_memorial; // maker died a friend — worn for life
     char     name[16];           // display name (truncated to fit payload)
     uint32_t muse_rest_unix;     // the muse's rest crosses the tunnel too —
                                  // a crossing must not hand the maker a
@@ -86,6 +89,9 @@ inline void conker_to_transfer(const Conker& w, ConkerTransfer& t,
     t.tint_seed       = w.tint_seed;
     t.catches         = w.catches;
     t.accessory       = w.accessory;
+    t.accessory_tint  = w.accessory_tint;
+    t.accessory_from  = w.accessory_from;
+    t.accessory_memorial = w.accessory_memorial ? 1 : 0;
     memset(t.name, 0, sizeof(t.name));
     strncpy(t.name, w.name, sizeof(t.name) - 1);
     t.muse_rest_unix  = w.muse_rest_unix;
@@ -167,6 +173,9 @@ inline void transfer_to_conker(const ConkerTransfer& t, Conker& w,
     w.tint_seed            = t.tint_seed;
     w.catches              = t.catches;
     w.accessory            = t.accessory;
+    w.accessory_tint       = t.accessory_tint;
+    w.accessory_from       = t.accessory_from;
+    w.accessory_memorial   = (t.accessory_memorial != 0);
     w.muse_rest_unix       = t.muse_rest_unix;
     memset(w.name, 0, sizeof(w.name));
     strncpy(w.name, t.name, sizeof(w.name) - 1);

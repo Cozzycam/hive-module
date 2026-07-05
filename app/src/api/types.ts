@@ -112,9 +112,13 @@ export interface LilGuySummary {
   // boop label shows on-glass, so no LAN fetch needed; older snapshots omit)
   state?: string;
   activity?: ConkerActivity;
-  // Worn keepsake, crafted-event vocabulary: petal_hat | seed_pendant |
-  // grass_band (added v206 — older snapshots omit)
+  // Worn keepsake, crafted-event vocabulary. v212+: petal_hat | seed_cap |
+  // grass_hat (all hats, worn in the maker's tint); pre-v212 snapshots may
+  // say seed_pendant | grass_band. Older snapshots omit entirely.
   accessory?: string;
+  // v212+: the maker died while they were still friends — worn for life.
+  // Absent = an ordinary gift (taken off if the friendship breaks).
+  accessory_memorial?: boolean;
 }
 
 // Readable summary of a conker's loudest unmet need (firmware ConkerMood)

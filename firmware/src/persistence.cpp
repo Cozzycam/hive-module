@@ -290,6 +290,9 @@ bool ConkerRegistry::_write_record(const IdentityRecord& rec, bool async,
     doc["tint_seed"]   = rec.tint_seed;
     doc["catches"]     = rec.catches;
     doc["accessory"]   = rec.accessory;
+    doc["acc_tint"]    = rec.accessory_tint;
+    doc["acc_from"]    = rec.accessory_from;
+    doc["acc_memorial"] = rec.accessory_memorial;
     doc["is_founder"]  = rec.is_founder;
     doc["tended_by"]   = rec.tended_by;
     doc["traits"]      = rec.traits;
@@ -398,6 +401,9 @@ bool ConkerRegistry::_load_living_records() {
                         r.tint_seed   = doc["tint_seed"] | 0;
                         r.catches     = doc["catches"] | 0;
                         r.accessory   = doc["accessory"] | 0;
+                        r.accessory_tint = doc["acc_tint"] | 0;
+                        r.accessory_from = doc["acc_from"] | 0;
+                        r.accessory_memorial = doc["acc_memorial"] | false;
                         r.is_founder  = doc["is_founder"] | false;
                         r.tended_by   = doc["tended_by"] | 0;
                         r.traits      = doc["traits"] | 0;
@@ -710,6 +716,9 @@ bool ConkerRegistry::revive(uint32_t id) {
     r.tint_seed   = doc["tint_seed"] | 0;
     r.catches     = doc["catches"] | 0;
     r.accessory   = doc["accessory"] | 0;
+    r.accessory_tint = doc["acc_tint"] | 0;
+    r.accessory_from = doc["acc_from"] | 0;
+    r.accessory_memorial = doc["acc_memorial"] | false;
     r.is_founder  = doc["is_founder"] | false;
     r.tended_by   = doc["tended_by"] | 0;
     r.traits      = doc["traits"] | 0;

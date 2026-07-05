@@ -392,6 +392,11 @@ void renderer_flush_drain() {
     _flushw_owned = true;
 }
 
+// Defined with the recolour machinery below; hats use it to wear their
+// maker's colour.
+static void _tint_target(uint8_t tint_seed, int& r, int& g, int& b,
+                         float& light, float& rare);
+
 // ================================================================
 //  Init
 // ================================================================
@@ -1405,59 +1410,73 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
                 _mark_dirty(mx - fs / 2, my - fs / 2, fs, fs);
             }
 
-            // Worn keepsake — a gift from a best friend, worn for life.
-            // Sized with the wearer: fixed-pixel keepsakes vanished on a
-            // grown conker (a 5px hat on a ~25px body read as noise).
+            // Worn hat — a gift from a best friend, rendered in its MAKER's
+            // colour (the same vivid tint their body wears) so a gift
+            // visibly carries who made it. All keepsakes are hats now:
+            // above the head against the floor they always read, where the
+            // old pendant/sash drowned in the wearer's own body tint.
+            // Sized with the wearer (fixed-pixel hats vanished on adults).
             if (w.accessory != 0) {
                 float rs = w.render_scale();
-                if (w.accessory == 1) {          // petal hat
-                    // Wide-brimmed and proud — spans most of the head, with
-                    // thickness that scales too (a fixed 2px brim read as a
-                    // sliver on a grown conker).
+                int mr, mg, mb;
+                if (w.accessory_tint != 0) {
+                    float mlight, mrare;
+                    _tint_target(w.accessory_tint, mr, mg, mb, mlight, mrare);
+                } else {
+                    // Legacy hats (pre-v212, maker unrecorded) keep their
+                    // old per-kind colours.
+                    if (w.accessory == 1)      { mr = 240; mg = 160; mb = 190; }
+                    else if (w.accessory == 2) { mr = 210; mg = 165; mb =  70; }
+                    else                       { mr = 120; mg = 205; mb =  90; }
+                }
+                uint16_t hat_base = _rgb565((mr * 217) >> 8, (mg * 217) >> 8,
+                                            (mb * 217) >> 8);           // 0.85x
+                uint16_t hat_lite = _rgb565(mr + (((255 - mr) * 115) >> 8),
+                                            mg + (((255 - mg) * 115) >> 8),
+                                            mb + (((255 - mb) * 115) >> 8));
+                uint16_t hat_dark = _rgb565((mr * 115) >> 8, (mg * 115) >> 8,
+                                            (mb * 115) >> 8);           // 0.45x
+                int hcx = sd.render_x;
+
+                if (w.accessory == 1) {          // petal hat — wide brim, petal crown
                     int hw = (int)(rs * 3.2f); if (hw < 4) hw = 4;   // brim half-width
                     int bt = (int)(rs * 0.9f); if (bt < 2) bt = 2;   // brim thickness
                     int ct = bt + 1;                                  // crown height
                     int hy = sd.render_y - (int)(rs * 4.5f);          // brim top row
-                    _gfx->fillRect(sd.render_x - hw, hy, hw * 2 + 1, bt,
-                                   _rgb565(240, 160, 190));            // brim
-                    _gfx->fillRect(sd.render_x - hw / 2, hy - ct, hw + 1, ct,
-                                   _rgb565(250, 195, 215));            // crown petals
-                    _gfx->fillRect(sd.render_x - hw, hy - 1, 2, 1,
-                                   _rgb565(250, 195, 215));            // petal fringe L
-                    _gfx->fillRect(sd.render_x + hw - 1, hy - 1, 2, 1,
-                                   _rgb565(250, 195, 215));            // petal fringe R
-                    _gfx->fillRect(sd.render_x - 1, hy - ct - 2, 2, 2,
+                    _gfx->fillRect(hcx - hw, hy, hw * 2 + 1, bt, hat_base);
+                    _gfx->drawFastHLine(hcx - hw, hy + bt, hw * 2 + 1, hat_dark);
+                    _gfx->fillRect(hcx - hw / 2, hy - ct, hw + 1, ct, hat_lite);
+                    _gfx->fillRect(hcx - hw, hy - 1, 2, 1, hat_lite);     // fringe L
+                    _gfx->fillRect(hcx + hw - 1, hy - 1, 2, 1, hat_lite); // fringe R
+                    _gfx->fillRect(hcx - 1, hy - ct - 2, 2, 2,
                                    _rgb565(255, 225, 150));            // golden bud
-                    _mark_dirty(sd.render_x - hw - 1, hy - ct - 3,
-                                hw * 2 + 3, ct + bt + 4);
-                } else if (w.accessory == 2) {   // seed pendant
-                    int ps = (int)(rs * 1.2f); if (ps < 3) ps = 3;
-                    int py2 = sd.render_y + (int)(rs * 1.0f);
-                    _gfx->fillRect(sd.render_x - ps / 2, py2, ps, ps,
-                                   _rgb565(210, 165, 70));
-                    _gfx->fillRect(sd.render_x - ps / 2, py2, ps, 1,
-                                   _rgb565(245, 210, 120));            // catch the light
-                    _mark_dirty(sd.render_x - ps / 2 - 1, py2 - 1, ps + 2, ps + 2);
-                } else {                          // grass band
-                    // Worn as a woven sash across the middle — the old 2px
-                    // vertical tick vanished against the tinted body. Bright
-                    // core with a sunlit top edge and dark under-edge so it
-                    // reads on any body colour, knot and blade at the hip.
-                    int bw = (int)(rs * 4.0f); if (bw < 4) bw = 4;    // sash half-width
-                    int bt = (int)(rs * 0.8f); if (bt < 2) bt = 2;    // sash thickness
-                    int by = sd.render_y + (int)(rs * 0.5f);          // waist row
-                    _gfx->fillRect(sd.render_x - bw, by, bw * 2 + 1, bt,
-                                   _rgb565(120, 205, 90));             // woven grass
-                    _gfx->drawFastHLine(sd.render_x - bw, by - 1, bw * 2 + 1,
-                                        _rgb565(195, 235, 140));       // sunlit edge
-                    _gfx->drawFastHLine(sd.render_x - bw, by + bt, bw * 2 + 1,
-                                        _rgb565(45, 110, 40));         // shaded edge
-                    int kx = sd.render_x + bw - 1;                     // knot at the hip
-                    _gfx->fillRect(kx - 1, by - 1, 3, bt + 2, _rgb565(80, 160, 60));
-                    _gfx->drawFastVLine(kx, by - bt - 2, bt + 1,
-                                        _rgb565(150, 220, 110));       // blade poking up
-                    _mark_dirty(sd.render_x - bw - 1, by - bt - 3,
-                                bw * 2 + 4, bt * 2 + 6);
+                    _mark_dirty(hcx - hw - 1, hy - ct - 3,
+                                hw * 2 + 3, ct + bt + 5);
+                } else if (w.accessory == 2) {   // seed cap — snug dome, sprout stem
+                    int hw = (int)(rs * 2.2f); if (hw < 3) hw = 3;    // dome half-width
+                    int dm = (int)(rs * 1.6f); if (dm < 3) dm = 3;    // dome height
+                    int hy = sd.render_y - (int)(rs * 4.3f);          // dome base row
+                    for (int row = 0; row < dm; row++) {              // shrinking rows
+                        float t = (float)row / dm;                    // 0 base .. 1 top
+                        int wr = (int)(hw * (1.0f - t * t * 0.75f));
+                        _gfx->drawFastHLine(hcx - wr, hy - row, wr * 2 + 1,
+                                            (row >= dm - 2) ? hat_lite : hat_base);
+                    }
+                    _gfx->drawFastHLine(hcx - hw, hy + 1, hw * 2 + 1, hat_dark);
+                    _gfx->drawFastVLine(hcx, hy - dm - 2, 3, hat_dark);  // sprout stem
+                    _gfx->drawPixel(hcx + 1, hy - dm - 2, hat_lite);     // leaf
+                    _mark_dirty(hcx - hw - 1, hy - dm - 3, hw * 2 + 3, dm + 6);
+                } else {                          // grass hat — wide woven sun brim
+                    int hw = (int)(rs * 4.0f); if (hw < 5) hw = 5;    // brim half-width
+                    int cn = (int)(rs * 1.1f); if (cn < 2) cn = 2;    // crown height
+                    int hy = sd.render_y - (int)(rs * 4.4f);          // brim row
+                    _gfx->fillRect(hcx - hw, hy, hw * 2 + 1, 2, hat_base);
+                    _gfx->drawFastHLine(hcx - hw + 1, hy + 2, hw * 2 - 1, hat_dark);
+                    _gfx->fillRect(hcx - hw / 2, hy - cn, hw + 1, cn, hat_base);
+                    _gfx->drawFastHLine(hcx - hw / 2, hy - cn, hw + 1, hat_lite);
+                    _gfx->drawFastVLine(hcx + hw / 2 - 1, hy - cn - 2, 2,
+                                        hat_lite);                     // stray blade
+                    _mark_dirty(hcx - hw - 1, hy - cn - 3, hw * 2 + 3, cn + 6);
                 }
             }
 
@@ -1582,6 +1601,30 @@ void Renderer::_draw_sprite_scaled(int cx, int cy, const uint16_t* data,
 static const uint16_t EYE_HI = 0xE77A;   // upper eye highlight (cream)
 static const uint16_t EYE_LO = 0xCF35;   // lower eye (pale)
 
+static void _hue_vivid(float h, int& r, int& g, int& b);
+
+// The vivid colour a tint_seed resolves to — the SAME math the body recolour
+// uses, extracted so hats can wear their maker's colour. Rolls: rarity band
+// (ur^6 — straying off the warm band is rare), hue within the band (anchored
+// on orange 28°, ±85° common / ±240° rare), decorrelated lightness so two
+// conkers on one hue still differ in shade.
+static void _tint_target(uint8_t tint_seed, int& r, int& g, int& b,
+                         float& light, float& rare) {
+    uint32_t hs = (uint32_t)tint_seed * 2654435761u;   // spread 8 bits → 32
+    float ur = (hs & 0xFFFF) / 65535.0f;               // rarity roll
+    float uh = ((hs >> 16) & 0xFFFF) / 65535.0f;       // hue position in the band
+    uint32_t h2 = hs ^ (hs >> 13);
+    float ul = ((h2 >> 5) & 0xFF) / 255.0f;
+    rare = ur * ur; rare = rare * rare * rare;         // ur^6
+    float spread = 85.0f + 155.0f * rare;
+    float hue = 28.0f + (uh * 2.0f - 1.0f) * spread;
+    while (hue < 0.0f)      hue += 360.0f;
+    while (hue >= 360.0f)   hue -= 360.0f;
+    _hue_vivid(hue, r, g, b);
+    // Base brightness 0.85x..1.20x; rare + bright rolls lift up to ~1.75x.
+    light = 0.85f + 0.35f * ul + 0.55f * rare * ul;
+}
+
 // Fully-saturated RGB (0-255) for a hue angle in degrees — the vivid colour a
 // rare conker recolours toward. (s=1, v=1 HSV → RGB.)
 static void _hue_vivid(float h, int& r, int& g, int& b) {
@@ -1635,27 +1678,9 @@ void Renderer::_draw_sprite_scaled_tinted(int cx, int cy, const uint16_t* data,
     int  ref_eff = REF_LUMA;
     bool has_recolor = false;
     if (tint_seed != 0) {
-        uint32_t hs = (uint32_t)tint_seed * 2654435761u;   // spread 8 bits → 32
-        float ur = (hs & 0xFFFF) / 65535.0f;               // rarity roll
-        float uh = ((hs >> 16) & 0xFFFF) / 65535.0f;       // hue position in the band
-        // A decorrelated third roll for per-conker lightness, so two conkers that
-        // land on the same hue still differ in shade (one deeper, one lighter).
-        uint32_t h2 = hs ^ (hs >> 13);
-        float ul = ((h2 >> 5) & 0xFF) / 255.0f;
-        float rare = ur * ur; rare = rare * rare * rare;    // ur^6 — straying far is rare
-        // ±85° common band (pinks through ambers to spring greens) — ±40°
-        // made any two commons read as the same amber at arm's length.
-        // Rare rolls still reach the whole wheel (max unchanged at ±240°).
-        float spread = 85.0f + 155.0f * rare;
-        float hue = 28.0f + (uh * 2.0f - 1.0f) * spread;    // anchor on orange (28°)
-        while (hue < 0.0f)      hue += 360.0f;
-        while (hue >= 360.0f)   hue -= 360.0f;
-        _hue_vivid(hue, tgt_r, tgt_g, tgt_b);
+        float light, rare;
+        _tint_target(tint_seed, tgt_r, tgt_g, tgt_b, light, rare);
         recolor = (int)((0.70f + 0.25f * rare) * 256.0f);   // 0.70x .. 0.95x
-        // Base brightness 0.85x..1.20x; rare conkers that also roll bright get an
-        // extra lift (up to ~1.75x) so the occasional outlier really pops, while a
-        // rare one that rolls dark stays deep and moody.
-        float light = 0.85f + 0.35f * ul + 0.55f * rare * ul;
         ref_eff = (int)(REF_LUMA / light);                  // lower ref = brighter conker
         if (ref_eff < 55) ref_eff = 55;
         has_recolor = true;
@@ -1905,7 +1930,7 @@ void Renderer::receive_events(const Event* events, int count, const Chamber& ch)
         case EVT_CRAFTED: {
             static const char* const KINDS[] = {
                 "a sculpture", "a cairn", "a painting", "a memorial",
-                "a petal hat", "a seed pendant", "a grass band",
+                "a petal hat", "a seed cap", "a grass hat",
             };
             uint8_t k = (ev.crafted.kind < 7) ? ev.crafted.kind : 0;
             char msg[64];
@@ -1928,6 +1953,29 @@ void Renderer::receive_events(const Event* events, int count, const Chamber& ch)
             char msg[64];
             snprintf(msg, sizeof(msg), "%s's old %s crumbled away",
                      ev.crafted.who, KINDS[ev.crafted.kind & 3]);
+            banner(msg);
+            break;
+        }
+
+        case EVT_KEEPSAKE_OFF: {
+            static const char* const HATS[] =
+                { "keepsake", "petal hat", "seed cap", "grass hat" };
+            uint8_t k = (ev.keepsake.kind <= 3) ? ev.keepsake.kind : 0;
+            char msg[64];
+            snprintf(msg, sizeof(msg), "%s quietly sets the %s aside",
+                     ev.keepsake.who, HATS[k]);
+            banner(msg);
+            break;
+        }
+
+        case EVT_KEEPSAKE_VOW: {
+            char msg[64];
+            if (ev.keepsake.maker[0])
+                snprintf(msg, sizeof(msg), "%s will always wear %s's gift",
+                         ev.keepsake.who, ev.keepsake.maker);
+            else
+                snprintf(msg, sizeof(msg), "%s will wear it always",
+                         ev.keepsake.who);
             banner(msg);
             break;
         }

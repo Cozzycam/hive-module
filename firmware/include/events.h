@@ -35,6 +35,8 @@ enum EventType : uint8_t {
     EVT_CROP_SOWN           = 19,   // a farmer planted a garden plot
     EVT_CRAFTED             = 20,   // a maker finished a work
     EVT_ART_WEATHERED       = 21,   // an old work crumbled to make room
+    EVT_KEEPSAKE_OFF        = 22,   // a hat set aside — the friendship broke
+    EVT_KEEPSAKE_VOW        = 23,   // maker died a friend — hat worn for life
 };
 
 // ---- Interaction subtypes ----
@@ -133,6 +135,12 @@ struct CraftedData {            // crafted + art_weathered
     char     honoree[16];       // memorials
 };
 
+struct KeepsakeData {           // keepsake_off, keepsake_vow
+    uint8_t  kind;              // worn kind (1=petal hat, 2=seed cap, 3=grass hat)
+    char     who[16];           // the wearer
+    char     maker[16];         // keepsake_vow: the departed maker ("" if unknown)
+};
+
 // ---- Event struct (tagged union) ----
 
 struct Event {
@@ -154,6 +162,7 @@ struct Event {
         ChallengeEventData     challenge; // challenge_started, challenge_ended
         CropSownData           crop;      // crop_sown
         CraftedData            crafted;   // crafted, art_weathered
+        KeepsakeData           keepsake;  // keepsake_off, keepsake_vow
     };
 };
 

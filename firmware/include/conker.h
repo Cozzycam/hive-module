@@ -210,9 +210,14 @@ struct Conker {
                                                  // must not reset it, cf. catches)
     char     mourning_for[16]     = {};          // who the vigil (and any memorial) honours
 
-    // Worn accessory (0 = none, 1 = petal hat, 2 = seed pendant,
-    // 3 = grass band) — a gift from a best friend, worn for life
+    // Worn hat (0 = none, 1 = petal hat, 2 = seed cap, 3 = grass hat) —
+    // a gift from a best friend, rendered in the MAKER's tint. Taken off
+    // if the friendship formally breaks; kept for life (memorial) if the
+    // maker died while they were still friends.
     uint8_t  accessory            = 0;
+    uint8_t  accessory_tint       = 0;           // maker's tint_seed (0 = legacy/unknown)
+    uint32_t accessory_from       = 0;           // maker's id (0 = legacy/unknown)
+    bool     accessory_memorial   = false;       // maker died a friend — never removed
     bool     daytime_nap          = false;       // this sleep began in the day (a nap, not a night's sleep)
     float    nap_wake_target      = 0.0f;        // tiredness a daytime nap restores down to (short top-up, not drained to empty)
 
