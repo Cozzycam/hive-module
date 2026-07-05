@@ -1,5 +1,6 @@
 /* Coordinator — orchestrates chambers and colony-wide state. */
 #include "coordinator.h"
+#include "chores.h"
 #include "topology.h"
 #include "renderer.h"
 #include "transport.h"
@@ -2525,7 +2526,12 @@ void Coordinator::_bond_persist() {
     if (!buf) return;
     size_t len = serializeJson(doc, buf, buf_size);
 
-    // Atomic write
+    // Atomic write, off-loop via the chores worker (part of the 30s persist
+    // stall — issue #56). Fire-and-forget: bonds re-save every 30s anyway.
+    if (chores_ready()) {
+        chores_submit_sd_write(0, "/colony/bonds.json", buf, len);  // takes buf
+        return;
+    }
     File f = SD_MMC.open("/colony/bonds.json.tmp", FILE_WRITE);
     if (f) {
         f.write((const uint8_t*)buf, len);

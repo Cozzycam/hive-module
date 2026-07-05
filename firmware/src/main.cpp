@@ -40,6 +40,7 @@
 #include "telemetry.h"
 #include "http_server.h"
 #include "vps_push.h"
+#include "chores.h"
 #include "setup_wizard.h"
 #include <SD_MMC.h>
 #include <Preferences.h>
@@ -840,6 +841,10 @@ void setup() {
         Serial.println("[setup] SD not available — running without persistence");
     }
 
+    // Chores worker (core 0) — takes SD writes + VPS HTTP off the main
+    // loop. Boot-time loads below stay synchronous (worker queue is empty).
+    chores_begin();
+
     touch_init();
 
     // Factory-fresh module (no role in NVS): blocking setup wizard.
@@ -1235,6 +1240,19 @@ void loop() {
     // VPS push (queen only, every 30s internally)
     if (sim.coordinator.is_queen())
         vps_push_tick(sim.coordinator);
+
+    // Chores results — SD write outcomes re-dirty failed records; HTTP
+    // results drive the push phase machine. Runs every pass, never blocks.
+    {
+        ChoreResult cr;
+        while (chores_poll_result(cr)) {
+            if (cr.type == CHORE_SD_WRITE)
+                sim.coordinator.registry.handle_sd_result(cr.token, cr.status == 1);
+            else
+                vps_push_handle_result(sim.coordinator, cr.token, cr.status, cr.body);
+            free(cr.body);
+        }
+    }
 
     // Periodic status
     static unsigned long last_debug = 0;

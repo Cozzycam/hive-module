@@ -1,6 +1,7 @@
 /* VPS push — HTTPS POST colony snapshots + events to VPS. */
 #include "vps_push.h"
 #include "api_json.h"
+#include "chores.h"
 #include "coordinator.h"
 #include "ota_push.h"
 #include "time_of_day.h"
@@ -113,7 +114,10 @@ static void _save_cursor() {
 
 // ---- HTTP POST with HMAC ----
 
-static bool _post(const char* path, const char* body, int body_len) {
+// Synchronous POST — kept for paths that must complete before a reboot.
+// The periodic push cycle does NOT use it: that goes through the chores
+// worker so the render loop never waits on a socket (issue #56).
+[[maybe_unused]] static bool _post(const char* path, const char* body, int body_len) {
     char url[196];
     snprintf(url, sizeof(url), "%s%s", _endpoint, path);
 
@@ -154,6 +158,34 @@ static bool _post(const char* path, const char* body, int body_len) {
     else
         Serial.printf("[vps] POST %s — failed (err=%d)\r\n", path, code);
     return false;
+}
+
+// Async POST via the chores worker: body ownership transfers to the worker,
+// the HMAC + enrollment headers are computed here (main loop, ~1ms) so the
+// worker never reads push state. Returns false if the worker/queue is down
+// (caller treats as a failed transaction).
+static uint32_t _chore_token_seq = 100;
+
+static uint32_t _submit_post(const char* path, char* body_heap, size_t body_len) {
+    char url[196];
+    snprintf(url, sizeof(url), "%s%s", _endpoint, path);
+    char hmac[65] = {};
+    _hmac_sha256(_secret, strlen(_secret), body_heap, body_len, hmac, sizeof(hmac));
+    uint32_t token = ++_chore_token_seq;
+    if (!chores_submit_http(CHORE_HTTP_POST, token, url, body_heap, body_len,
+                            hmac, _enrolled ? nullptr : _secret))
+        return 0;
+    return token;
+}
+
+static uint32_t _submit_get(const char* path) {
+    char url[196];
+    snprintf(url, sizeof(url), "%s%s", _endpoint, path);
+    uint32_t token = ++_chore_token_seq;
+    if (!chores_submit_http(CHORE_HTTP_GET, token, url, nullptr, 0,
+                            nullptr, nullptr))
+        return 0;
+    return token;
 }
 
 // ---- HTTP GET -> JSON ----
@@ -375,16 +407,22 @@ void vps_ota_update(Coordinator& coord) {
 static bool    _pending_convert = false;
 static uint8_t _pending_convert_role = 0;
 
-static void _poll_commands(Coordinator& coord) {
+static uint32_t _submit_commands_poll(Coordinator& coord) {
     char path[96];
     snprintf(path, sizeof(path), "/api/v1/colonies/%s/commands/pending",
              coord.registry.manifest().colony_id);
+    return _submit_get(path);
+}
 
+// Apply the pending-commands response (worker GET result). Commands mutate
+// the coordinator, so this always runs on the main loop. Returns the chore
+// token of the ack POST, or 0 when there was nothing to ack.
+static uint32_t _handle_commands_body(Coordinator& coord, const char* body) {
     JsonDocument doc;
-    if (!_get_json(path, doc)) return;
+    if (!body || deserializeJson(doc, body)) return 0;
 
     JsonArray results = doc["results"];
-    if (results.isNull() || results.size() == 0) return;
+    if (results.isNull() || results.size() == 0) return 0;
 
     String acks = "{\"ids\":[";
     bool first = true;
@@ -462,22 +500,30 @@ static void _poll_commands(Coordinator& coord) {
     }
     acks += "]}";
 
-    if (!first) {
-        snprintf(path, sizeof(path), "/api/v1/colonies/%s/commands/ack",
-                 coord.registry.manifest().colony_id);
-        bool acked = _post(path, acks.c_str(), acks.length());
+    if (first) return 0;   // nothing valid to ack
 
-        // Deferred conversion — only after the ack landed
-        if (_pending_convert && acked) {
-            Serial.printf("[vps] converting to %s — wiping colony, rebooting\r\n",
-                          module_role_str(_pending_convert_role));
-            colony_reset_wipe();
-            coord.set_role_nvs((ModuleRole)_pending_convert_role);
-            delay(200);
-            ESP.restart();
-        }
-        _pending_convert = false;
+    char path[96];
+    snprintf(path, sizeof(path), "/api/v1/colonies/%s/commands/ack",
+             coord.registry.manifest().colony_id);
+    char* ack_body = (char*)malloc(acks.length() + 1);
+    if (!ack_body) { _pending_convert = false; return 0; }
+    memcpy(ack_body, acks.c_str(), acks.length() + 1);
+    return _submit_post(path, ack_body, acks.length());
+}
+
+// The ack result closes the cycle; a pending satellite conversion fires
+// only once its ack has landed (same ordering as the old synchronous path).
+static void _handle_ack_result(Coordinator& coord, bool acked) {
+    if (_pending_convert && acked) {
+        Serial.printf("[vps] converting to %s — wiping colony, rebooting\r\n",
+                      module_role_str(_pending_convert_role));
+        chores_drain();   // queued record writes must land before the wipe
+        colony_reset_wipe();
+        coord.set_role_nvs((ModuleRole)_pending_convert_role);
+        delay(200);
+        ESP.restart();
     }
+    _pending_convert = false;
 }
 
 // ---- Public API ----
@@ -487,123 +533,244 @@ void vps_push_init() {
     _last_push_ms = millis();
 }
 
-// The push cycle is split into phases — ONE blocking HTTP transaction per
-// loop pass, with a full main-loop iteration (topology_poll, heartbeat TX)
-// between them. Run back-to-back, snapshot+events+commands blocked the loop
-// 3-4s every cycle — long enough that satellites blew their heartbeat
-// timeout and the face link flapped on every single push (v198 fix).
-enum PushPhase : uint8_t { PUSH_IDLE = 0, PUSH_SNAPSHOT, PUSH_EVENTS, PUSH_COMMANDS };
-static uint8_t _push_phase = PUSH_IDLE;
+// The push cycle: payloads are built on the main loop (fast, pure CPU) and
+// the HTTP round trips run on the chores worker (core 0). Each WAIT phase
+// holds until the worker's result comes back through
+// vps_push_handle_result — the loop never blocks on a socket. (History:
+// v198 split the three transactions across loop passes to stop satellite
+// heartbeat flaps; each pass still froze the glass 150-460ms — the
+// remaining half of issue #56.)
+enum PushPhase : uint8_t {
+    PUSH_IDLE = 0, PUSH_SNAP_WAIT, PUSH_EV_WAIT, PUSH_CMD_WAIT, PUSH_ACK_WAIT,
+};
+static uint8_t  _push_phase = PUSH_IDLE;
+static uint32_t _phase_token = 0;        // chore token the phase waits on
+static uint32_t _phase_started_ms = 0;
+static constexpr uint32_t PHASE_DEADLINE_MS = 45000;  // worker timeouts are 10s;
+                                                      // this is a lost-result backstop
 
-static void _push_snapshot(Coordinator& coord) {
+// Event-cursor candidates — committed only when the worker reports the POST
+// landed (same semantics as the old synchronous path).
+static uint32_t _cand_appended = 0;
+static bool     _cand_capped = false;
+static uint32_t _cand_today = 0;
+
+static uint32_t _push_snapshot(Coordinator& coord) {
     // Buffer sized for roster: ~100 bytes per conker
     size_t buf_size = 4096 + coord.registry.living_count() * 512;
     char* buf = (char*)malloc(buf_size);
-    if (!buf) return;
+    if (!buf) return 0;
 
     size_t len = api_colony_json(coord, buf, buf_size);
-    if (len > 0) {
-        char path[80];
-        snprintf(path, sizeof(path), "/api/v1/colonies/%s/snapshot",
-                 coord.registry.manifest().colony_id);
-        _post(path, buf, len);
-    }
-    free(buf);
+    if (len == 0) { free(buf); return 0; }
+    char path[80];
+    snprintf(path, sizeof(path), "/api/v1/colonies/%s/snapshot",
+             coord.registry.manifest().colony_id);
+    return _submit_post(path, buf, len);   // buf ownership -> worker
 }
 
-static void _push_events(Coordinator& coord) {
+// Build the events batch and submit it. Returns the chore token to wait on,
+// or 0 when there's nothing in flight (no new lines / submit failed) — the
+// no-lines case still advances the catch-up day inline.
+static uint32_t _push_events(Coordinator& coord) {
     // Push events since the line cursor (16KB of new lines per cycle; a
     // backlog drains across cycles instead of silently truncating). The
     // cursor day only rolls forward once its file is FULLY drained, so a
     // day spent offline catches up from the 32GB SD archive when WiFi
     // returns — history is never dropped at midnight.
-    if (g_tod.unix_time > 0) {
-        uint32_t today = g_tod.unix_time / 86400;
-        if (_pushed_day == 0 || _pushed_day > today) {
-            _pushed_day = today;    // first run / clock weirdness
+    if (g_tod.unix_time == 0) return 0;
+
+    uint32_t today = g_tod.unix_time / 86400;
+    if (_pushed_day == 0 || _pushed_day > today) {
+        _pushed_day = today;    // first run / clock weirdness
+        _pushed_lines = 0;
+    }
+
+    struct EventCtx {
+        String* str;
+        bool has;
+        bool capped;        // hit the batch cap — more remains in the file
+        uint32_t skip;      // lines already pushed
+        uint32_t seen;      // lines encountered this read
+        uint32_t appended;  // new lines added to this batch
+    };
+    String events = "{\"events\":[";
+    EventCtx ctx = {&events, false, false, _pushed_lines, 0, 0};
+
+    coord.journal.read_day(_pushed_day * 86400 + 43200,  // noon of cursor day
+        [](const char* line, void* raw) -> bool {
+            EventCtx* c = (EventCtx*)raw;
+            c->seen++;
+            if (c->seen <= c->skip) return true;   // already pushed
+            if (c->str->length() > 16000) { c->capped = true; return false; }
+            if (c->has) *c->str += ",";
+            *c->str += line;
+            c->has = true;
+            c->appended++;
+            return true;
+        }, &ctx);
+
+    events += "]}";
+
+    if (ctx.seen < ctx.skip) {
+        // File has fewer lines than the cursor (SD swapped/reset) —
+        // resync to what exists and let the next cycle push cleanly.
+        // VPS-side dedup makes any overlap harmless.
+        _pushed_lines = ctx.seen;
+        _save_cursor();
+        return 0;
+    }
+
+    if (!ctx.has) {
+        // Nothing new. A drained PAST day still advances toward today.
+        if (!ctx.capped && _pushed_day < today) {
+            _pushed_day++;
             _pushed_lines = 0;
-        }
-
-        struct EventCtx {
-            String* str;
-            bool has;
-            bool capped;        // hit the batch cap — more remains in the file
-            uint32_t skip;      // lines already pushed
-            uint32_t seen;      // lines encountered this read
-            uint32_t appended;  // new lines added to this batch
-        };
-        String events = "{\"events\":[";
-        EventCtx ctx = {&events, false, false, _pushed_lines, 0, 0};
-
-        coord.journal.read_day(_pushed_day * 86400 + 43200,  // noon of cursor day
-            [](const char* line, void* raw) -> bool {
-                EventCtx* c = (EventCtx*)raw;
-                c->seen++;
-                if (c->seen <= c->skip) return true;   // already pushed
-                if (c->str->length() > 16000) { c->capped = true; return false; }
-                if (c->has) *c->str += ",";
-                *c->str += line;
-                c->has = true;
-                c->appended++;
-                return true;
-            }, &ctx);
-
-        events += "]}";
-
-        if (ctx.seen < ctx.skip) {
-            // File has fewer lines than the cursor (SD swapped/reset) —
-            // resync to what exists and let the next cycle push cleanly.
-            // VPS-side dedup makes any overlap harmless.
-            _pushed_lines = ctx.seen;
             _save_cursor();
-        } else {
-            bool sent_ok = true;
-            if (ctx.has) {
-                char path[80];
-                snprintf(path, sizeof(path), "/api/v1/colonies/%s/events",
-                         coord.registry.manifest().colony_id);
-                sent_ok = _post(path, events.c_str(), events.length());
-                if (sent_ok) {
-                    _last_pushed_unix = g_tod.unix_time;
-                    _pushed_lines += ctx.appended;
-                }
-            }
-            // Cursor day fully drained and it's a PAST day — advance one
-            // day per cycle until we reach today (empty days skip through)
-            bool advanced = false;
-            if (sent_ok && !ctx.capped && _pushed_day < today) {
-                _pushed_day++;
-                _pushed_lines = 0;
-                advanced = true;
-                Serial.printf("[vps] journal catch-up: advancing to day %lu\r\n",
-                              (unsigned long)_pushed_day);
-            }
-            if (advanced || (ctx.has && sent_ok)) _save_cursor();
+            Serial.printf("[vps] journal catch-up: advancing to day %lu\r\n",
+                          (unsigned long)_pushed_day);
         }
+        return 0;
+    }
+
+    char path[80];
+    snprintf(path, sizeof(path), "/api/v1/colonies/%s/events",
+             coord.registry.manifest().colony_id);
+    char* body = (char*)malloc(events.length() + 1);
+    if (!body) return 0;
+    memcpy(body, events.c_str(), events.length() + 1);
+
+    uint32_t token = _submit_post(path, body, events.length());
+    if (token) {
+        // Stash the cursor candidate; committed in the result handler
+        _cand_appended = ctx.appended;
+        _cand_capped = ctx.capped;
+        _cand_today = today;
+    }
+    return token;
+}
+
+// Commit the events cursor once the worker confirms the POST landed.
+static void _commit_events_cursor(bool sent_ok) {
+    if (sent_ok) {
+        _last_pushed_unix = g_tod.unix_time;
+        _pushed_lines += _cand_appended;
+        bool advanced = false;
+        if (!_cand_capped && _pushed_day < _cand_today) {
+            _pushed_day++;
+            _pushed_lines = 0;
+            advanced = true;
+            Serial.printf("[vps] journal catch-up: advancing to day %lu\r\n",
+                          (unsigned long)_pushed_day);
+        }
+        (void)advanced;
+        _save_cursor();
+    }
+    _cand_appended = 0;
+    _cand_capped = false;
+}
+
+// Advance to the next phase, submitting its work. Phases that have nothing
+// to send fall straight through to the next (so an empty events batch
+// doesn't stall the cycle a full result round-trip).
+static void _enter_phase(Coordinator& coord, uint8_t phase) {
+    _push_phase = phase;
+    _phase_started_ms = millis();
+
+    switch (phase) {
+    case PUSH_SNAP_WAIT:
+        _phase_token = _push_snapshot(coord);
+        if (!_phase_token) _enter_phase(coord, PUSH_EV_WAIT);
+        return;
+    case PUSH_EV_WAIT:
+        _phase_token = _push_events(coord);
+        if (!_phase_token) _enter_phase(coord, PUSH_CMD_WAIT);
+        return;
+    case PUSH_CMD_WAIT:
+        _phase_token = _submit_commands_poll(coord);
+        if (!_phase_token) _push_phase = PUSH_IDLE;
+        return;
+    case PUSH_ACK_WAIT:
+        // token set by the caller (ack submit)
+        return;
+    default:
+        _push_phase = PUSH_IDLE;
+        return;
     }
 }
 
 void vps_push_tick(Coordinator& coord) {
     if (!_configured || !WiFi.isConnected()) return;
 
-    switch (_push_phase) {
-    case PUSH_IDLE:
+    if (_push_phase == PUSH_IDLE) {
         if (millis() - _last_push_ms < PUSH_INTERVAL_MS) return;
         _last_push_ms = millis();
-        _push_phase = PUSH_SNAPSHOT;
-        return;  // first transaction next pass
-    case PUSH_SNAPSHOT:
-        _push_snapshot(coord);
-        _push_phase = PUSH_EVENTS;
+        _enter_phase(coord, PUSH_SNAP_WAIT);
         return;
-    case PUSH_EVENTS:
-        _push_events(coord);
-        _push_phase = PUSH_COMMANDS;
-        return;
-    case PUSH_COMMANDS:
-        // Poll + apply queued app commands (rename, care packages, ...)
-        _poll_commands(coord);
+    }
+
+    // Lost-result backstop: results normally always arrive (the worker's
+    // HTTP timeouts are 10s), but never wedge the cycle on a missing one.
+    if (millis() - _phase_started_ms > PHASE_DEADLINE_MS) {
+        Serial.printf("[vps] phase %u timed out waiting for worker — resetting\r\n",
+                      _push_phase);
+        if (_push_phase == PUSH_EV_WAIT) _commit_events_cursor(false);
         _push_phase = PUSH_IDLE;
+        _phase_token = 0;
+    }
+}
+
+// Worker results, routed here from the main loop's chores pump. Drives the
+// phase machine that vps_push_tick started.
+void vps_push_handle_result(Coordinator& coord, uint32_t token, int status,
+                            const char* body) {
+    bool ok = status >= 200 && status < 300;
+
+    // Shared POST bookkeeping (counters + first-contact enrollment), same
+    // semantics as the synchronous _post
+    if (ok) {
+        _push_ok_count++;
+        if (!_enrolled) {
+            _enrolled = true;
+            Preferences prefs;
+            prefs.begin("vps", false);
+            prefs.putBool("enrolled", true);
+            prefs.end();
+            Serial.println("[vps] enrolled with VPS");
+        }
+    } else {
+        _push_fail_count++;
+        Serial.printf("[vps] async HTTP failed (status %d, phase %u)\r\n",
+                      status, _push_phase);
+    }
+
+    if (token != _phase_token) return;   // stale result from an abandoned phase
+    _phase_token = 0;
+
+    switch (_push_phase) {
+    case PUSH_SNAP_WAIT:
+        _enter_phase(coord, PUSH_EV_WAIT);
+        return;
+    case PUSH_EV_WAIT:
+        _commit_events_cursor(ok);
+        _enter_phase(coord, PUSH_CMD_WAIT);
+        return;
+    case PUSH_CMD_WAIT: {
+        uint32_t ack_token = ok ? _handle_commands_body(coord, body) : 0;
+        if (ack_token) {
+            _enter_phase(coord, PUSH_ACK_WAIT);
+            _phase_token = ack_token;
+        } else {
+            _pending_convert = false;   // no ack in flight — never convert unacked
+            _push_phase = PUSH_IDLE;
+        }
+        return;
+    }
+    case PUSH_ACK_WAIT:
+        _handle_ack_result(coord, ok);
+        _push_phase = PUSH_IDLE;
+        return;
+    default:
         return;
     }
 }

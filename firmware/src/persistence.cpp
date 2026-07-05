@@ -1,5 +1,6 @@
 /* Persistence — SD-backed identity records and colony manifest. */
 #include "persistence.h"
+#include "chores.h"
 #include "sd_card.h"
 #include "pin_config.h"
 
@@ -52,8 +53,10 @@ bool ConkerRegistry::_atomic_write(const char* path, const char* json_buf, size_
     char tmp_path[128];
     snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
 
+    chores_sd_lock();   // the chores worker writes SD too — one card, one lock
     File f = SD_MMC.open(tmp_path, FILE_WRITE);
     if (!f) {
+        chores_sd_unlock();
         sd_card_write_failed();
         return false;
     }
@@ -62,20 +65,57 @@ bool ConkerRegistry::_atomic_write(const char* path, const char* json_buf, size_
     f.close();
 
     if (written != len) {
-        sd_card_write_failed();
         SD_MMC.remove(tmp_path);
+        chores_sd_unlock();
+        sd_card_write_failed();
         return false;
     }
 
     // Rename tmp over target (atomic on FAT32 — overwrites existing)
     if (SD_MMC.exists(path)) SD_MMC.remove(path);
     if (!SD_MMC.rename(tmp_path, path)) {
+        chores_sd_unlock();
         sd_card_write_failed();
         return false;
     }
 
+    chores_sd_unlock();
     sd_card_write_ok();
     return true;
+}
+
+// Hand an atomic write to the chores worker (main loop never touches the
+// card). Falls back to the synchronous path before the worker is up (boot
+// loads/saves) or if the queue is full. `token` correlates the result —
+// record ids for re-dirty-on-failure, 0 for fire-and-forget.
+bool ConkerRegistry::_atomic_write_async(const char* path, const char* json_buf,
+                                         size_t len, uint32_t token) {
+    if (!chores_ready())
+        return _atomic_write(path, json_buf, len);
+    char* copy = (char*)malloc(len);
+    if (!copy)
+        return _atomic_write(path, json_buf, len);
+    memcpy(copy, json_buf, len);
+    if (!chores_submit_sd_write(token, path, copy, len))   // takes ownership
+        return _atomic_write(path, json_buf, len);
+    return true;
+}
+
+// Chores worker reported an SD write result (routed from the main loop's
+// pump). Failure re-dirties the record so the next flush retries — the old
+// synchronous path kept the dirty flag on failure for the same reason.
+void ConkerRegistry::handle_sd_result(uint32_t token, bool ok) {
+    if (ok) { sd_card_write_ok(); return; }
+    sd_card_write_failed();
+    if (token == 0) return;
+    for (int i = 0; i < _alive_count; i++) {
+        if (_alive[i].id == token) {
+            _alive[i].dirty = true;
+            return;
+        }
+    }
+    Serial.printf("[persist] ASYNC WRITE FAILED id=%lu (record gone)\r\n",
+                  (unsigned long)token);
 }
 
 // ---- Colony ID generation ----
@@ -210,21 +250,26 @@ bool ConkerRegistry::_save_manifest() {
     char* buf = (char*)malloc(buf_size);
     if (!buf) return false;
     size_t len = serializeJson(doc, buf, buf_size);
-    bool ok = _atomic_write("/colony/manifest.json", buf, len);
+    // Off-loop like record writes — the 30s manifest save was part of the
+    // same persist stall (fire-and-forget: it re-saves every 30s anyway)
+    bool ok = _atomic_write_async("/colony/manifest.json", buf, len, 0);
     free(buf);
     return ok;
 }
 
 // ---- Record I/O ----
 
-bool ConkerRegistry::_write_record(const IdentityRecord& rec) {
+bool ConkerRegistry::_write_record(const IdentityRecord& rec, bool async,
+                                   uint32_t token) {
     char path[80];
     _record_path(path, sizeof(path), "lilguys", rec.id);
 
     // Ensure shard dir exists
     char shard[64];
     _shard_path(shard, sizeof(shard), "lilguys", rec.id);
+    chores_sd_lock();
     if (!SD_MMC.exists(shard)) SD_MMC.mkdir(shard);
+    chores_sd_unlock();
 
     JsonDocument doc;
     doc["schema"]      = 1;
@@ -262,7 +307,10 @@ bool ConkerRegistry::_write_record(const IdentityRecord& rec) {
 
     char buf[768];   // headroom for the need + grief-credit fields
     size_t len = serializeJson(doc, buf, sizeof(buf));
-    return _atomic_write(path, buf, len);
+    // Async = the chores worker does the card I/O; all record writes share
+    // its FIFO so ordering vs. a later death-write is preserved
+    return async ? _atomic_write_async(path, buf, len, token)
+                 : _atomic_write(path, buf, len);
 }
 
 bool ConkerRegistry::_write_brood(const BroodRecord& rec) {
@@ -600,7 +648,9 @@ void ConkerRegistry::mark_dead(uint32_t id, uint32_t died_unix) {
         if (_alive[i].id == id) {
             _alive[i].died_unix = died_unix;
             _alive[i].dirty = false;  // about to flush
-            if (_state == PERSIST_OK) _write_record(_alive[i]);
+            // Async through the same FIFO as flush() writes — the death
+            // write can never be overtaken by a queued needs-refresh
+            if (_state == PERSIST_OK) _write_record(_alive[i], true, 0);
 
             // Remove from alive cache (swap-with-last)
             _alive[i] = _alive[_alive_count - 1];
@@ -627,13 +677,17 @@ bool ConkerRegistry::revive(uint32_t id) {
     if (get(id)) return false;  // already alive
     if (_alive_count >= MAX_ALIVE) return false;
 
+    chores_drain();   // a queued write for this file must land before we read it
+
     char path[80];
     _record_path(path, sizeof(path), "lilguys", id);
+    chores_sd_lock();
     File f = SD_MMC.open(path, FILE_READ);
-    if (!f) return false;
+    if (!f) { chores_sd_unlock(); return false; }
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, f);
     f.close();
+    chores_sd_unlock();
     if (err) return false;
 
     IdentityRecord& r = _alive[_alive_count];
@@ -723,10 +777,14 @@ void ConkerRegistry::flush() {
 
     // Only write records with actual state changes (not position-only updates).
     // Position persistence is handled via the manifest's positions array.
+    // Writes go to the chores worker — 6 records used to block the loop
+    // 250-780ms right here, the single biggest bite of issue #56's pause.
+    // A failed async write re-dirties via handle_sd_result, so the retry
+    // semantics match the old synchronous path.
     int flushed = 0;
     for (int i = 0; i < _alive_count; i++) {
         if (_alive[i].dirty) {
-            if (_write_record(_alive[i])) {
+            if (_write_record(_alive[i], true, _alive[i].id)) {
                 _alive[i].dirty = false;
                 flushed++;
             } else {
@@ -756,6 +814,7 @@ void ConkerRegistry::flush_manifest() {
 
 void colony_reset_wipe() {
     Serial.println("[reset] wiping colony data...");
+    chores_drain();   // in-flight record writes must not recreate wiped files
     if (sd_card_state() == SD_OK) {
         // Walk and remove files — SD_MMC.rmdir only works on empty dirs
         const char* dirs[] = {"/colony/lilguys", "/colony/brood", "/colony/events"};

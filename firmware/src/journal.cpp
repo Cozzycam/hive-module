@@ -1,5 +1,6 @@
 /* EventJournal — append-only event log. */
 #include "journal.h"
+#include "chores.h"
 #include "sd_card.h"
 #include "time_of_day.h"
 #include "world_condition.h"
@@ -247,8 +248,10 @@ void EventJournal::flush() {
     char path[48];
     _make_day_path(_current_day, path, sizeof(path));
 
+    chores_sd_lock();   // the chores worker shares the card
     File f = SD_MMC.open(path, FILE_APPEND);
     if (!f) {
+        chores_sd_unlock();
         sd_card_write_failed();
         return;
     }
@@ -266,6 +269,7 @@ void EventJournal::flush() {
             _make_day_path(_current_day, path, sizeof(path));
             f = SD_MMC.open(path, FILE_APPEND);
             if (!f) {
+                chores_sd_unlock();
                 sd_card_write_failed();
                 return;
             }
@@ -281,6 +285,7 @@ void EventJournal::flush() {
 
     f.flush();
     f.close();
+    chores_sd_unlock();
     sd_card_write_ok();
 
     _total_flushed += written;
@@ -302,8 +307,9 @@ void EventJournal::read_day(uint32_t unix_time, EventCallback cb, void* ctx) {
     char path[48];
     _make_day_path(day, path, sizeof(path));
 
+    chores_sd_lock();
     File f = SD_MMC.open(path, FILE_READ);
-    if (!f) return;
+    if (!f) { chores_sd_unlock(); return; }
 
     char line[384];
     while (f.available()) {
@@ -319,10 +325,12 @@ void EventJournal::read_day(uint32_t unix_time, EventCallback cb, void* ctx) {
         }
     }
     f.close();
+    chores_sd_unlock();
 }
 
 void EventJournal::read_lilguy(uint32_t id, uint32_t since_unix,
                                 EventCallback cb, void* ctx) {
+    chores_sd_lock();
     // Scan from since_unix's day through today
     int start_day = since_unix / 86400;
     int today = g_tod.unix_time / 86400;
@@ -347,9 +355,10 @@ void EventJournal::read_lilguy(uint32_t id, uint32_t since_unix,
             }
             line[len] = '\0';
             if (len > 0 && strstr(line, id_pattern)) {
-                if (!cb(line, ctx)) { f.close(); return; }
+                if (!cb(line, ctx)) { f.close(); chores_sd_unlock(); return; }
             }
         }
         f.close();
     }
+    chores_sd_unlock();
 }

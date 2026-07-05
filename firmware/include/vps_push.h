@@ -2,6 +2,7 @@
  * HTTPS POST with HMAC-SHA256 authentication.
  * Runs every 30s; buffers locally if VPS unreachable. */
 #pragma once
+#include <cstdint>
 
 class Coordinator;
 
@@ -10,6 +11,11 @@ void vps_push_init();
 
 // Call periodically from main loop (handles timing internally)
 void vps_push_tick(Coordinator& coord);
+
+// HTTP results from the chores worker (routed by the main loop's pump).
+// Drives the push phase machine; body may be nullptr.
+void vps_push_handle_result(Coordinator& coord, uint32_t token, int status,
+                            const char* body);
 
 // Set the HMAC secret (stored in NVS, 32 bytes base64-encoded)
 void vps_push_set_secret(const char* base64_secret);

@@ -158,6 +158,10 @@ public:
     // Flush manifest only (for tick_count updates).
     void flush_manifest();
 
+    // Chores-worker SD write result (routed from the main loop's pump).
+    // Failures re-dirty the record so the next flush retries.
+    void handle_sd_result(uint32_t token, bool ok);
+
     // Iteration
     int living_count() const { return _alive_count; }
     IdentityRecord* living_records() { return _alive; }
@@ -191,10 +195,13 @@ private:
     bool _generate_colony_id();
     bool _load_living_records();
     bool _load_brood_records();
-    bool _write_record(const IdentityRecord& rec);
+    bool _write_record(const IdentityRecord& rec, bool async = false,
+                       uint32_t token = 0);
     bool _write_brood(const BroodRecord& rec);
     bool _delete_brood_file(uint32_t id);
     bool _atomic_write(const char* path, const char* json_buf, size_t len);
+    bool _atomic_write_async(const char* path, const char* json_buf,
+                             size_t len, uint32_t token);
     void _shard_path(char* buf, size_t buflen, const char* subdir, uint32_t id);
     void _record_path(char* buf, size_t buflen, const char* subdir, uint32_t id);
     void _move_to_corrupt(const char* path, const char* subdir);
