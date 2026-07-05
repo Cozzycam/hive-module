@@ -1361,11 +1361,43 @@ int Chamber::nearest_artwork(int cx, int cy, int radius) const {
 int Chamber::place_artwork(const Artwork& piece, Artwork* weathered_out) {
     if (weathered_out) weathered_out->active = false;
     int slot = -1;
-    for (int i = 0; i < Cfg::MAX_ARTWORKS; i++)
-        if (!artworks[i].active) { slot = i; break; }
+
+    // Density rules (v214, keeper taste: the colony keeps what it loves).
+    // Memorials are exempt on both sides — grief is not decor, it neither
+    // counts against a maker nor gets evicted here.
+    if (piece.kind != ART_MEMORIAL) {
+        // Rule 1: a maker holds at most ARTWORKS_PER_MAKER standing works —
+        // their next piece replaces their own least-admired, so one prolific
+        // sculptor can't fill the floor while their landmarks still stand.
+        int mine = 0, evict = -1;
+        uint32_t least = 0xFFFFFFFF;
+        for (int i = 0; i < Cfg::MAX_ARTWORKS; i++) {
+            if (!artworks[i].active || artworks[i].kind == ART_MEMORIAL) continue;
+            if (artworks[i].maker_id != piece.maker_id) continue;
+            mine++;
+            if (artworks[i].admired < least) { least = artworks[i].admired; evict = i; }
+        }
+        if (mine >= Cfg::ARTWORKS_PER_MAKER && evict >= 0) slot = evict;
+
+        // Rule 2: standing cap — past it, the least-admired work anywhere
+        // weathers to make room (10 works read as clutter on the glass).
+        if (slot < 0) {
+            int standing = 0; evict = -1; least = 0xFFFFFFFF;
+            for (int i = 0; i < Cfg::MAX_ARTWORKS; i++) {
+                if (!artworks[i].active) continue;
+                standing++;
+                if (artworks[i].kind == ART_MEMORIAL) continue;
+                if (artworks[i].admired < least) { least = artworks[i].admired; evict = i; }
+            }
+            if (standing >= Cfg::ARTWORKS_STANDING_CAP && evict >= 0) slot = evict;
+        }
+    }
+
+    if (slot < 0)
+        for (int i = 0; i < Cfg::MAX_ARTWORKS; i++)
+            if (!artworks[i].active) { slot = i; break; }
     if (slot < 0) {
-        // Full: the oldest work weathers away — hand it to the caller so
-        // its passing can be told ("Fern's old carving finally crumbled")
+        // Array full (memorial-heavy edge): the oldest work weathers away
         uint32_t oldest = 0xFFFFFFFF;
         for (int i = 0; i < Cfg::MAX_ARTWORKS; i++) {
             if (artworks[i].created_unix < oldest) {
@@ -1373,8 +1405,10 @@ int Chamber::place_artwork(const Artwork& piece, Artwork* weathered_out) {
                 slot = i;
             }
         }
-        if (weathered_out) *weathered_out = artworks[slot];
     }
+    // Whatever stood in the chosen slot weathers — hand it to the caller so
+    // its passing can be told ("Fern's old carving finally crumbled")
+    if (artworks[slot].active && weathered_out) *weathered_out = artworks[slot];
     artworks[slot] = piece;
     artworks[slot].active = true;
     _artworks_save(artworks);
@@ -1387,17 +1421,36 @@ void Chamber::artwork_admired(int idx) {
     if ((artworks[idx].admired & 0x1F) == 0) _artworks_save(artworks);  // every 32nd
 }
 
-int Chamber::weather_oldest_artworks(int n) {
+int Chamber::weather_artworks(int n) {
+    // Keeper sweep, least-admired first — the colony keeps what it loves
+    // (the old oldest-first policy would have crumbled the most-visited
+    // landmark simply for being old). Over-cap makers lose their surplus
+    // before anyone else loses anything. Graves stand, always.
     int done = 0;
     while (done < n) {
         int slot = -1;
-        uint32_t oldest = 0xFFFFFFFF;
+        uint32_t least = 0xFFFFFFFF;
+        // Pass 1: surplus works of makers over ARTWORKS_PER_MAKER
         for (int i = 0; i < Cfg::MAX_ARTWORKS; i++) {
-            if (!artworks[i].active) continue;
-            if (artworks[i].kind == ART_MEMORIAL) continue;   // graves stand
-            if (artworks[i].created_unix < oldest) {
-                oldest = artworks[i].created_unix;
+            if (!artworks[i].active || artworks[i].kind == ART_MEMORIAL) continue;
+            int mine = 0;
+            for (int j = 0; j < Cfg::MAX_ARTWORKS; j++)
+                if (artworks[j].active && artworks[j].kind != ART_MEMORIAL
+                        && artworks[j].maker_id == artworks[i].maker_id) mine++;
+            if (mine > Cfg::ARTWORKS_PER_MAKER && artworks[i].admired < least) {
+                least = artworks[i].admired;
                 slot = i;
+            }
+        }
+        // Pass 2: globally least-admired
+        if (slot < 0) {
+            least = 0xFFFFFFFF;
+            for (int i = 0; i < Cfg::MAX_ARTWORKS; i++) {
+                if (!artworks[i].active || artworks[i].kind == ART_MEMORIAL) continue;
+                if (artworks[i].admired < least) {
+                    least = artworks[i].admired;
+                    slot = i;
+                }
             }
         }
         if (slot < 0) break;

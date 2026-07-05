@@ -28,7 +28,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 213;
+constexpr uint32_t FW_VERSION = 214;
 
 namespace Cfg {
 
@@ -121,7 +121,13 @@ constexpr int      FARM_MAX_TICKS          = 600;       // failsafe: give up the
 constexpr float    NIGHT_FORAGE_MIN_PRESSURE = 0.5f;
 
 // ---- Making (artifacts) ----
-constexpr int   MAX_ARTWORKS          = 10;      // per module; oldest weathers away
+// MAX_ARTWORKS is ARRAY CAPACITY, not the standing limit — it also sizes the
+// persisted NVS blob, and the loader rejects a size-mismatched blob outright
+// (every standing work would silently vanish), so don't shrink it. The
+// on-floor density is governed by the two soft rules below (v214).
+constexpr int   MAX_ARTWORKS          = 10;
+constexpr int   ARTWORKS_STANDING_CAP = 6;       // placement evicts least-admired past this
+constexpr int   ARTWORKS_PER_MAKER    = 2;       // a maker's next piece replaces their own least-admired
 constexpr float MUSE_MIN              = 0.55f;   // aptitude floor to ever craft
 constexpr float CRAFT_CHANCE_PER_TICK = 0.0002f; // idle roll (×muse, ×play_surplus)
 // The muse rests between works — this cadence, not the per-tick roll, is what

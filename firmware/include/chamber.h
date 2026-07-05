@@ -185,10 +185,10 @@ public:
     bool artwork_spot_free(int cx, int cy) const;   // clear of plots/food/queen/art
     int  nearest_artwork(int cx, int cy, int radius) const;  // -1 if none
     void artwork_admired(int idx);                  // count + occasional persist
-    // Keeper cleanup (serial `art weather`): weathers the n oldest works
-    // through the normal event path so the diary and gallery stay truthful.
-    // Memorials are never swept — graves only go via natural cap eviction.
-    int  weather_oldest_artworks(int n);
+    // Keeper cleanup (serial `art weather`): weathers the n least-admired
+    // works (over-cap makers' surplus first) through the normal event path
+    // so the diary and gallery stay truthful. Memorials are never swept.
+    int  weather_artworks(int n);
 
     // Finger scent shimmer — visual echo of a swipe, fades over TTL
     struct ScentMark { int8_t x, y; uint8_t ttl; };

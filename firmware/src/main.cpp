@@ -514,7 +514,7 @@ static void process_serial_line(const char* line) {
         // "art weather 3" the three oldest. Graves are never swept.
         int n = Cfg::MAX_ARTWORKS;
         if (line[11] == ' ') n = atoi(line + 12);
-        int done = sim.coordinator.chamber.weather_oldest_artworks(n);
+        int done = sim.coordinator.chamber.weather_artworks(n);
         Serial.printf("[art] weathered %d work(s); memorials left standing\r\n", done);
     } else if (strncmp(line, "challenge start ", 16) == 0) {
         const char* arg = line + 16;
