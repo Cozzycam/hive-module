@@ -1402,10 +1402,13 @@ int Chamber::weather_oldest_artworks(int n) {
         }
         if (slot < 0) break;
         // Same event the cap eviction tells — journal, relay and gallery
-        // all hear an ordinary weathering
+        // all hear an ordinary weathering. Ticks are offset per piece: the
+        // VPS dedup key is (tick, unix, type, lilguy), so a same-tick sweep
+        // of one maker's works would collapse to a single event (6 of 7
+        // vanished on the first sweep, 2026-07-05).
         Event wv = {};
         wv.type = EVT_ART_WEATHERED;
-        wv.tick = tick_num;
+        wv.tick = tick_num + (uint32_t)done;
         wv.crafted.kind = artworks[slot].kind;
         strlcpy(wv.crafted.who, artworks[slot].maker_name, sizeof(wv.crafted.who));
         emit(wv);
