@@ -96,9 +96,16 @@ struct SpriteDraw {
 
 class Renderer {
 public:
-    void init(Arduino_Canvas* canvas, Arduino_TFT* output);
+    // canvas2: optional second framebuffer for double-buffered async flush
+    // (pass null to run single-buffered).
+    void init(Arduino_Canvas* canvas, Arduino_Canvas* canvas2,
+              Arduino_TFT* output);
     void draw(const Chamber& ch, float lerp_t);
     void flush();
+    // The canvas the CURRENT frame draws into. Overlays painted between
+    // draw() and flush() (selection ring, HUD, debug) must use this, not a
+    // cached pointer — it alternates every frame when double-buffered.
+    Arduino_Canvas* canvas() const { return _gfx; }
     void force_full_redraw() { _needs_full_redraw = true; }
     void mark_dirty_external(int x, int y, int w, int h) { _mark_dirty(x, y, w, h); }
     bool debug_phero = false;  // pheromone overlay (toggle via serial 'p')

@@ -20,6 +20,7 @@
 #include <pgmspace.h>
 #include <Preferences.h>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstring>
 
@@ -321,65 +322,76 @@ static unsigned long _prof_last_report = 0;
 #endif
 
 // ================================================================
-//  Async flush worker (core 0)
+//  Async flush worker (core 0) + double buffering
 // ================================================================
 // The full-frame QSPI push costs ~35ms — the single biggest CPU item on
 // core 1 (v208 [perf]: 21ms render + 35ms flush per ~14fps frame). The
-// worker overlaps the push with the next cycle's sim/net work. Safety
-// invariant: the framebuffer is never WRITTEN while the worker READS it —
-// draw() blocks until the previous push completes (normally it already
-// has), and every canvas write in the codebase happens between draw()
-// entry and flush(). Same shape as the v206 chores worker: core 0
-// (idles between WiFi stack work), priority 1 (above idle, below WiFi),
-// synchronous fallback if task creation fails.
+// worker runs the push on core 0; double buffering lets core 1 render
+// frame N+1 into the other canvas while frame N is still on the wire
+// (single-buffer v209 measured avg_wait=23ms — render and push serialise
+// without the second buffer).
+//
+// The worker ONLY ever calls Arduino_Canvas::flush() — the same call the
+// synchronous path used for 200 versions. v209 pushed the raw framebuffer
+// with logical (480x320) dims; the panel is natively 320x480 (rotation is
+// canvas-side) and the clip path sheared the image. Never touch raw dims.
+//
+// Safety invariants:
+//  - A canvas is never WRITTEN while the worker reads it: posts alternate
+//    A,B,A,B and draw() blocks until at most the MOST RECENT post is still
+//    in flight — the canvas it is about to write is therefore idle.
+//  - Double buffering requires the floor cache (every frame repaints in
+//    full). The uncached floor path restores only dirty rects and relies
+//    on the previous frame's pixels, so it forces single-buffer mode.
+//  - Modal paths that paint outside the frame loop (OTA splash) drain to
+//    zero in-flight pushes first, then own the display until reboot.
+// Same shape as the v206 chores worker: core 0, priority 1, synchronous
+// fallback if anything fails to allocate.
 static TaskHandle_t      _flushw_task = nullptr;
-static SemaphoreHandle_t _flushw_req  = nullptr;
-static SemaphoreHandle_t _flushw_done = nullptr;
-static Arduino_Canvas*   _flushw_canvas = nullptr;
-static Arduino_TFT*      _flushw_panel  = nullptr;
-// True while core 1 may write the canvas (between draw() and flush()).
-// Only toggled from core 1; the worker never touches it.
+static QueueHandle_t     _flushw_q    = nullptr;   // canvases queued to push
+static SemaphoreHandle_t _flushw_done = nullptr;   // signalled per completed push
+static std::atomic<int>  _flushw_inflight{0};
+static Arduino_Canvas*   _canvas_a = nullptr;
+static Arduino_Canvas*   _canvas_b = nullptr;      // null = single-buffer mode
+// True while core 1 may write the current canvas (between draw()'s gate
+// and flush()'s post). Only toggled from core 1.
 static bool _flushw_owned = true;
 
 static void _flushw_worker(void*) {
+    Arduino_Canvas* c;
     for (;;) {
-        xSemaphoreTake(_flushw_req, portMAX_DELAY);
+        xQueueReceive(_flushw_q, &c, portMAX_DELAY);
         unsigned long t0 = millis();
-        _flushw_panel->draw16bitRGBBitmap(0, 0, _flushw_canvas->getFramebuffer(),
-                                          SCREEN_W, SCREEN_H);
+        c->flush();
 #if RENDERER_PROFILE
         _prof_flush_total += millis() - t0;
 #else
         (void)t0;
 #endif
+        _flushw_inflight.fetch_sub(1);
         xSemaphoreGive(_flushw_done);
     }
 }
 
-// Block until the in-flight push (if any) completes and core 1 owns the
-// canvas again. Called at draw() entry and by modal paths via
-// renderer_flush_drain().
-static void _flushw_acquire() {
-    if (_flushw_owned || !_flushw_task) { _flushw_owned = true; return; }
-    unsigned long t0 = millis();
-    xSemaphoreTake(_flushw_done, portMAX_DELAY);
-    _flushw_owned = true;
-#if RENDERER_PROFILE
-    _prof_wait_total += millis() - t0;
-#else
-    (void)t0;
-#endif
+// Block until at most max_inflight pushes remain pending. The done
+// semaphore is just a doze between checks; the atomic is the truth.
+static void _flushw_wait(int max_inflight) {
+    while (_flushw_inflight.load() > max_inflight)
+        xSemaphoreTake(_flushw_done, pdMS_TO_TICKS(50));
 }
 
 void renderer_flush_drain() {
-    _flushw_acquire();
+    if (!_flushw_task) return;
+    _flushw_wait(0);
+    _flushw_owned = true;
 }
 
 // ================================================================
 //  Init
 // ================================================================
 
-void Renderer::init(Arduino_Canvas* canvas, Arduino_TFT* output) {
+void Renderer::init(Arduino_Canvas* canvas, Arduino_Canvas* canvas2,
+                    Arduino_TFT* output) {
     _gfx = canvas;
     _output = output;
     _needs_full_redraw = true;
@@ -388,14 +400,15 @@ void Renderer::init(Arduino_Canvas* canvas, Arduino_TFT* output) {
 
     // Spin up the async flush worker (see block above). On any failure the
     // handles stay null and flush() falls back to the old synchronous push.
-    _flushw_canvas = canvas;
-    _flushw_panel  = output;
-    _flushw_req  = xSemaphoreCreateBinary();
+    _canvas_a = canvas;
+    _canvas_b = canvas2;   // may be null; double-buffer gate happens below
+    _flushw_q    = xQueueCreate(2, sizeof(Arduino_Canvas*));
     _flushw_done = xSemaphoreCreateBinary();
-    if (!_flushw_req || !_flushw_done
+    if (!_flushw_q || !_flushw_done
             || xTaskCreatePinnedToCore(_flushw_worker, "fbflush", 4096, nullptr,
                                        1, &_flushw_task, 0) != pdPASS) {
         _flushw_task = nullptr;
+        _canvas_b = nullptr;
         Serial.println("[renderer] flush worker unavailable — synchronous flush");
     }
 
@@ -424,6 +437,22 @@ void Renderer::init(Arduino_Canvas* canvas, Arduino_TFT* output) {
     }
 #endif
 
+    // Double buffering needs the floor cache: with it, every frame repaints
+    // the full canvas, so alternating canvases is invisible. Without it the
+    // dirty-rect floor restore reads the PREVIOUS frame's pixels — which
+    // with two buffers would be the frame before last. Fall back to
+    // single-buffer async in that case.
+    bool floor_cached = false;
+#if CHAMBER_FLOOR_CACHED
+    floor_cached = (_floor_cache != nullptr);
+#endif
+    if (_canvas_b && !floor_cached) {
+        _canvas_b = nullptr;
+        Serial.println("[renderer] no floor cache — single-buffer flush");
+    }
+    Serial.printf("[renderer] flush: %s\r\n",
+        !_flushw_task ? "synchronous"
+                      : (_canvas_b ? "async double-buffer" : "async single-buffer"));
 }
 
 void Renderer::_union_dirty_into_bounds(FlushBounds& bounds) {
@@ -481,12 +510,20 @@ void Renderer::flush() {
     // draw() re-acquires ownership.
     if (_flushw_task) {
         if (_flushw_owned) {
-            _flushw_owned = false;
-            xSemaphoreGive(_flushw_req);
+            Arduino_Canvas* posted = _gfx;
+            _flushw_inflight.fetch_add(1);
+            if (xQueueSend(_flushw_q, &posted, 0) == pdTRUE) {
+                _flushw_owned = false;
+                // Double-buffered: draw the next frame into the other canvas
+                // while this one is on the wire.
+                if (_canvas_b)
+                    _gfx = (_gfx == _canvas_a) ? _canvas_b : _canvas_a;
+            } else {
+                _flushw_inflight.fetch_sub(1);  // queue full — drop this frame
+            }
         }
-        // else: previous push still in flight and nothing drew since —
-        // never fall through to a synchronous push here, it would race
-        // the worker on the QSPI bus.
+        // !owned: push still in flight and nothing drew since — never fall
+        // through to a synchronous push, it would race the worker on the bus.
     } else {
 #if RENDERER_PROFILE
         unsigned long t0 = millis();
@@ -578,10 +615,20 @@ void Renderer::_clear_dirty() {
 // ================================================================
 
 void Renderer::draw(const Chamber& ch, float lerp_t) {
-    // The previous frame's push must finish before anything writes the
-    // canvas — this is the async-flush safety gate (normally a no-op: at
-    // ~30fps pacing the 35ms push has already completed).
-    _flushw_acquire();
+    // Async-flush safety gate: the canvas we are about to write must not be
+    // on the wire. Double-buffered, that means at most ONE push pending (the
+    // most recent — always the OTHER canvas, posts alternate); single-
+    // buffered it means none. Normally a no-op by the time a frame is due.
+    if (_flushw_task && !_flushw_owned) {
+#if RENDERER_PROFILE
+        unsigned long wait_t0 = millis();
+#endif
+        _flushw_wait(_canvas_b ? 1 : 0);
+        _flushw_owned = true;
+#if RENDERER_PROFILE
+        _prof_wait_total += millis() - wait_t0;
+#endif
+    }
 
     // Capture previous frame's dirty rects as flush bounds
     // (these regions were restored by floor blit but display still shows old sprites)

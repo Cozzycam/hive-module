@@ -91,6 +91,9 @@ Arduino_DataBus *bus = new Arduino_ESP32QSPI(
 Arduino_TFT *panel = new Arduino_AXS15231B(
     bus, -1, 0, false, LCD_WIDTH, LCD_HEIGHT);
 Arduino_Canvas *gfx = new Arduino_Canvas(LCD_WIDTH, LCD_HEIGHT, panel);
+// Second framebuffer for double-buffered flush (renderer alternates them;
+// begin() with GFX_SKIP_OUTPUT_BEGIN so the panel isn't re-initialised).
+Arduino_Canvas *gfx2 = new Arduino_Canvas(LCD_WIDTH, LCD_HEIGHT, panel);
 
 // -- Sim + Renderer --------------------------------------------------
 
@@ -846,6 +849,12 @@ void setup() {
         while (true) delay(1000);
     }
     gfx->setRotation(1);
+    if (gfx2 && gfx2->begin(GFX_SKIP_OUTPUT_BEGIN)) {
+        gfx2->setRotation(1);
+    } else {
+        gfx2 = nullptr;   // no second buffer — renderer runs single-buffered
+        Serial.println("[setup] second framebuffer unavailable");
+    }
 
     // SD card — mount before sim so persistence can load
     if (!sd_card_init()) {
@@ -881,7 +890,7 @@ void setup() {
     time_of_day_init();
     sim.init();
     topology_init(topo_callback);  // after WiFi/NTP, before renderer
-    renderer.init(gfx, panel);
+    renderer.init(gfx, gfx2, panel);
     renderer_load_floor_tint();  // user's ground colour, both roles
 
     hud_battery_init();  // AXP2101 probe — works on both queen and satellite
@@ -1133,6 +1142,11 @@ void loop() {
         renderer.set_milestone_decor(sim.coordinator.milestone_decor_bits());
         renderer.draw(sim.coordinator.chamber, lerp_t);
 
+        // Overlays below MUST paint on the frame's current canvas — with
+        // double-buffered flush it alternates, so the global gfx pointer
+        // would hit the buffer that's on the wire every other frame.
+        Arduino_Canvas* cv = renderer.canvas();
+
         // Selection overlay: highlight circle + name above selected conker
         if (sim.selected_conker_id != 0) {
             int sel_idx = -1;
@@ -1149,15 +1163,15 @@ void loop() {
                 int radius = static_cast<int>(w.render_scale() * 6.0f);
 
                 // Highlight circle
-                gfx->drawCircle(px, py, radius, 0xFFFF);
-                gfx->drawCircle(px, py, radius + 1, 0xFFFF);
+                cv->drawCircle(px, py, radius, 0xFFFF);
+                cv->drawCircle(px, py, radius + 1, 0xFFFF);
 
                 // Name + what they're up to, stacked in a pill above the head
                 const char* name = w.name[0] ? w.name : "???";
                 const char* act  = conker_activity_short(
                     conker_activity(w, sim.coordinator.chamber));
-                gfx->setTextSize(1);
-                gfx->setTextWrap(false);
+                cv->setTextSize(1);
+                cv->setTextWrap(false);
                 int nw = 0; for (const char* p = name; *p; p++) nw += 6;
                 int aw = 0; for (const char* p = act;  *p; p++) aw += 6;
                 int tw = (nw > aw) ? nw : aw;
@@ -1168,13 +1182,13 @@ void loop() {
                 int top = py - radius - 3 - pill_h;
                 if (top < 2) top = 2;
                 // Background pill for readability
-                gfx->fillRoundRect(lx - 3, top, tw + 6, pill_h, 3, 0x0000);
-                gfx->setCursor(lx + (tw - nw) / 2, top + 2);
-                gfx->setTextColor(0xFFFF);           // name — bright
-                gfx->print(name);
-                gfx->setCursor(lx + (tw - aw) / 2, top + 11);
-                gfx->setTextColor(0xC618);           // activity — soft grey
-                gfx->print(act);
+                cv->fillRoundRect(lx - 3, top, tw + 6, pill_h, 3, 0x0000);
+                cv->setCursor(lx + (tw - nw) / 2, top + 2);
+                cv->setTextColor(0xFFFF);           // name — bright
+                cv->print(name);
+                cv->setCursor(lx + (tw - aw) / 2, top + 11);
+                cv->setTextColor(0xC618);           // activity — soft grey
+                cv->print(act);
 
                 // Dirty rect must cover both the (possibly wide) pill and circle
                 int dl = (lx - 4 < px - radius - 5) ? lx - 4 : px - radius - 5;
@@ -1194,16 +1208,16 @@ void loop() {
         }
 
         if (sim.coordinator.is_queen() && !renderer.is_splash_active()) {
-            hud_draw(gfx, sim.coordinator.chamber);
+            hud_draw(cv, sim.coordinator.chamber);
             renderer.mark_dirty_external(0, 0, 480, 28);  // HUD strip
         }
         if (!splashing) {
-            hud_draw_battery(gfx);
-            hud_draw_version(gfx);
+            hud_draw_battery(cv);
+            hud_draw_version(cv);
             renderer.mark_dirty_external(0, 304, 480, 16);  // Battery + version strip
         }
         if (topo_overlay) {
-            topology_draw_overlay(gfx);
+            topology_draw_overlay(cv);
             renderer.mark_dirty_external(0, 0, 480, 320);  // Debug overlay = full screen
         }
         renderer.flush();
