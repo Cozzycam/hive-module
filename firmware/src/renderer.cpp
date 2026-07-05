@@ -1259,23 +1259,34 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
                 _mark_dirty(mx - fs / 2, my - fs / 2, fs, fs);
             }
 
-            // Worn keepsake — a gift from a best friend, worn for life
+            // Worn keepsake — a gift from a best friend, worn for life.
+            // Sized with the wearer: fixed-pixel keepsakes vanished on a
+            // grown conker (a 5px hat on a ~25px body read as noise).
             if (w.accessory != 0) {
                 float rs = w.render_scale();
                 if (w.accessory == 1) {          // petal hat
+                    int hw = (int)(rs * 1.6f); if (hw < 2) hw = 2;   // brim half-width
                     int hy = sd.render_y - (int)(rs * 4.5f);
-                    _gfx->drawFastHLine(sd.render_x - 2, hy, 5, _rgb565(240, 160, 190));
-                    _gfx->drawPixel(sd.render_x, hy - 1, _rgb565(255, 225, 150));
-                    _mark_dirty(sd.render_x - 3, hy - 2, 7, 4);
+                    _gfx->fillRect(sd.render_x - hw, hy, hw * 2 + 1, 2,
+                                   _rgb565(240, 160, 190));            // brim
+                    _gfx->fillRect(sd.render_x - hw / 2, hy - 2, hw + 1, 2,
+                                   _rgb565(250, 195, 215));            // crown petals
+                    _gfx->drawPixel(sd.render_x, hy - 3, _rgb565(255, 225, 150));
+                    _mark_dirty(sd.render_x - hw - 1, hy - 4, hw * 2 + 3, 7);
                 } else if (w.accessory == 2) {   // seed pendant
+                    int ps = (int)(rs * 0.8f); if (ps < 2) ps = 2;
                     int py2 = sd.render_y + (int)(rs * 1.0f);
-                    _gfx->fillRect(sd.render_x - 1, py2, 2, 2, _rgb565(210, 165, 70));
-                    _mark_dirty(sd.render_x - 2, py2 - 1, 4, 4);
+                    _gfx->fillRect(sd.render_x - ps / 2, py2, ps, ps,
+                                   _rgb565(210, 165, 70));
+                    _gfx->drawPixel(sd.render_x - ps / 2, py2, _rgb565(245, 210, 120));
+                    _mark_dirty(sd.render_x - ps / 2 - 1, py2 - 1, ps + 2, ps + 2);
                 } else {                          // grass band
+                    int bh = (int)(rs * 1.5f); if (bh < 3) bh = 3;
                     int bx = sd.render_x - (int)(rs * 2.5f);
-                    int by = sd.render_y - (int)(rs * 1.5f);
-                    _gfx->drawFastVLine(bx, by, 3, _rgb565(110, 190, 95));
-                    _mark_dirty(bx - 1, by - 1, 3, 5);
+                    int by = sd.render_y - bh / 2;
+                    _gfx->drawFastVLine(bx, by, bh, _rgb565(110, 190, 95));
+                    _gfx->drawFastVLine(bx + 1, by + 1, bh - 1, _rgb565(150, 215, 130));
+                    _mark_dirty(bx - 1, by - 1, 4, bh + 2);
                 }
             }
 

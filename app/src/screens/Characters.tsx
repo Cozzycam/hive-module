@@ -11,6 +11,7 @@ import { nameFromId } from '../data/plantNames';
 import { personalityPhrase, deriveRoleTag, PERSONALITY_DIMS, dimLeaning } from '../data/personality';
 import { TRAIT_INFO, traitLabel } from '../data/traits';
 import { epithet, buildLifeStory } from '../data/biography';
+import { isAccessory, artKindEmoji, artKindLabel } from '../data/artworks';
 import { HIVE, TOD_PALETTES } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 import { fetchLilguyDetail, fetchLilguyHistory, sendCommand } from '../api/client';
@@ -70,6 +71,7 @@ interface CharacterInfo {
   mood?: ConkerMood;
   needs?: { boredom?: number; tiredness?: number; loneliness?: number };
   activity?: ConkerActivity;
+  accessory?: string;   // worn keepsake kind (petal_hat | seed_pendant | grass_band)
   deathCause?: string;
 }
 
@@ -248,6 +250,7 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
           mood: l.mood,
           needs: l.needs,
           activity: l.activity,
+          accessory: l.accessory,
         });
       }
     }
@@ -375,11 +378,21 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
 
   if (selectedId !== null) {
     const char = characters.get(selectedId);
+    // Who made the worn keepsake — the crafted event belongs to the MAKER,
+    // so the wearer's own history can't answer this; the colony feed can
+    // (best-effort: the event may have scrolled out of the window).
+    const keepsakeGiver = char?.accessory
+      ? (events.find(e => e.type === 'crafted'
+          && (e.data as Record<string, unknown>)?.honoree === char.name
+          && isAccessory(String((e.data as Record<string, unknown>)?.kind))) as
+            { name?: string } | undefined)?.name
+      : undefined;
     return (
       <CharacterProfile
         char={char || { id: selectedId, name: nameFromId(selectedId), role: 'conker', traits: [], bonds: [] }}
         detail={detail}
         events={lilguyEvents}
+        keepsakeGiver={keepsakeGiver}
         isPinned={isPinned(selectedId)}
         onTogglePin={() => togglePin(selectedId, char?.name)}
         onBack={() => setSelectedId(null)}
@@ -481,10 +494,11 @@ export function Characters({ onNavigate, initialLilguyId }: CharactersProps) {
 
 // ---- Character Profile ----
 
-function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack, palette }: {
+function CharacterProfile({ char, detail, events, keepsakeGiver, isPinned, onTogglePin, onBack, palette }: {
   char: CharacterInfo;
   detail: LilGuyDetail | null;
   events: ColonyEvent[];
+  keepsakeGiver?: string;
   isPinned: boolean;
   onTogglePin: () => void;
   onBack: () => void;
@@ -694,6 +708,29 @@ function CharacterProfile({ char, detail, events, isPinned, onTogglePin, onBack,
               </div>
               <div style={{ fontSize: SIZES.xs, color: palette.dimText }}>
                 {char.name} {ACTIVITY_BLURB[activity]}
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Worn keepsake — a gift from a best friend, worn for life */}
+      {!isDeceased && char.accessory && (
+        <Card style={{ background: palette.cardBg }}>
+          <div style={{ fontSize: SIZES.xs, fontWeight: 600, color: palette.dimText,
+                        textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+            Keepsake
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 22 }}>{artKindEmoji(char.accessory)}</span>
+            <div>
+              <div style={{ fontSize: SIZES.base, color: palette.text }}>
+                A {artKindLabel(char.accessory)}, worn for life
+              </div>
+              <div style={{ fontSize: SIZES.xs, color: palette.dimText }}>
+                {keepsakeGiver
+                  ? `Made for ${char.name} by ${keepsakeGiver}.`
+                  : 'A gift from a best friend.'}
               </div>
             </div>
           </div>

@@ -112,6 +112,9 @@ export interface LilGuySummary {
   // boop label shows on-glass, so no LAN fetch needed; older snapshots omit)
   state?: string;
   activity?: ConkerActivity;
+  // Worn keepsake, crafted-event vocabulary: petal_hat | seed_pendant |
+  // grass_band (added v206 — older snapshots omit)
+  accessory?: string;
 }
 
 // Readable summary of a conker's loudest unmet need (firmware ConkerMood)
