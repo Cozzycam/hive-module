@@ -1396,6 +1396,21 @@ static uint8_t _craft_context_now() {
     return CTX_PLENTY;
 }
 
+// A finished piece rests the muse — keener makers rest less, so the most
+// inclined manage roughly a work a day and borderline ones every couple of
+// days. Squared falloff: the truly keen pull well ahead of the merely able.
+void Conker::_rest_muse() {
+    if (g_tod.unix_time < 1000000) return;   // clock not synced yet — let it slide
+    float t = (muse() - Cfg::MUSE_MIN) / (1.0f - Cfg::MUSE_MIN);
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+    float hours = Cfg::MUSE_REST_MIN_HOURS
+                + (1.0f - t) * (1.0f - t)
+                  * (Cfg::MUSE_REST_MAX_HOURS - Cfg::MUSE_REST_MIN_HOURS);
+    hours *= 0.85f + 0.3f * g_rng.rand_float();   // never on a schedule
+    muse_rest_unix = g_tod.unix_time + (uint32_t)(hours * 3600.0f);
+}
+
 // Find a clear spot near (near_x, near_y) and set out to make something.
 bool Conker::_start_crafting(Chamber& ch, uint8_t kind, uint8_t context,
                              int near_x, int near_y) {
@@ -1483,6 +1498,7 @@ void Conker::_do_crafting(Chamber& ch) {
         has_target_cell = false;
         afterglow_ticks = Cfg::AFTERGLOW_TICKS;
         idle_repoll_tick = Cfg::IDLE_REPOLL_INTERVAL;
+        _rest_muse();
         return;
     }
 
@@ -1527,6 +1543,7 @@ void Conker::_do_crafting(Chamber& ch) {
     has_target_cell = false;
     afterglow_ticks = Cfg::AFTERGLOW_TICKS;   // making feels good
     idle_repoll_tick = Cfg::IDLE_REPOLL_INTERVAL;
+    _rest_muse();   // memorials rest it too — the grief exception is on entry
 }
 
 // Off to the allotment: walk to the claimed plot, lean over the soil for a
@@ -1659,10 +1676,15 @@ void Conker::_tick_idle(Chamber& ch) {
     // The muse strikes: with a deep pantry, a maker drifts off to craft —
     // something of this moment, in their own colours. Sometimes the muse
     // is a person: a best friend without a keepsake gets a gift instead.
+    // Rested muse only (grief memorials are the one exception — see
+    // _do_mourning); the roll scales with surplus, so a barely-deep pantry
+    // inspires less than a groaning one.
     if (!sleeping && stack_on < 0 && anim_type == LG_ANIM_NONE
             && muse() >= Cfg::MUSE_MIN
+            && g_tod.unix_time >= muse_rest_unix
             && ch.colony->play_surplus() > 0.4f
-            && g_rng.rand_float() < Cfg::CRAFT_CHANCE_PER_TICK * muse()) {
+            && g_rng.rand_float() < Cfg::CRAFT_CHANCE_PER_TICK * muse()
+                                    * ch.colony->play_surplus()) {
         uint32_t gift_for = 0;
         if (ch.bonds) {
             for (int i = 0; i < ch.conker_count; i++) {

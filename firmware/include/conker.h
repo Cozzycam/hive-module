@@ -205,6 +205,9 @@ struct Conker {
     uint8_t  craft_context        = 0;           // ArtContext at inspiration
     int16_t  craft_ticks          = 0;           // work remaining at the spot
     uint32_t craft_for            = 0;           // accessory gifts: recipient id
+    uint32_t muse_rest_unix       = 0;           // the muse rests after each work
+                                                 // (rides ConkerTransfer — crossings
+                                                 // must not reset it, cf. catches)
     char     mourning_for[16]     = {};          // who the vigil (and any memorial) honours
 
     // Worn accessory (0 = none, 1 = petal hat, 2 = seed pendant,
@@ -318,6 +321,7 @@ struct Conker {
     void _do_farming(Chamber& ch);
     void _do_to_garden(Chamber& ch);
     void _do_crafting(Chamber& ch);
+    void _rest_muse();
     bool _start_crafting(Chamber& ch, uint8_t kind, uint8_t context,
                          int near_x, int near_y);  // find a spot, set out
     bool _target_still_valid(Chamber& ch);

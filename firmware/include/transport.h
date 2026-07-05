@@ -42,6 +42,9 @@ struct __attribute__((packed)) ConkerTransfer {
                                  // used to zero it and thrash the title)
     uint8_t  accessory;          // worn gift (petal hat etc) travels with them
     char     name[16];           // display name (truncated to fit payload)
+    uint32_t muse_rest_unix;     // the muse's rest crosses the tunnel too —
+                                 // a crossing must not hand the maker a
+                                 // fresh muse (cf. the catches lesson)
 };
 
 static_assert(sizeof(ConkerTransfer) <= 250, "ConkerTransfer exceeds ESP-NOW max payload");
@@ -85,6 +88,7 @@ inline void conker_to_transfer(const Conker& w, ConkerTransfer& t,
     t.accessory       = w.accessory;
     memset(t.name, 0, sizeof(t.name));
     strncpy(t.name, w.name, sizeof(t.name) - 1);
+    t.muse_rest_unix  = w.muse_rest_unix;
 }
 
 // Deserialize transfer payload into a Conker at a given entry position.
@@ -163,6 +167,7 @@ inline void transfer_to_conker(const ConkerTransfer& t, Conker& w,
     w.tint_seed            = t.tint_seed;
     w.catches              = t.catches;
     w.accessory            = t.accessory;
+    w.muse_rest_unix       = t.muse_rest_unix;
     memset(w.name, 0, sizeof(w.name));
     strncpy(w.name, t.name, sizeof(w.name) - 1);
     w.arrival_face         = static_cast<int8_t>(t.arrival_face);

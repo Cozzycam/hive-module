@@ -28,7 +28,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 202;
+constexpr uint32_t FW_VERSION = 203;
 
 namespace Cfg {
 
@@ -122,8 +122,15 @@ constexpr float    NIGHT_FORAGE_MIN_PRESSURE = 0.5f;
 
 // ---- Making (artifacts) ----
 constexpr int   MAX_ARTWORKS          = 10;      // per module; oldest weathers away
-constexpr float MUSE_MIN              = 0.60f;   // aptitude floor to ever craft
+constexpr float MUSE_MIN              = 0.55f;   // aptitude floor to ever craft
 constexpr float CRAFT_CHANCE_PER_TICK = 0.0002f; // idle roll (×muse, ×play_surplus)
+// The muse rests between works — this cadence, not the per-tick roll, is what
+// makes a finished piece an occasion. Without it a keen maker idling through
+// a quiet day struck every ~15 min of pottering (Lime: 13 sculptures in one
+// day, v202). Rest scales with muse: the keenest manage roughly one a day,
+// borderline makers every couple of days.
+constexpr float MUSE_REST_MIN_HOURS   = 14.0f;   // keenest muse (1.0)
+constexpr float MUSE_REST_MAX_HOURS   = 48.0f;   // barely over MUSE_MIN
 constexpr float CRAFT_GRIEF_CHANCE    = 0.35f;   // a mourner with muse carves a memorial
 constexpr int   CRAFT_DURATION_TICKS  = 1200;    // ~2.5 min of visible work
 constexpr int   CRAFT_MAX_TICKS       = 2400;    // failsafe for the whole trip
