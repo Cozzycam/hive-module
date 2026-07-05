@@ -10,6 +10,10 @@ import { TopologyMiniMap } from '../components/TopologyMiniMap';
 import { nameFromId } from '../data/plantNames';
 import { deriveRoleTag } from '../data/personality';
 import { sendCommand } from '../api/client';
+import {
+  loadAnnals, computeObservances, approachingDeeds, nth, todayKey,
+  type Deed, type Observance,
+} from '../data/chronicle';
 import { HIVE } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 import type { ColonyEvent } from '../api/types';
@@ -45,6 +49,20 @@ export function Home({ onNavigate }: HomeProps) {
     return [];
   }, [snapshot]);
 
+  // The Annals — recorded deeds render from the register, so the poller's
+  // shallow event window is enough here.
+  const annals = useMemo(
+    () => (colonyId ? loadAnnals(colonyId, events, snapshot) : null),
+    [colonyId, events, snapshot]);
+
+  const todayObservances = useMemo(() => {
+    if (!annals) return [];
+    const key = todayKey();
+    return computeObservances(events, snapshot, annals)
+      .filter(o => o.dateKey === key)
+      .sort((a, b) => a.priority - b.priority);
+  }, [events, snapshot, annals]);
+
   // Weather description
   const weatherLabel = world.weather.replace(/_/g, ' ');
   const seasonLabel = world.season.charAt(0).toUpperCase() + world.season.slice(1);
@@ -60,6 +78,11 @@ export function Home({ onNavigate }: HomeProps) {
           <h1 style={{ fontSize: SIZES.xl, fontWeight: 700, color: tod.text, margin: 0 }}>
             {snapshot.colony_id || 'The Colony'}
           </h1>
+          {annals?.title && (
+            <div style={{ fontSize: SIZES.sm, color: tod.dimText, fontStyle: 'italic' }}>
+              {annals.title}
+            </div>
+          )}
           <div style={{ fontSize: SIZES.sm, color: tod.dimText, marginTop: 2 }}>
             {snapshot.queen_name ? <>Queen {snapshot.queen_name} &middot; </> : null}
             {seasonLabel} &middot; {weatherLabel} &middot; {world.tod.phase}
@@ -82,6 +105,16 @@ export function Home({ onNavigate }: HomeProps) {
 
       {/* While you were away */}
       <DigestCard palette={tod} />
+
+      {/* The colony approaches… — rumoured pages of the Annals */}
+      {annals && (
+        <ApproachesCard deeds={annals.deeds} tod={tod} onNavigate={onNavigate} />
+      )}
+
+      {/* On this day — an observance falls today */}
+      {todayObservances.length > 0 && (
+        <OnThisDayCard observances={todayObservances} tod={tod} onNavigate={onNavigate} />
+      )}
 
       {/* The Nest — live view of the wee guys moving around */}
       <LiveNest
@@ -118,10 +151,11 @@ export function Home({ onNavigate }: HomeProps) {
 
       {/* A wish — one conker wants something the keeper can grant */}
       {snapshot.wish && (
-        <WishCard wish={snapshot.wish} colonyId={colonyId} tod={tod} />
+        <WishCard wish={snapshot.wish} colonyId={colonyId} tod={tod}
+                  kindnessCount={annals?.kindnessCount ?? 0} />
       )}
 
-      {/* The Saga — the colony's story so far */}
+      {/* The Chronicle — the colony's story, deeds and renown */}
       <Card
         style={{ background: tod.cardBg, display: 'flex', alignItems: 'center', gap: 12 }}
         onClick={() => onNavigate('saga')}
@@ -129,10 +163,10 @@ export function Home({ onNavigate }: HomeProps) {
         <div style={{ fontSize: 26, minWidth: 34, textAlign: 'center' }}>{'\u{1F4DC}'}</div>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: SIZES.base, fontWeight: 600, color: tod.text }}>
-            The Saga
+            The Chronicle
           </div>
           <div style={{ fontSize: SIZES.sm, color: tod.dimText }}>
-            The colony{'’'}s story, as the chronicle tells it
+            The colony{'’'}s story, deeds and renown
           </div>
         </div>
         <div style={{ fontSize: SIZES.base, color: tod.dimText }}>{'›'}</div>
@@ -350,15 +384,18 @@ function StatRow({ label, value, color, dimColor }: {
 }
 
 // A conker's wish, surfaced for the keeper — grant it and the kindness
-// lands on that one wee guy (and in their story).
-function WishCard({ wish, colonyId, tod }: {
+// lands on that one wee guy (and in their story). The running count comes
+// from the Annals register, so it survives the event window.
+function WishCard({ wish, colonyId, tod, kindnessCount }: {
   wish: { id: number; kind: 'treat' | 'boop'; name?: string };
   colonyId: string | null;
   tod: { cardBg: string; text: string; dimText: string };
+  kindnessCount: number;
 }) {
   const [state, setState] = useState<'idle' | 'sending' | 'granted' | 'failed'>('idle');
   const name = wish.name || nameFromId(wish.id);
   const wants = wish.kind === 'treat' ? 'is craving a treat' : 'wants a boop';
+  const ordinal = nth(kindnessCount + 1);
 
   const grant = async () => {
     if (!colonyId || state === 'sending' || state === 'granted') return;
@@ -375,9 +412,9 @@ function WishCard({ wish, colonyId, tod }: {
           {name} {wants}
         </div>
         <div style={{ fontSize: SIZES.xs, color: tod.dimText }}>
-          {state === 'granted' ? 'Granted — they felt that. ✨'
+          {state === 'granted' ? `Granted — they felt that. The ${ordinal} kindness, written down. ✨`
             : state === 'failed' ? 'Couldn’t reach the colony — try again.'
-            : 'A little kindness goes in the diary.'}
+            : `A little kindness goes in the diary — it would be the ${ordinal} you’ve answered.`}
         </div>
       </div>
       {state !== 'granted' && (
@@ -393,6 +430,84 @@ function WishCard({ wish, colonyId, tod }: {
           {state === 'sending' ? '…' : 'Grant'}
         </button>
       )}
+    </Card>
+  );
+}
+
+// "The colony approaches…" — up to three rumoured pages of the Annals,
+// each a warm invitation rather than a quest marker. The Long Memory arc
+// never appears here: grief is record, not goal.
+function ApproachesCard({ deeds, tod, onNavigate }: {
+  deeds: Deed[];
+  tod: { cardBg: string; text: string; dimText: string };
+  onNavigate: (tab: string, params?: Record<string, unknown>) => void;
+}) {
+  const picks = approachingDeeds(deeds, 3);
+  if (picks.length === 0) return null;
+
+  return (
+    <Card style={{ background: tod.cardBg }}>
+      <div style={{ fontSize: SIZES.xs, fontWeight: 600, color: tod.dimText, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+        The colony approaches{'…'}
+      </div>
+      {picks.map(dd => (
+        <div
+          key={dd.id}
+          onClick={() => onNavigate('saga', { section: 'deeds', deedId: dd.id })}
+          style={{ display: 'flex', gap: 10, padding: '5px 0', cursor: 'pointer', alignItems: 'baseline' }}
+        >
+          <div style={{ fontSize: SIZES.sm, minWidth: 20, textAlign: 'center', filter: 'grayscale(1) opacity(0.5)' }}>
+            {'\u{2712}\u{FE0E}'}
+          </div>
+          <div style={{ flex: 1 }}>
+            <span style={{ fontSize: SIZES.sm, fontWeight: 600, color: tod.text }}>
+              {dd.title}
+            </span>
+            {dd.hint && (
+              <span style={{ fontSize: SIZES.sm, color: tod.dimText, fontStyle: 'italic' }}>
+                {' — '}{dd.hint}
+              </span>
+            )}
+          </div>
+        </div>
+      ))}
+    </Card>
+  );
+}
+
+// "On this day" — an observance falls today. Dismissed per-day; tapping
+// opens the Chronicle's Renown leaf where the calendar lives.
+const OBSERVANCE_SEEN_KEY = 'hive_observance_seen';
+
+function OnThisDayCard({ observances, tod, onNavigate }: {
+  observances: Observance[];
+  tod: { cardBg: string; text: string; dimText: string };
+  onNavigate: (tab: string, params?: Record<string, unknown>) => void;
+}) {
+  const [dismissedDay, setDismissedDay] = useState<string | null>(
+    () => localStorage.getItem(OBSERVANCE_SEEN_KEY));
+  const key = todayKey();
+  if (dismissedDay === key || observances.length === 0) return null;
+  const top = observances[0];
+
+  return (
+    <Card
+      style={{ background: tod.cardBg, borderLeft: `3px solid ${HIVE.accent}` }}
+      onClick={() => {
+        localStorage.setItem(OBSERVANCE_SEEN_KEY, key);
+        setDismissedDay(key);
+        onNavigate('saga', { section: 'renown' });
+      }}
+    >
+      <div style={{ fontSize: SIZES.xs, fontWeight: 600, color: tod.dimText, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>
+        On this day
+      </div>
+      <div style={{ fontSize: SIZES.sm, color: tod.text, lineHeight: 1.45 }}>
+        {top.line}
+        {observances.length > 1 && (
+          <span style={{ color: tod.dimText }}>{' …and one more remembrance.'}</span>
+        )}
+      </div>
     </Card>
   );
 }

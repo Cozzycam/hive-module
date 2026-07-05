@@ -38,6 +38,11 @@ export function setStoredLanIp(ip: string): void {
 }
 
 export function clearConnection(): void {
+  // The Annals register is per-colony — read the id before it goes
+  const colonyId = localStorage.getItem(CACHE_KEY_COLONY_ID);
+  if (colonyId) localStorage.removeItem(`hive_annals_${colonyId}`);
+  localStorage.removeItem('hive_last_deed_seen_unix');
+  localStorage.removeItem('hive_observance_seen');
   localStorage.removeItem(CACHE_KEY_COLONY_ID);
   localStorage.removeItem(CACHE_KEY_LAN_IP);
   localStorage.removeItem(CACHE_KEY_SNAPSHOT);
