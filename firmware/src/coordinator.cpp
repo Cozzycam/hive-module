@@ -2555,7 +2555,10 @@ void Coordinator::_bond_load() {
 
     JsonArray arr = doc["bonds"];
     int n = 0;
-    static BondEntry entries[BondStore::POOL_CAP];
+    // Heap-temp staging: a static here stayed resident for the whole run
+    // (~6KB) for a buffer used once at boot.
+    BondEntry* entries = (BondEntry*)malloc(sizeof(BondEntry) * BondStore::POOL_CAP);
+    if (!entries) return;
     for (size_t i = 0; i < arr.size() && n < BondStore::POOL_CAP; i++) {
         JsonObject b = arr[i];
         float strength = b["s"] | 0.0f;
@@ -2568,6 +2571,7 @@ void Coordinator::_bond_load() {
         };
     }
     bonds.load(entries, n);
+    free(entries);
     Serial.printf("[bonds] loaded %d bonds\r\n", n);
 }
 

@@ -703,6 +703,17 @@ static void process_serial_line(const char* line) {
         sim.coordinator.print_topology();
     } else if (strcmp(line, "topo status") == 0) {
         topology_status();
+    } else if (strcmp(line, "mem") == 0) {
+        // Heap health at a glance. min_ever is the high-water mark that
+        // matters: it captures the worst squeeze (TLS handshakes) since boot.
+        Serial.printf("[mem] internal free=%u min_ever=%u largest=%u\r\n",
+            (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+            (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
+            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+        Serial.printf("[mem] psram    free=%u min_ever=%u largest=%u\r\n",
+            (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+            (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM),
+            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
     } else if (strcmp(line, "sd") == 0) {
         Serial.printf("[sd] state: %s\r\n",
             sd_card_state() == SD_OK ? "OK" :
@@ -1094,8 +1105,13 @@ void loop() {
         g_telemetry.tick_bonds(sim.coordinator.bonds, sim.coordinator.registry, topology_my_id());
     }
 
-    // Render at ~30fps (throttled harder under warp so the SPI flush isn't the bottleneck)
-    uint32_t frame_iv = g_warp_active ? Cfg::WARP_RENDER_MS : 33;
+    // Render at ~15fps. The 33ms/30fps target was never reachable — a frame
+    // costs ~56ms (21ms render + 35ms full-frame QSPI flush), so frames ran
+    // back-to-back with zero idle and the measured rate was ~15fps anyway
+    // (v207 [perf]: 441 frames/30s). Pacing to what the hardware delivers
+    // changes nothing visible but gives the radio/network real slack each
+    // cycle. (Throttled harder under warp so the flush isn't the bottleneck.)
+    uint32_t frame_iv = g_warp_active ? Cfg::WARP_RENDER_MS : 66;
     if (now - last_frame_ms >= frame_iv) {
         last_frame_ms = now;
 

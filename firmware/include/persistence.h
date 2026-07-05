@@ -111,7 +111,7 @@ struct ColonyManifest {
     uint8_t  module_role     = 0;     // ModuleRole enum
 
     // Live positions (written with manifest, avoids per-record file writes)
-    static constexpr int MAX_POS = 200;
+    static constexpr int MAX_POS = 48;   // tracks MAX_CONKERS; JSON load clamps
     struct PosEntry { uint32_t id; float x, y; };
     PosEntry positions[MAX_POS];
     int      pos_count = 0;
@@ -179,8 +179,10 @@ private:
     ColonyManifest   _manifest;
 
     // RAM caches — allocated on PSRAM
-    static constexpr int MAX_ALIVE = 300;   // headroom above MAX_CONKERS
-    static constexpr int MAX_BROOD_CACHE = 150;
+    // Living records only — the dead are filtered out at load and swap-removed
+    // at death, so this tracks the pop cap (20), not MAX_CONKERS. Load clamps.
+    static constexpr int MAX_ALIVE = 64;
+    static constexpr int MAX_BROOD_CACHE = 60;
     IdentityRecord  _alive[MAX_ALIVE];
     int             _alive_count = 0;
     BroodRecord     _brood[MAX_BROOD_CACHE];

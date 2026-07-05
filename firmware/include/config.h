@@ -28,7 +28,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 207;
+constexpr uint32_t FW_VERSION = 208;
 
 namespace Cfg {
 
@@ -558,8 +558,14 @@ constexpr int   INTERACTION_COOLDOWN_TICKS = 40;    // ~5s at 8 tps
 // module is added). On-screen rendering stays uncapped (MAX_CONKERS, below).
 constexpr int POP_CAP_PER_MODULE = 10;
 
-constexpr int MAX_CONKERS  = 200;
-constexpr int MAX_BROOD      = 100;
+// Array bounds, not behaviour: the breeding cap above means a colony can
+// never exceed 20 living workers (10/module x 2 modules max), so these are
+// pure headroom for handoffs-in-transit and respawn races. 200 was sized
+// long before the pop cap existed and cost ~41KB of RAM by itself (272B a
+// conker); 48 is still >2x the physical maximum. Every restore/arrival path
+// clamps, so a change here is safe across OTA (v208 audit).
+constexpr int MAX_CONKERS  = 48;
+constexpr int MAX_BROOD      = 40;
 constexpr int MAX_FOOD_PILES = 64;
 
 // ---- Time-warp tuning mode (serial: `warp on | warp <hours> | warp off`) ----

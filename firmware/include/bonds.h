@@ -24,7 +24,9 @@ struct BondEntry {
 
 class BondStore {
 public:
-    static constexpr int POOL_CAP = 1024;
+    // Worst case is pop-cap (20) x PER_OWNER_CAP (12) = 240 live-owner bonds;
+    // 384 keeps 60% slack. bonds.json load clamps, so shrinking is OTA-safe.
+    static constexpr int POOL_CAP = 384;
     static constexpr int PER_OWNER_CAP = 12;        // memory bound only — a conker can befriend as many
                                                     // as it likes (v152 removed the close-friend cap;
                                                     // selectivity now comes from slow, sociability-scaled
