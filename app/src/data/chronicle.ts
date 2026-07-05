@@ -88,6 +88,7 @@ interface RegDeed {
 
 interface Register {
   schema: number;
+  seeded: boolean;   // a deep window has been folded; shallow folds may persist
   deeds: Record<string, RegDeed>;
   renown: Record<string, { tier: number; unix: number }[]>;
   eraTurns: Record<string, number>;
@@ -100,7 +101,7 @@ export function annalsKey(colonyId: string): string {
 }
 
 function freshRegister(): Register {
-  return { schema: 1, deeds: {}, renown: {}, eraTurns: {}, counts: {}, sets: {} };
+  return { schema: 2, seeded: false, deeds: {}, renown: {}, eraTurns: {}, counts: {}, sets: {} };
 }
 
 function loadRegister(colonyId: string): Register {
@@ -108,9 +109,10 @@ function loadRegister(colonyId: string): Register {
     const raw = localStorage.getItem(annalsKey(colonyId));
     if (!raw) return freshRegister();
     const r = JSON.parse(raw) as Register;
-    if (!r || r.schema !== 1) return freshRegister();
+    if (!r || r.schema !== 2) return freshRegister();
     return {
-      schema: 1,
+      schema: 2,
+      seeded: !!r.seeded,
       deeds: r.deeds || {},
       renown: r.renown || {},
       eraTurns: r.eraTurns || {},
@@ -294,6 +296,13 @@ function aliveNow(f: Fold): number {
   return f.snapshot?.population?.alive ?? 0;
 }
 
+// Lockstep with firmware FOUNDER_COHORT_SIZE (config.h). The snapshot's
+// by_role.founder is a census of LIVING founders — it starts at one as they
+// hatch and shrinks as they die — so it can't stand in for the cohort size:
+// the deed would record after the first hatch and become unattainable once
+// founders start dying.
+const FOUNDER_COHORT = 8;
+
 const DEED_DEFS: DeedDef[] = [
   // ---- Arc I — The Founding (all attainable in the first days) ----
   {
@@ -312,23 +321,24 @@ const DEED_DEFS: DeedDef[] = [
   },
   {
     id: 'founders-assembled', arc: 'founding', icon: '\u{1F331}', title: 'The Founders Assembled',
+    // Once the founder hatches have scrolled out of a truncated window the
+    // page can never be written — keep it off the goal rail rather than
+    // pinning an unattainable rumour.
+    reveal: f => !f.truncated
+      || f.events.some(e => e.type === 'hatch' && !!d(e).is_pioneer),
     hint: () => 'Not all the founders have opened their eyes.',
     progress: f => {
-      const cohort = f.snapshot?.population?.by_role?.founder || 0;
-      if (!cohort) return undefined;
       const n = f.events.filter(e => e.type === 'hatch' && !!d(e).is_pioneer).length;
-      return Math.min(1, n / cohort);
+      return Math.min(1, n / FOUNDER_COHORT);
     },
     find: f => {
-      const cohort = f.snapshot?.population?.by_role?.founder || 0;
-      if (!cohort) return null;
       const pioneers = f.events.filter(e => e.type === 'hatch' && !!d(e).is_pioneer);
-      if (pioneers.length < cohort) return null;
-      const last = pioneers[cohort - 1];
+      if (pioneers.length < FOUNDER_COHORT) return null;
+      const last = pioneers[FOUNDER_COHORT - 1];
       return {
         unix: last.unix,
-        inscription: `${evName(last)} opened their eyes, and the ${numWord(cohort)} founders stood together`,
-        protagonists: pioneers.slice(0, cohort).map(evName),
+        inscription: `${evName(last)} opened their eyes, and the ${numWord(FOUNDER_COHORT)} founders stood together`,
+        protagonists: pioneers.slice(0, FOUNDER_COHORT).map(evName),
       };
     },
   },
@@ -1143,8 +1153,10 @@ function foldEraTurns(f: Fold): void {
       const deed = f.reg.deeds[t.deed];
       if (deed) { f.reg.eraTurns[t.key] = deed.unix; f.dirty = true; }
     } else if (t.key === 'colony-doubled') {
-      const cohort = f.snapshot?.population?.by_role?.founder || 0;
-      if (cohort > 0 && aliveNow(f) >= cohort * 2) {
+      // Against the founding cohort constant, not the living-founder census —
+      // that shrinks as founders die, which would open "The Crowded Days"
+      // while the colony was actually thinning.
+      if (aliveNow(f) >= FOUNDER_COHORT * 2) {
         f.reg.eraTurns[t.key] = f.nowUnix;   // dated at first observation — the census is live
         f.dirty = true;
       }
@@ -1213,11 +1225,19 @@ function composeEraSummary(events: ColonyEvent[]): string | undefined {
 
 /** Load the register, fold the current event window into it (recording any
  *  new deeds, tiers and era turns), persist, and return the full view.
- *  Idempotent — every screen can call it on its own window. */
+ *  Idempotent — every screen can call it on its own window.
+ *
+ *  The register is write-once, so the FIRST fold must not be a shallow or
+ *  empty window: firsts would record the wrong protagonists, counters would
+ *  watermark past unseen history, and census fallbacks would fire while the
+ *  real dated events were still in flight. Nothing records until a caller
+ *  that fetched a deep window (opts.seed) folds it together with a live
+ *  snapshot; until then this is view-only. */
 export function loadAnnals(
   colonyId: string,
   events: ColonyEvent[],
   snapshot: ColonySnapshot | null,
+  opts?: { seed?: boolean },
 ): Annals {
   const reg = loadRegister(colonyId);
   const sorted = [...events].sort((a, b) => a.unix - b.unix);
@@ -1229,44 +1249,55 @@ export function loadAnnals(
     (min, rd) => (min === null || rd.unix < min ? rd.unix : min), null);
   const recordsBegin = earliestDeed !== null && oldest !== null
     ? Math.min(earliestDeed, oldest) : (earliestDeed ?? oldest);
+  // Window depth alone decides honesty: records starting meaningfully after
+  // the founding mean history has scrolled away, deaths or not — a zero-death
+  // colony can outgrow the window too, and its "firsts" must not claim to be
+  // absolute.
   const truncated = !!founded && recordsBegin !== null
-    && recordsBegin - founded > DAY
-    && (snapshot?.population?.dead_total || 0) > 0;
+    && recordsBegin - founded > DAY;
 
   const f: Fold = {
     events: sorted, snapshot, reg, nowUnix, truncated,
     crossUnix: new Map(), lastMatch: new Map(), dirty: false,
   };
 
-  foldCountersAndSets(f);
-
-  // Deeds: already-recorded ones render from the register verbatim; only
-  // unrecorded ones are evaluated against the current window.
-  for (const def of DEED_DEFS) {
-    if (reg.deeds[def.id]) continue;
-    let hit: RegDeed | null = null;
-    try { hit = def.find(f); } catch { hit = null; }
-    if (hit) {
-      reg.deeds[def.id] = hit;
+  const canFold = !!snapshot && sorted.length > 0 && (reg.seeded || !!opts?.seed);
+  if (canFold) {
+    if (!reg.seeded) {
+      reg.seeded = true;
       f.dirty = true;
     }
-  }
 
-  // Renown tiers — never regress, dated at the crossing
-  for (const fam of FAMILY_DEFS) {
-    const earned = reg.renown[fam.id] || [];
-    for (let tier = earned.length + 1; tier <= fam.tiers.length; tier++) {
-      const unix = fam.earnedTier(f, tier);
-      if (unix === null) break;
-      earned.push({ tier, unix });
-      reg.renown[fam.id] = earned;
-      f.dirty = true;
+    foldCountersAndSets(f);
+
+    // Deeds: already-recorded ones render from the register verbatim; only
+    // unrecorded ones are evaluated against the current window.
+    for (const def of DEED_DEFS) {
+      if (reg.deeds[def.id]) continue;
+      let hit: RegDeed | null = null;
+      try { hit = def.find(f); } catch { hit = null; }
+      if (hit) {
+        reg.deeds[def.id] = hit;
+        f.dirty = true;
+      }
     }
+
+    // Renown tiers — never regress, dated at the crossing
+    for (const fam of FAMILY_DEFS) {
+      const earned = reg.renown[fam.id] || [];
+      for (let tier = earned.length + 1; tier <= fam.tiers.length; tier++) {
+        const unix = fam.earnedTier(f, tier);
+        if (unix === null) break;
+        earned.push({ tier, unix });
+        reg.renown[fam.id] = earned;
+        f.dirty = true;
+      }
+    }
+
+    foldEraTurns(f);
+
+    if (f.dirty) saveRegister(colonyId, reg);
   }
-
-  foldEraTurns(f);
-
-  if (f.dirty) saveRegister(colonyId, reg);
 
   // ---- Build the view ----
   const deeds: Deed[] = DEED_DEFS.map(def => {

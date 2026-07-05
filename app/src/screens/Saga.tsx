@@ -40,9 +40,11 @@ export function Saga({ onBack, initialSection, initialDeedId }: {
 
   const events = history ?? liveEvents;
 
+  // Seed only from the 1000-deep fetch — before it lands, `events` is the
+  // shallow live window, which must never be the register's first fold.
   const annals = useMemo(
-    () => (colonyId ? loadAnnals(colonyId, events, snapshot) : null),
-    [colonyId, events, snapshot]);
+    () => (colonyId ? loadAnnals(colonyId, events, snapshot, { seed: history !== null }) : null),
+    [colonyId, events, snapshot, history]);
 
   const chapters = useMemo(
     () => composeSaga(events, snapshot?.founded_unix, annals?.deeds, annals?.eras),

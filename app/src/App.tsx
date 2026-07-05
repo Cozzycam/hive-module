@@ -91,6 +91,12 @@ export function App() {
   );
   const [dormantDismissed, setDormantDismissed] = useState(false);
 
+  // The initial 1000-deep events fetch, kept aside for seeding the annals
+  // register — the poller clobbers colonyState.events with shallow windows,
+  // and the write-once register must never seed from one of those.
+  const [deepEvents, setDeepEvents] = useState<ColonyEvent[] | null>(null);
+  const annalsSeededRef = useRef(false);
+
   // Colony state managed here, provided via context
   const [colonyState, setColonyState] = useState<ColonyState>({
     snapshot: null,
@@ -131,10 +137,15 @@ export function App() {
 
     poller.start();
 
-    // Initial events fetch
-    fetchEvents(colonyId).then(r => {
+    // Initial events fetch — deep, because it seeds the annals register:
+    // the write-once fold must see full history before firsts and counter
+    // watermarks are allowed to persist (chronicle.ts loadAnnals).
+    annalsSeededRef.current = false;
+    setDeepEvents(null);
+    fetchEvents(colonyId, 0, 1000).then(r => {
       if (r) {
         setColonyState(s => ({ ...s, events: r.data.results }));
+        setDeepEvents(r.data.results);
       }
     });
 
@@ -272,6 +283,15 @@ export function App() {
       setDiscoverySeenUnix(latestDiscovery.unix);
     }
   }, [latestDiscovery]);
+
+  // Seed the annals register from the deep window, once per connection —
+  // needs the snapshot too (truncation honesty and census deeds read it).
+  // Until this has run, every loadAnnals call below is view-only.
+  useEffect(() => {
+    if (annalsSeededRef.current || !colonyId || !deepEvents || !colonyState.snapshot) return;
+    loadAnnals(colonyId, deepEvents, colonyState.snapshot, { seed: true });
+    annalsSeededRef.current = true;
+  }, [colonyId, deepEvents, colonyState.snapshot]);
 
   // The Annals: fold the live window into the register so newly recorded
   // deeds can toast. Long Memory deeds never toast — grief is record, not
