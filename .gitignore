@@ -47,3 +47,8 @@ LOCAL_SETUP.md
 # WiFi credentials — never commit
 wifi-repeater/src/secrets.h
 
+
+# host WASM dev harness build outputs (regenerate with host/build_web.sh)
+host/out/
+host/web/hive.js
+host/web/hive.wasm

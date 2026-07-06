@@ -9,6 +9,7 @@ import { Characters } from './screens/Characters';
 import { Chambers } from './screens/Chambers';
 import { Diary } from './screens/Diary';
 import { Feedback } from './screens/Feedback';
+import Module from './screens/Module';
 import { Empty } from './screens/Empty';
 import { Settings, notificationManager } from './screens/Settings';
 import { critterEmoji } from './data/critters';
@@ -20,10 +21,11 @@ import { HIVE } from './theme/palette';
 import { SIZES } from './theme/fonts';
 import type { ColonyEvent, DataSource } from './api/types';
 
-type Tab = 'home' | 'characters' | 'chambers' | 'diary' | 'feedback';
+type Tab = 'home' | 'module' | 'characters' | 'chambers' | 'diary' | 'feedback';
 
 const TAB_LABELS: Record<Tab, string> = {
   home: 'Home',
+  module: 'Module',
   characters: 'Characters',
   chambers: 'Chambers',
   diary: 'Diary',
@@ -32,6 +34,7 @@ const TAB_LABELS: Record<Tab, string> = {
 
 const TAB_ICONS: Record<Tab, string> = {
   home: '\u{1F3E0}',
+  module: '\u{1F41C}',   // ant — your own live queen module
   characters: '\u{1F330}',
   chambers: '\u{1F9E9}',
   diary: '\u{1F4D6}',
@@ -436,6 +439,7 @@ export function App() {
                 ) : (
                   <>
                     {tab === 'home' && <Home onNavigate={handleNavigate} />}
+                    {tab === 'module' && <Module />}
                     {tab === 'characters' && (
                       <Characters
                         onNavigate={handleNavigate}

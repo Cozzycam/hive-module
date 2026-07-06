@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<title>Hive Module</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; background: #0b0d0a; overflow: hidden;
+    font-family: ui-monospace, Menlo, Consolas, monospace; color: #9fb99f;
+    -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  }
+  #wrap {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 10px;
+  }
+  /* The module is 480x320. Scale up with nearest-neighbour so it stays crisp
+     pixel-art at any size. object-fit keeps aspect ratio. */
+  #screen {
+    image-rendering: pixelated;
+    width: min(96vw, calc(96vh * 1.5));
+    height: auto;
+    aspect-ratio: 480 / 320;
+    border-radius: 10px;
+    box-shadow: 0 8px 40px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.05);
+    touch-action: none;
+  }
+  #hud { font-size: 12px; opacity: .55; letter-spacing: .04em; }
+  #boot { position: fixed; inset: 0; display: flex; align-items: center;
+          justify-content: center; font-size: 13px; opacity: .6; }
+</style>
+</head>
+<body>
+<div id="boot">warming up the colony…</div>
+<div id="wrap" style="visibility:hidden">
+  <canvas id="screen" width="480" height="320"></canvas>
+  <div id="hud">tap the glass to feed · <span id="fps">–</span> fps · <span id="pop">–</span> conkers</div>
+</div>
+
+<script src="hive.js"></script>
+<script src="push.js"></script>
+<script>
+(async () => {
+  const Module = await createHiveModule();
+  window.hive = Module;   // debug handle
+  const canvas = document.getElementById('screen');
+  const ctx = canvas.getContext('2d', { alpha: false });
+
+  const host_boot         = Module.cwrap('host_boot', null, ['number']);
+  const host_step         = Module.cwrap('host_step', null, ['number']);
+  const host_fb           = Module.cwrap('host_fb', 'number', []);
+  const host_w            = Module.cwrap('host_w', 'number', []);
+  const host_h            = Module.cwrap('host_h', 'number', []);
+  const host_feed         = Module.cwrap('host_feed', null, ['number', 'number']);
+  const host_conkers      = Module.cwrap('host_conkers', 'number', []);
+  const host_snapshot     = Module.cwrap('host_snapshot', 'number', []);
+  const host_snapshot_ptr = Module.cwrap('host_snapshot_ptr', 'number', []);
+
+  // Read the colony snapshot the module would POST to the VPS (same JSON as
+  // hardware). Exposed for inspection while wiring the push pipeline.
+  window.hiveSnapshot = () => {
+    const len = host_snapshot();
+    // .slice() copies out of WASM memory (a resizable ArrayBuffer, which
+    // TextDecoder rejects a direct view of when memory growth is enabled).
+    const bytes = Module.HEAPU8.slice(host_snapshot_ptr(), host_snapshot_ptr() + len);
+    return new TextDecoder().decode(bytes);
+  };
+
+  host_boot(120);   // fast-forward ~2h of founding so there's a starter colony
+  console.log('[hive] booted; ' + host_conkers() + ' conkers');
+  const W = host_w(), H = host_h();
+  canvas.width = W; canvas.height = H;
+  const image = ctx.createImageData(W, H);
+  const rgba = image.data;                 // Uint8ClampedArray, W*H*4
+
+  document.getElementById('boot').style.display = 'none';
+  document.getElementById('wrap').style.visibility = 'visible';
+
+  // Convert the module's RGB565 framebuffer (in WASM memory) to the canvas.
+  function blit() {
+    const fbPtr = host_fb();
+    // HEAPU16 is a live view over WASM memory; index by uint16.
+    const fb = Module.HEAPU16.subarray(fbPtr >> 1, (fbPtr >> 1) + W * H);
+    for (let i = 0, o = 0; i < W * H; i++, o += 4) {
+      const v = fb[i];
+      const r5 = (v >> 11) & 0x1f, g6 = (v >> 5) & 0x3f, b5 = v & 0x1f;
+      rgba[o]     = (r5 << 3) | (r5 >> 2);
+      rgba[o + 1] = (g6 << 2) | (g6 >> 4);
+      rgba[o + 2] = (b5 << 3) | (b5 >> 2);
+      rgba[o + 3] = 255;
+    }
+    ctx.putImageData(image, 0, 0);
+  }
+
+  // Tap-to-feed: map client coords onto the 480x320 logical surface.
+  function feedAt(clientX, clientY) {
+    const r = canvas.getBoundingClientRect();
+    const px = Math.floor((clientX - r.left) / r.width  * W);
+    const py = Math.floor((clientY - r.top)  / r.height * H);
+    host_feed(px, py);
+  }
+  canvas.addEventListener('pointerdown', (e) => { e.preventDefault(); feedAt(e.clientX, e.clientY); });
+
+  // Frame loop — real-time, mirrors the firmware's 8 tps fixed step.
+  let last = performance.now();
+  let fpsEMA = 60, popTimer = 0;
+  const hudFps = document.getElementById('fps'), hudPop = document.getElementById('pop');
+  function frame(now) {
+    const dt = now - last; last = now;
+    host_step(dt);
+    blit();
+    fpsEMA += ((1000 / Math.max(dt, 1)) - fpsEMA) * 0.1;
+    if ((popTimer += dt) > 500) {
+      popTimer = 0;
+      hudFps.textContent = fpsEMA.toFixed(0);
+      hudPop.textContent = host_conkers();
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
