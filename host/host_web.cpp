@@ -20,6 +20,7 @@
 #include "renderer.h"
 #include "events.h"
 #include "config.h"
+#include "time_of_day.h"   // g_tod (host_set_now)
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>
 #include <emscripten.h>
@@ -49,6 +50,11 @@ extern "C" {
 // ffMinutes: fast-forward this many minutes of founding so a fresh colony
 // already has a starter population (egg0 hatches at 10min, egg1 30min, egg2 1h…).
 // A real hardware queen grows the same way in real time; this just skips ahead.
+// Set the wall clock (unix seconds) — the sim's day/night + founded/now dates
+// read g_tod. JS feeds real time so dates aren't at the epoch.
+EMSCRIPTEN_KEEPALIVE
+void host_set_now(double unix_sec) { g_tod.unix_time = (uint32_t)unix_sec; }
+
 EMSCRIPTEN_KEEPALIVE
 void host_boot(int ffMinutes) {
     g_gfx = new Arduino_Canvas(320, 480, nullptr);

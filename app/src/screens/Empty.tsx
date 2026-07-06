@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { HIVE } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 import { testLanConnection, setStoredLanIp, setStoredColonyId, fetchColonies } from '../api/client';
+import { localModule } from '../localModule';
 
 function agoLabel(unix: number): string {
   if (!unix) return 'never seen';
@@ -20,6 +21,21 @@ interface EmptyProps {
 
 export function Empty({ onConnected }: EmptyProps) {
   const [showModal, setShowModal] = useState(false);
+  const [starting, setStarting] = useState(false);
+
+  // Boot a queen module on THIS phone: run the sim locally, enrol its own
+  // colony, push a first snapshot to the hive, then connect the app to it.
+  async function runLocalModule() {
+    setStarting(true);
+    try {
+      await localModule.start();
+      await localModule.pushNow();     // ensure the colony exists on the VPS before connecting
+      onConnected(localModule.identity.colony_id);
+    } catch (e) {
+      console.error('[empty] local module failed', e);
+      setStarting(false);
+    }
+  }
 
   return (
     <div style={{
@@ -53,7 +69,8 @@ export function Empty({ onConnected }: EmptyProps) {
       </p>
 
       <button
-        onClick={() => setShowModal(true)}
+        onClick={runLocalModule}
+        disabled={starting}
         style={{
           background: HIVE.accent,
           color: HIVE.white,
@@ -61,12 +78,30 @@ export function Empty({ onConnected }: EmptyProps) {
           borderRadius: 24,
           padding: '12px 28px',
           fontSize: SIZES.base,
+          fontWeight: 700,
+          cursor: starting ? 'default' : 'pointer',
+          marginBottom: 12,
+          opacity: starting ? 0.7 : 1,
+        }}
+      >
+        {starting ? 'starting your colony…' : 'Run a queen module on this phone'}
+      </button>
+
+      <button
+        onClick={() => setShowModal(true)}
+        style={{
+          background: 'none',
+          color: HIVE.accent,
+          border: `1px solid ${HIVE.accent}`,
+          borderRadius: 24,
+          padding: '10px 24px',
+          fontSize: SIZES.sm,
           fontWeight: 600,
           cursor: 'pointer',
           marginBottom: 16,
         }}
       >
-        Connect to a module
+        Connect to a physical module
       </button>
 
       <button

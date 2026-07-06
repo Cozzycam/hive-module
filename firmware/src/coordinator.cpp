@@ -1332,7 +1332,7 @@ void Coordinator::_journal_from_bus_events(const Event* events, int count,
 // ================================================================
 
 void Coordinator::_persist_tick(uint32_t tick_num) {
-    if (registry.state() == PERSIST_DEGRADED || registry.state() == PERSIST_UNINIT)
+    if (registry.state() == PERSIST_UNINIT)
         return;
 
     // Assign IDs to newly-laid brood (id == 0)
@@ -1395,6 +1395,13 @@ void Coordinator::_persist_tick(uint32_t tick_num) {
         }
         _last_milestone_born = born;
     }
+
+    // Everything above is in-RAM (identities, names, personalities) and runs
+    // even without a card — so a no-SD colony (e.g. the phone-as-module build)
+    // still shows named conkers in the app. Below here writes to the card;
+    // skip it in degraded mode (nothing to flush to).
+    if (registry.state() == PERSIST_DEGRADED)
+        return;
 
     // SD card health check
     sd_card_health_tick();

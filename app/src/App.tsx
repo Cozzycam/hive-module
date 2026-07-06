@@ -10,6 +10,7 @@ import { Chambers } from './screens/Chambers';
 import { Diary } from './screens/Diary';
 import { Feedback } from './screens/Feedback';
 import Module from './screens/Module';
+import { localModule, getIdentity } from './localModule';
 import { Empty } from './screens/Empty';
 import { Settings, notificationManager } from './screens/Settings';
 import { critterEmoji } from './data/critters';
@@ -156,6 +157,15 @@ export function App() {
       unsub();
       poller.stop();
     };
+  }, [colonyId]);
+
+  // If this install is connected to its OWN on-phone colony, keep the local
+  // module running (ticking + pushing to the VPS) whenever the app is open,
+  // regardless of which tab is showing.
+  useEffect(() => {
+    if (colonyId && colonyId === getIdentity().colony_id) {
+      localModule.start().catch(e => console.error('[app] local module start', e));
+    }
   }, [colonyId]);
 
   const handleConnect = useCallback((id: string) => {

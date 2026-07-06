@@ -16,7 +16,11 @@
 SDMMCFS SD_MMC;
 
 // ---- sd_card ----
-bool     sd_card_init() { return false; }              // no card -> fresh colony
+// No card: the colony runs in PERSIST_DEGRADED. Since the firmware now assigns
+// in-RAM identities even when degraded, conkers still get names/personalities
+// (the roster works); only cross-reboot flushes are skipped. Founding runs on
+// the fresh-colony path (Case A). Cross-reload persistence = later, via IDBFS.
+bool     sd_card_init() { return false; }
 SdState  sd_card_state() { return SD_NOT_MOUNTED; }
 void     sd_remove_recursive(const char*, int) {}
 uint64_t sd_card_total_bytes() { return 0; }

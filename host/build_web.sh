@@ -31,7 +31,7 @@ FW_SRC=(
 # ArduinoJson is header-only and portable — point at the PlatformIO checkout.
 AJSON_INC="firmware/.pio/libdeps/esp32s3/ArduinoJson/src"
 
-EXPORTS='_host_boot,_host_step,_host_fb,_host_w,_host_h,_host_feed,_host_conkers,_host_snapshot,_host_snapshot_ptr,_malloc,_free'
+EXPORTS='_host_boot,_host_set_now,_host_step,_host_fb,_host_w,_host_h,_host_feed,_host_conkers,_host_snapshot,_host_snapshot_ptr,_malloc,_free'
 
 echo "[build_web] compiling -> host/web/hive.js"
 # ArduinoJson auto-enables Arduino String/Stream/Print integration when ARDUINO
