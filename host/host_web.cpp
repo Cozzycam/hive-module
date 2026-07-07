@@ -101,30 +101,40 @@ void host_boot(int ffMinutes) {
     g_host_millis = 0;
     g_sim.init();            // fresh colony (no SD): lone queen, founding ladder armed
 
+    // Give the colony a queen name (a fresh no-SD manifest leaves it blank).
+    auto& man = g_sim.coordinator.registry.manifest();
+    if (man.queen_name[0] == '\0') name_random(man.queen_name, sizeof(man.queen_name));
+    const uint32_t real_now = g_tod.unix_time;   // set by JS before boot
+
     if (ffMinutes > 0) {
-        unsigned long target = (unsigned long)ffMinutes * 60UL * 1000UL;
-        uint32_t guard = 0;
-        while (g_host_millis < target && guard < 4000000u) {
+        // Founding happened over the last ffMinutes: advance the clock through
+        // it so diary events get realistic, spread-out timestamps (not all
+        // stamped "now"), and record bus events to the journal as we go.
+        const uint32_t founded = (real_now > (uint32_t)ffMinutes * 60u)
+                                 ? real_now - (uint32_t)ffMinutes * 60u : real_now;
+        man.founded_unix = founded;
+        const unsigned long target = (unsigned long)ffMinutes * 60UL * 1000UL;
+        uint32_t t = 0;
+        while (g_host_millis < target && t < 4000000u) {
             g_sim.tick(1.0f / 8.0f);
             g_host_millis += (unsigned long)TICK_MS;
-            guard++;
+            g_tod.unix_time = founded + (uint32_t)(g_host_millis / 1000);
+            if ((t & 7) == 0) {   // ~once per sim-second: record bus events to the diary
+                Event ev[128];
+                int n = g_sim.event_bus.drain(ev, 128);
+                if (n > 0) g_sim.coordinator._journal_from_bus_events(ev, n, g_sim.tick_count);
+            }
+            t++;
         }
-        // Discard founding-era animation events; the render loop starts clean.
-        Event tmp[128];
-        while (g_sim.event_bus.drain(tmp, 128) > 0) {}
-        // Discard the fast-forward's diary events too — the colony's diary
-        // should begin now (when the keeper gets it), not with 2h compressed
-        // into one instant.
-        char jtmp[16 * 1024];
-        while (g_sim.coordinator.journal.drain_json(jtmp, sizeof(jtmp)) > 0) {}
-        g_events_len = 0;
+        g_tod.unix_time = real_now;
+        // Clear leftover display-bus animations; the diary keeps its journal
+        // (its ring buffer holds the most recent founding events).
+        Event ev[128];
+        while (g_sim.event_bus.drain(ev, 128) > 0) {}
+    } else if (man.founded_unix == 0) {
+        man.founded_unix = real_now;
     }
-
-    // Give the colony a founded time + queen name so the HUD/app show a real
-    // Day-counter, season, and title (a fresh no-SD manifest leaves them blank).
-    auto& man = g_sim.coordinator.registry.manifest();
-    if (man.founded_unix == 0) man.founded_unix = g_tod.unix_time;
-    if (man.queen_name[0] == '\0') name_random(man.queen_name, sizeof(man.queen_name));
+    g_events_len = 0;
 
     hud_init();
     hud_set_colony_name(man.queen_name);
