@@ -149,26 +149,28 @@ export async function fetchEvents(
   colonyId: string,
   since = 0,
   limit = 200,
+  type?: string,   // optional comma-separated type filter (e.g. 'crafted,art_weathered')
 ): Promise<FetchResult<EventsResponse> | null> {
   const lanIp = getStoredLanIp();
+  const q = `since=${since}&limit=${limit}${type ? `&type=${encodeURIComponent(type)}` : ''}`;
 
   if (lanIp) {
     const data = await tryFetchJson<EventsResponse>(
-      `http://${lanIp}/api/v1/colony/events?since=${since}&limit=${limit}`,
+      `http://${lanIp}/api/v1/colony/events?${q}`,
       LAN_TIMEOUT,
     );
     if (data) {
-      cacheEvents(data);
+      if (!type) cacheEvents(data);   // don't let a filtered fetch clobber the general cache
       return { data, source: 'lan', timestamp: Date.now() };
     }
   }
 
   const vpsData = await tryFetchJson<EventsResponse>(
-    `${VPS_BASE}/api/v1/colonies/${colonyId}/events?since=${since}&limit=${limit}`,
+    `${VPS_BASE}/api/v1/colonies/${colonyId}/events?${q}`,
     VPS_TIMEOUT,
   );
   if (vpsData) {
-    cacheEvents(vpsData);
+    if (!type) cacheEvents(vpsData);
     return { data: vpsData, source: 'vps', timestamp: Date.now() };
   }
 

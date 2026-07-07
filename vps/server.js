@@ -532,7 +532,23 @@ app.get('/api/v1/colonies/:colony_id', (req, res) => {
 app.get('/api/v1/colonies/:colony_id/events', (req, res) => {
   const since = parseInt(req.query.since) || 0;
   const limit = Math.min(parseInt(req.query.limit) || 200, 1000);
-  const rows = stmts.getEvents.all(req.params.colony_id, since, limit);
+  // Optional ?type= filter (comma-separated, whitelisted). Lets a client fetch
+  // e.g. all `crafted` events for the Gallery without them being crowded out of
+  // the recent window by high-volume types (a mature colony has 100s of
+  // discoveries but only dozens of crafts).
+  const types = String(req.query.type || '').split(',')
+    .map(t => t.trim()).filter(t => /^[a-z_]+$/.test(t)).slice(0, 8);
+  let rows;
+  if (types.length) {
+    const ph = types.map(() => '?').join(',');
+    rows = db.prepare(`SELECT raw FROM (
+      SELECT raw, unix, tick FROM events
+      WHERE colony_id = ? AND unix >= ? AND type IN (${ph})
+      ORDER BY unix DESC, tick DESC LIMIT ?
+    ) ORDER BY unix, tick`).all(req.params.colony_id, since, ...types, limit);
+  } else {
+    rows = stmts.getEvents.all(req.params.colony_id, since, limit);
+  }
   const results = rows.map(r => JSON.parse(r.raw));
   res.json({ schema: 1, results, next_since: results.length > 0 ? results[results.length - 1].unix : since });
 });

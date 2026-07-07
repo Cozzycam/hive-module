@@ -19,7 +19,9 @@ export function Gallery({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     let cancelled = false;
     if (!colonyId) return;
-    fetchEvents(colonyId, 0, 1000).then(res => {
+    // Fetch the art events specifically — on a mature colony the crafts are
+    // otherwise crowded out of the recent window by hundreds of discoveries.
+    fetchEvents(colonyId, 0, 1000, 'crafted,art_weathered').then(res => {
       if (!cancelled && res?.data?.results) setHistory(res.data.results);
     });
     return () => { cancelled = true; };
