@@ -44,6 +44,21 @@ size_t g_events_len = 0;
 
 Chamber& chamber() { return g_sim.coordinator.chamber; }
 
+// Pull any new diary entries out of the journal into the accumulator that JS
+// pushes to /events. Called every step and once at boot (so the founding
+// history is ready for the very first push, not gated on a render frame).
+void accumulate_events() {
+    char tmp[16 * 1024];
+    size_t n;
+    while ((n = g_sim.coordinator.journal.drain_json(tmp, sizeof(tmp))) > 0) {
+        if (g_events_len + n + 2 >= sizeof(g_events)) break;
+        if (g_events_len > 0) g_events[g_events_len++] = ',';
+        memcpy(g_events + g_events_len, tmp, n);
+        g_events_len += n;
+        g_events[g_events_len] = '\0';
+    }
+}
+
 void drain_bus() {
     // Drain the display bus ONCE and feed it to both the renderer (animations)
     // and the journal (diary) — main.cpp does the latter on hardware; without
@@ -145,6 +160,8 @@ void host_boot(int ffMinutes) {
     g_renderer.draw(chamber(), 1.0f);
     hud_draw(g_gfx, chamber());
     hud_draw_version(g_gfx);
+
+    accumulate_events();   // seed the founding history so the first push carries it
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -158,17 +175,7 @@ void host_step(double dt_ms) {
         drain_bus();
         g_accum_ms -= TICK_MS;
     }
-    // Drain new diary events into the accumulator (pushed to /events in JS).
-    {
-        char tmp[16 * 1024];
-        size_t n = g_sim.coordinator.journal.drain_json(tmp, sizeof(tmp));
-        if (n > 0 && g_events_len + n + 2 < sizeof(g_events)) {
-            if (g_events_len > 0) g_events[g_events_len++] = ',';
-            memcpy(g_events + g_events_len, tmp, n);
-            g_events_len += n;
-            g_events[g_events_len] = '\0';
-        }
-    }
+    accumulate_events();   // new diary events -> accumulator (pushed to /events in JS)
     g_renderer.draw(chamber(), (float)(g_accum_ms / TICK_MS));
     hud_draw(g_gfx, chamber());     // same HUD strip the physical module shows
     hud_draw_version(g_gfx);
