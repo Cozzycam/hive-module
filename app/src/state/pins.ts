@@ -1,8 +1,10 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import React from 'react';
 
-const PINS_KEY = 'hive_pins';
-const PIN_NAMES_KEY = 'hive_pin_names';
+// Pins are per-colony — following Plum on a physical module must not surface
+// Plum on your phone module (different colony, different ids).
+const pinsKey = (cid: string | null) => `hive_pins_${cid || 'none'}`;
+const pinNamesKey = (cid: string | null) => `hive_pin_names_${cid || 'none'}`;
 
 interface PinsState {
   pins: number[];
@@ -27,33 +29,33 @@ const PinsContext = createContext<PinsState>({
   rememberName: () => {},
 });
 
-function loadPins(): number[] {
+function loadPins(cid: string | null): number[] {
   try {
-    const raw = localStorage.getItem(PINS_KEY);
+    const raw = localStorage.getItem(pinsKey(cid));
     if (!raw) return [];
     return JSON.parse(raw);
   } catch { return []; }
 }
 
-function savePins(pins: number[]): void {
-  try { localStorage.setItem(PINS_KEY, JSON.stringify(pins)); } catch { /* */ }
+function savePins(cid: string | null, pins: number[]): void {
+  try { localStorage.setItem(pinsKey(cid), JSON.stringify(pins)); } catch { /* */ }
 }
 
-function loadPinNames(): Record<number, string> {
+function loadPinNames(cid: string | null): Record<number, string> {
   try {
-    const raw = localStorage.getItem(PIN_NAMES_KEY);
+    const raw = localStorage.getItem(pinNamesKey(cid));
     if (!raw) return {};
     return JSON.parse(raw);
   } catch { return {}; }
 }
 
-function savePinNames(names: Record<number, string>): void {
-  try { localStorage.setItem(PIN_NAMES_KEY, JSON.stringify(names)); } catch { /* */ }
+function savePinNames(cid: string | null, names: Record<number, string>): void {
+  try { localStorage.setItem(pinNamesKey(cid), JSON.stringify(names)); } catch { /* */ }
 }
 
-export function PinsProvider({ children }: { children: ReactNode }) {
-  const [pins, setPins] = useState<number[]>(loadPins);
-  const [names, setNames] = useState<Record<number, string>>(loadPinNames);
+export function PinsProvider({ children, colonyId }: { children: ReactNode; colonyId: string | null }) {
+  const [pins, setPins] = useState<number[]>(() => loadPins(colonyId));
+  const [names, setNames] = useState<Record<number, string>>(() => loadPinNames(colonyId));
 
   const isPinned = useCallback((id: number) => pins.includes(id), [pins]);
 
@@ -62,7 +64,7 @@ export function PinsProvider({ children }: { children: ReactNode }) {
     setNames(prev => {
       if (prev[id] === name) return prev;
       const next = { ...prev, [id]: name };
-      savePinNames(next);
+      savePinNames(colonyId, next);
       return next;
     });
   }, []);
@@ -72,7 +74,7 @@ export function PinsProvider({ children }: { children: ReactNode }) {
     setPins(prev => {
       if (prev.includes(id)) return prev;
       const next = [...prev, id];
-      savePins(next);
+      savePins(colonyId, next);
       return next;
     });
   }, [rememberName]);
@@ -80,7 +82,7 @@ export function PinsProvider({ children }: { children: ReactNode }) {
   const removePin = useCallback((id: number) => {
     setPins(prev => {
       const next = prev.filter(p => p !== id);
-      savePins(next);
+      savePins(colonyId, next);
       return next;
     });
   }, []);
@@ -89,7 +91,7 @@ export function PinsProvider({ children }: { children: ReactNode }) {
     if (name) rememberName(id, name);
     setPins(prev => {
       const next = prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id];
-      savePins(next);
+      savePins(colonyId, next);
       return next;
     });
   }, [rememberName]);

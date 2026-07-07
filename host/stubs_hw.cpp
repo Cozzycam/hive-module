@@ -11,9 +11,12 @@
 #include "topology.h"
 #include "config.h"
 #include <SD_MMC.h>
+#include <Wire.h>
 
 // ---- SD_MMC global (unused: no card) ----
 SDMMCFS SD_MMC;
+// ---- Wire (I2C) global — only the HUD battery gauge would use it (skipped) ----
+TwoWire Wire;
 
 // ---- sd_card ----
 // No card: the colony runs in PERSIST_DEGRADED. Since the firmware now assigns

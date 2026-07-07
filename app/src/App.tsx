@@ -416,7 +416,7 @@ export function App() {
     <AuthGate>
       <ColonyContext.Provider value={colonyState}>
         <ColonyActionsContext.Provider value={actions}>
-          <PinsProvider>
+          <PinsProvider key={colonyId} colonyId={colonyId}>
             <PinsSync colonyId={colonyId} />
             <div style={{
               display: 'flex', flexDirection: 'column',
@@ -449,7 +449,7 @@ export function App() {
                 ) : (
                   <>
                     {tab === 'home' && <Home onNavigate={handleNavigate} />}
-                    {tab === 'module' && <Module />}
+                    {tab === 'module' && colonyId === getIdentity().colony_id && <Module />}
                     {tab === 'characters' && (
                       <Characters
                         onNavigate={handleNavigate}
@@ -599,7 +599,11 @@ export function App() {
                   paddingBottom: 'env(safe-area-inset-bottom, 0)',
                   flexShrink: 0,
                 }}>
-                  {(Object.keys(TAB_LABELS) as Tab[]).map(t => (
+                  {(Object.keys(TAB_LABELS) as Tab[])
+                    // The Module tab is only for a colony running ON this phone;
+                    // a physical module already exists, so hide it there.
+                    .filter(t => t !== 'module' || colonyId === getIdentity().colony_id)
+                    .map(t => (
                     <button
                       key={t}
                       onClick={() => { setTab(t); setNavParams({}); }}

@@ -81,7 +81,10 @@ class LocalModule {
         fb: cw('host_fb', 'number', []),
         w: cw('host_w', 'number', []),
         h: cw('host_h', 'number', []),
-        feed: cw('host_feed', null, ['number', 'number']),
+        tap: cw('host_tap', null, ['number', 'number']),
+        gather: cw('host_gather', null, ['number', 'number']),
+        gatherEnd: cw('host_gather_end', null, []),
+        selected: cw('host_selected', 'number', []),
         snapshot: cw('host_snapshot', 'number', []),
         snapshotPtr: cw('host_snapshot_ptr', 'number', []),
       };
@@ -147,12 +150,15 @@ class LocalModule {
     return res.status;
   }
 
-  feedAt(clientX: number, clientY: number) {
+  private toPx(clientX: number, clientY: number): [number, number] {
     const r = this.canvas.getBoundingClientRect();
-    const px = Math.floor((clientX - r.left) / r.width * this.W);
-    const py = Math.floor((clientY - r.top) / r.height * this.H);
-    this.fns.feed(px, py);
+    return [Math.floor((clientX - r.left) / r.width * this.W),
+            Math.floor((clientY - r.top) / r.height * this.H)];
   }
+  tapAt(clientX: number, clientY: number) { const [x, y] = this.toPx(clientX, clientY); this.fns.tap(x, y); }
+  gatherAt(clientX: number, clientY: number) { const [x, y] = this.toPx(clientX, clientY); this.fns.gather(x, y); }
+  gatherEnd() { this.fns.gatherEnd(); }
+  selected(): number { return this.fns.selected(); }
 }
 
 export const localModule = new LocalModule();

@@ -33,22 +33,47 @@ export default function Module() {
     return () => { cancelled = true; };  // leave the module running; just detach view
   }, []);
 
-  const onPointer = (e: React.PointerEvent) => {
-    e.preventDefault();
-    if (status === 'running') localModule.feedAt(e.clientX, e.clientY);
+  // Gesture: a quick tap boops/feeds; press-and-hold gathers the colony to
+  // your finger (like the physical module's touch).
+  const gesture = useRef<{ x: number; y: number; gathering: boolean; timer: number } | null>(null);
+  const HOLD_MS = 200, MOVE_PX = 14;
+
+  const onDown = (e: React.PointerEvent) => {
+    if (status !== 'running') return;
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    const g = { x: e.clientX, y: e.clientY, gathering: false, timer: 0 };
+    g.timer = window.setTimeout(() => { g.gathering = true; localModule.gatherAt(e.clientX, e.clientY); }, HOLD_MS);
+    gesture.current = g;
+  };
+  const onMove = (e: React.PointerEvent) => {
+    const g = gesture.current; if (!g) return;
+    if (!g.gathering && Math.hypot(e.clientX - g.x, e.clientY - g.y) > MOVE_PX) {
+      clearTimeout(g.timer); g.gathering = true;
+    }
+    if (g.gathering) localModule.gatherAt(e.clientX, e.clientY);
+  };
+  const onUp = (e: React.PointerEvent) => {
+    const g = gesture.current; if (!g) return;
+    clearTimeout(g.timer);
+    if (g.gathering) localModule.gatherEnd();
+    else localModule.tapAt(e.clientX, e.clientY);
+    gesture.current = null;
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '8px 12px' }}>
       <div
         ref={holderRef}
-        onPointerDown={onPointer}
-        style={{ width: '100%', maxWidth: 'calc((100vh - 220px) * 1.5)', minHeight: 60 }}
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+        style={{ width: '100%', maxWidth: 'calc((100vh - 220px) * 1.5)', minHeight: 60, touchAction: 'none' }}
       />
       <div style={{ fontSize: 12, opacity: 0.55, fontFamily: 'ui-monospace, Consolas, monospace' }}>
         {status === 'loading' && 'warming up your colony…'}
         {status === 'error'   && 'could not start the module'}
-        {status === 'running' && 'your colony · tap the glass to feed · syncing to the hive'}
+        {status === 'running' && 'tap to boop or feed · hold to gather · syncing to the hive'}
       </div>
     </div>
   );

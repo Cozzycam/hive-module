@@ -440,7 +440,15 @@ void hud_draw(Arduino_Canvas* gfx, const Chamber& ch) {
     // for cache efficiency.
     uint16_t bg_565 = _rgb565(pal.bg_r, pal.bg_g, pal.bg_b);
     uint16_t* fb = (uint16_t*)gfx->getFramebuffer();
-    if (fb && pal.bg_a < 255) {
+    // The raw-framebuffer alpha blend below assumes the panel's native 320x480
+    // portrait layout. The host (phone) build uses a directly-rotated 480x320
+    // canvas, so it takes the rotation-safe fillRect path (opaque strip) instead.
+#ifdef HOST_BUILD
+    const bool _raw_hud = false;
+#else
+    const bool _raw_hud = true;
+#endif
+    if (fb && pal.bg_a < 255 && _raw_hud) {
         int a = (pal.bg_a * 257 + 128) >> 8;  // 0-256 fixed-point
         int inv_a = 256 - a;
         int sr5 = (pal.bg_r >> 3) * a;
@@ -465,7 +473,7 @@ void hud_draw(Arduino_Canvas* gfx, const Chamber& ch) {
     }
 
     // Bottom rim line: screen y=HUD_STRIP_H-1 → native col = 320-HUD_STRIP_H = 292
-    if (fb && pal.rim_a < 255) {
+    if (fb && pal.rim_a < 255 && _raw_hud) {
         int a = (pal.rim_a * 257 + 128) >> 8;
         int inv_a = 256 - a;
         int sr5 = (pal.rim_r >> 3) * a;

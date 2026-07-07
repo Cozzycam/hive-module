@@ -26,12 +26,13 @@ FW_SRC=(
   firmware/src/persistence.cpp
   firmware/src/journal.cpp
   firmware/src/api_json.cpp
+  firmware/src/hud.cpp
 )
 
 # ArduinoJson is header-only and portable — point at the PlatformIO checkout.
 AJSON_INC="firmware/.pio/libdeps/esp32s3/ArduinoJson/src"
 
-EXPORTS='_host_boot,_host_set_now,_host_step,_host_fb,_host_w,_host_h,_host_feed,_host_conkers,_host_snapshot,_host_snapshot_ptr,_malloc,_free'
+EXPORTS='_host_boot,_host_set_now,_host_step,_host_fb,_host_w,_host_h,_host_tap,_host_gather,_host_gather_end,_host_selected,_host_conkers,_host_snapshot,_host_snapshot_ptr,_malloc,_free'
 
 echo "[build_web] compiling -> host/web/hive.js"
 # ArduinoJson auto-enables Arduino String/Stream/Print integration when ARDUINO
@@ -40,7 +41,7 @@ echo "[build_web] compiling -> host/web/hive.js"
 AJSON_CFG="-DARDUINOJSON_ENABLE_ARDUINO_STRING=0 -DARDUINOJSON_ENABLE_ARDUINO_STREAM=0 -DARDUINOJSON_ENABLE_ARDUINO_PRINT=0 -DARDUINOJSON_ENABLE_PROGMEM=0"
 
 emcc \
-  -std=gnu++17 -O2 -DARDUINO=200 $AJSON_CFG -include stddef.h -Uunix -Ulinux \
+  -std=gnu++17 -O2 -DARDUINO=200 -DHOST_BUILD $AJSON_CFG -include stddef.h -Uunix -Ulinux \
   -I host/shims -I firmware/include -I "$AJSON_INC" \
   host/host_web.cpp host/host_stubs.cpp host/stubs_hw.cpp "${FW_SRC[@]}" \
   -sMODULARIZE=1 -sEXPORT_NAME=createHiveModule \
