@@ -271,6 +271,12 @@ export async function sendCommand(
   type: 'name_conker' | 'feed_colony' | 'set_module_role' | 'set_floor_tint' | 'gift_care_package' | 'ota_update' | 'set_followed' | 'grant_wish',
   payload: Record<string, unknown>,
 ): Promise<boolean> {
+  // A colony running ON this phone applies commands directly — no VPS round-trip
+  // (the local module would never poll the command queue).
+  const { localModule, getIdentity } = await import('../localModule');
+  if (colonyId === getIdentity().colony_id) {
+    return localModule.applyCommand(type, payload);
+  }
   try {
     const res = await fetchWithTimeout2(
       `${VPS_BASE}/api/v1/colonies/${colonyId}/commands`,

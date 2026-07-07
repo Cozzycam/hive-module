@@ -110,6 +110,12 @@ public:
     int pending_count() const { return _count; }
     int total_flushed() const { return _total_flushed; }
 
+    // Drain the RAM buffer as comma-separated JSON objects (no enclosing
+    // brackets) and clear it; returns bytes written. The host (phone) build
+    // uses this to push events straight to the VPS /events endpoint without
+    // the SD day-file path. Unused on hardware.
+    size_t drain_json(char* buf, size_t buflen);
+
     // ---- Read API (naive linear scan) ----
 
     // Callback for reading events. Return false to stop iteration.

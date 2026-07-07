@@ -23,6 +23,7 @@
 #include "events.h"
 #include "config.h"
 #include "time_of_day.h"   // g_tod (host_set_now)
+#include "weather.h"       // g_weather (host_set_weather)
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>
 #include <emscripten.h>
@@ -38,12 +39,21 @@ constexpr double TICK_MS = 125.0;   // 8 ticks/sec
 char g_snap[96 * 1024];   // snapshot JSON scratch
 int  g_snap_len = 0;
 
+char   g_events[128 * 1024];   // accumulated diary events (comma-separated JSON objects)
+size_t g_events_len = 0;
+
 Chamber& chamber() { return g_sim.coordinator.chamber; }
 
-void drain_to_renderer() {
+void drain_bus() {
+    // Drain the display bus ONCE and feed it to both the renderer (animations)
+    // and the journal (diary) — main.cpp does the latter on hardware; without
+    // it the diary/chronicle/field-guide never fill.
     Event drained[128];
     int n = g_sim.event_bus.drain(drained, 128);
-    if (n > 0) g_renderer.receive_events(drained, n, chamber());
+    if (n > 0) {
+        g_renderer.receive_events(drained, n, chamber());
+        g_sim.coordinator._journal_from_bus_events(drained, n, g_sim.tick_count);
+    }
 }
 }  // namespace
 
@@ -60,6 +70,26 @@ void host_set_now(double unix_sec) {
     g_tod.unix_time = (uint32_t)unix_sec;
     g_tod.ntp_synced = true;
     g_tod.rtc_valid = true;
+}
+
+// Local clock + day/night, fed from the browser's real local time so the HUD
+// clock, day-counter, season and the scene's day/night palette are all live.
+EMSCRIPTEN_KEEPALIVE
+void host_set_clock(int hour, int minute, int day_of_year, double night_factor, int phase) {
+    g_tod.local_hour   = hour;
+    g_tod.local_minute = minute;
+    g_tod.day_of_year  = day_of_year;
+    g_tod.night_factor = (float)night_factor;
+    g_tod.phase        = (DayPhase)phase;
+}
+
+// Real local weather (JS fetches Open-Meteo and maps to a WeatherCondition),
+// so the HUD icon + the scene's rain/snow/fog match — like the physical module.
+EMSCRIPTEN_KEEPALIVE
+void host_set_weather(int condition, double temp_c) {
+    g_weather.valid = true;
+    g_weather.condition = (WeatherCondition)condition;
+    g_weather.temperature_c = (float)temp_c;
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -82,6 +112,12 @@ void host_boot(int ffMinutes) {
         // Discard founding-era animation events; the render loop starts clean.
         Event tmp[128];
         while (g_sim.event_bus.drain(tmp, 128) > 0) {}
+        // Discard the fast-forward's diary events too — the colony's diary
+        // should begin now (when the keeper gets it), not with 2h compressed
+        // into one instant.
+        char jtmp[16 * 1024];
+        while (g_sim.coordinator.journal.drain_json(jtmp, sizeof(jtmp)) > 0) {}
+        g_events_len = 0;
     }
 
     // Give the colony a founded time + queen name so the HUD/app show a real
@@ -109,8 +145,19 @@ void host_step(double dt_ms) {
     g_accum_ms    += dt_ms;
     while (g_accum_ms >= TICK_MS) {
         g_sim.tick(1.0f / 8.0f);
-        drain_to_renderer();
+        drain_bus();
         g_accum_ms -= TICK_MS;
+    }
+    // Drain new diary events into the accumulator (pushed to /events in JS).
+    {
+        char tmp[16 * 1024];
+        size_t n = g_sim.coordinator.journal.drain_json(tmp, sizeof(tmp));
+        if (n > 0 && g_events_len + n + 2 < sizeof(g_events)) {
+            if (g_events_len > 0) g_events[g_events_len++] = ',';
+            memcpy(g_events + g_events_len, tmp, n);
+            g_events_len += n;
+            g_events[g_events_len] = '\0';
+        }
     }
     g_renderer.draw(chamber(), (float)(g_accum_ms / TICK_MS));
     hud_draw(g_gfx, chamber());     // same HUD strip the physical module shows
@@ -194,5 +241,19 @@ int host_snapshot() {
     return g_snap_len;
 }
 EMSCRIPTEN_KEEPALIVE uintptr_t host_snapshot_ptr() { return (uintptr_t)g_snap; }
+
+// Accumulated diary events (the /events payload inner array), pushed by JS.
+EMSCRIPTEN_KEEPALIVE uintptr_t host_events_ptr() { return (uintptr_t)g_events; }
+EMSCRIPTEN_KEEPALIVE int host_events_len() { return (int)g_events_len; }
+EMSCRIPTEN_KEEPALIVE void host_events_clear() { g_events_len = 0; g_events[0] = '\0'; }
+
+// ---- Keeper commands, applied straight to the on-phone colony (no VPS round-trip) ----
+EMSCRIPTEN_KEEPALIVE void host_grant_wish(uint32_t id) { g_sim.coordinator.cmd_grant_wish(id); }
+EMSCRIPTEN_KEEPALIVE void host_feed_colony(double amount) { g_sim.coordinator.cmd_feed_colony((float)amount); }
+EMSCRIPTEN_KEEPALIVE void host_care_package() { g_sim.coordinator.cmd_gift_care_package(0); }
+EMSCRIPTEN_KEEPALIVE void host_rename(uint32_t id, const char* name) { g_sim.coordinator.cmd_rename_conker(id, name); }
+EMSCRIPTEN_KEEPALIVE void host_set_tint(int r, int g, int b) {
+    g_sim.coordinator.cmd_set_floor_tint(0, (uint8_t)r, (uint8_t)g, (uint8_t)b);
+}
 
 }  // extern "C"

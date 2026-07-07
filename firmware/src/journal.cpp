@@ -187,7 +187,13 @@ void EventJournal::_serialize_entry(const JournalEntry& e, char* buf, size_t buf
 
 void EventJournal::init() {
     if (sd_card_state() != SD_OK) {
-        _active = false;
+        // No card: still activate the RAM ring buffer so events are captured
+        // (the host/phone build drains them via drain_json and pushes to the
+        // VPS). flush() already no-ops without a card, so nothing hits disk;
+        // the buffer just accumulates and drops oldest past capacity.
+        _head = 0; _count = 0; _total_flushed = 0;
+        _last_flush_ms = millis(); _current_day = -1;
+        _active = true;
         return;
     }
 
@@ -224,6 +230,27 @@ void EventJournal::emit(const JournalEntry& entry) {
     if (_count >= BUF_CAPACITY * 3 / 4) {
         flush();
     }
+}
+
+size_t EventJournal::drain_json(char* buf, size_t buflen) {
+    size_t off = 0;
+    int drained = 0;
+    for (int i = 0; i < _count; i++) {
+        int idx = (_head + i) % BUF_CAPACITY;
+        char line[512];
+        _serialize_entry(_buf[idx], line, sizeof(line));
+        size_t len = strlen(line);
+        size_t need = (off ? 1 : 0) + len;
+        if (off + need + 1 > buflen) break;   // out of room — keep the rest for next drain
+        if (off) buf[off++] = ',';
+        memcpy(buf + off, line, len);
+        off += len;
+        drained++;
+    }
+    buf[off] = '\0';
+    _head = (_head + drained) % BUF_CAPACITY;
+    _count -= drained;
+    return off;
 }
 
 // ---- Tick ----
