@@ -14,6 +14,11 @@
 HostSerial   Serial;
 unsigned long g_host_millis = 0;
 
+// Shared esp_random() state (see host/shims/esp_random.h). Reseeded per-install
+// by host_seed() so every phone's colony is distinct. Same default as the old
+// per-TU shim, so an un-seeded host build behaves as before.
+uint32_t g_esp_rng_state = 0x9E3779B9u;
+
 TimeOfDay g_tod;               // struct defaults: PHASE_DAY, night_factor 0.0
 bool      g_warp_active = false;
 Weather   g_weather;           // valid=false by default → no weather FX

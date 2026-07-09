@@ -1,11 +1,14 @@
 /* Host stubs for the firmware's hardware/mesh edges, so the Coordinator +
  * persistence + journal + api_json compile and link off-device.
  *
- * A phone module is a SINGLE queen with NO SD card and NO ESP-NOW peers, so:
- *   - sd_card_init() returns false  -> persistence takes its in-RAM fresh path
+ * A phone module is a SINGLE queen with NO ESP-NOW peers, so:
+ *   - sd_card_* reports a healthy card -> the firmware's real registry persistence
+ *     runs; host_web mounts /colony on Emscripten IDBFS so it survives reloads
+ *     (the journal is kept RAM-only via a HOST_BUILD guard in journal.cpp — event
+ *     history lives on the VPS, not local disk)
  *   - all topology (ESP-NOW) calls are inert -> no neighbours, no handoffs
  *   - chores (async SD/HTTP worker) is inert -> the main loop's sync path runs
- * Everything here is a safe no-op; the real behaviour lives on hardware. */
+ * Everything else here is a safe no-op; the real behaviour lives on hardware. */
 #include "sd_card.h"
 #include "chores.h"
 #include "topology.h"
@@ -19,15 +22,16 @@ SDMMCFS SD_MMC;
 TwoWire Wire;
 
 // ---- sd_card ----
-// No card: the colony runs in PERSIST_DEGRADED. Since the firmware now assigns
-// in-RAM identities even when degraded, conkers still get names/personalities
-// (the roster works); only cross-reboot flushes are skipped. Founding runs on
-// the fresh-colony path (Case A). Cross-reload persistence = later, via IDBFS.
-bool     sd_card_init() { return false; }
-SdState  sd_card_state() { return SD_NOT_MOUNTED; }
+// Report a healthy card so the firmware's registry persistence is live: the
+// colony's manifest + identities + brood + bonds are written under /colony,
+// which host_web mounts on IDBFS (persists across reloads). The "card" is just
+// the Emscripten FS; JS owns the actual mount + IndexedDB sync. Colony survives
+// a reload → restores (Case C) instead of re-founding.
+bool     sd_card_init() { return true; }
+SdState  sd_card_state() { return SD_OK; }
 void     sd_remove_recursive(const char*, int) {}
-uint64_t sd_card_total_bytes() { return 0; }
-uint64_t sd_card_used_bytes() { return 0; }
+uint64_t sd_card_total_bytes() { return 64ULL * 1024 * 1024; }
+uint64_t sd_card_used_bytes() { return 1024 * 1024; }
 void     sd_card_health_tick() {}
 void     sd_card_write_failed() {}
 void     sd_card_write_ok() {}

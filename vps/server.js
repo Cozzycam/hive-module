@@ -205,6 +205,11 @@ const app = express();
 app.use(morgan('short'));
 app.use(express.raw({ type: 'application/json', limit: '1mb' }));
 
+// Bare domain → the app. Caddy serves the PWA at /app/; a visitor to the naked
+// domain otherwise falls through to Express and gets "Cannot GET /" (reported on
+// iPhone). 302, not 301, so it isn't hard-cached if routing ever changes.
+app.get('/', (req, res) => res.redirect('/app/'));
+
 // Light per-IP rate limit for the unauthenticated write endpoints
 // (commands, feedback, push). Two legitimate keepers exist; 60 writes per
 // hour per IP is generous for humans and a wall for scripts. In-memory —

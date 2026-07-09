@@ -269,6 +269,13 @@ void EventJournal::tick() {
 
 void EventJournal::flush() {
     if (!_active || _count == 0) return;
+#ifdef HOST_BUILD
+    // Host/phone build: events are drained to the VPS via drain_json (host_web)
+    // and stored there permanently. Flushing here would consume the SAME ring
+    // buffer and starve that push, so the journal stays RAM-only. Colony STATE
+    // (registry/manifest/brood) still persists to SD/IDBFS — just not events.
+    return;
+#endif
     if (sd_card_state() != SD_OK) return;
 
     _open_day_if_needed();

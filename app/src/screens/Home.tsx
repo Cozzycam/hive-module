@@ -7,6 +7,7 @@ import { ConnectionDot } from '../components/ConnectionDot';
 import { DigestCard } from '../components/DigestCard';
 import { LiveNest } from '../components/LiveNest';
 import { TopologyMiniMap } from '../components/TopologyMiniMap';
+import { getIdentity } from '../localModule';
 import { nameFromId } from '../data/plantNames';
 import { deriveRoleTag } from '../data/personality';
 import { sendCommand } from '../api/client';
@@ -26,6 +27,11 @@ export function Home({ onNavigate }: HomeProps) {
   const { snapshot, events, source, lastFetchMs, colonyId } = useColony();
   const { pins, isPinned, togglePin, pinName, rememberName } = usePins();
   const tod = useTOD(true);
+
+  // The phone's own colony has the live Module tab next door (the exact LCD
+  // view) — no need to duplicate a looser Nest view on Home. Physical modules
+  // have no Module tab, so they keep it.
+  const ownModule = !!colonyId && colonyId === getIdentity().colony_id;
 
   // Keep pinned names fresh from the roster (renames propagate; the cache
   // then outlives the roster when a followed conker dies)
@@ -116,12 +122,15 @@ export function Home({ onNavigate }: HomeProps) {
         <OnThisDayCard observances={todayObservances} tod={tod} onNavigate={onNavigate} />
       )}
 
-      {/* The Nest — live view of the wee guys moving around */}
-      <LiveNest
-        snapshot={snapshot}
-        palette={tod}
-        onOpenCharacter={(id) => onNavigate('characters', { lilguyId: id })}
-      />
+      {/* The Nest — live view of the wee guys moving around. Skipped for the
+          phone's own colony: the Module tab already shows the exact LCD view. */}
+      {!ownModule && (
+        <LiveNest
+          snapshot={snapshot}
+          palette={tod}
+          onOpenCharacter={(id) => onNavigate('characters', { lilguyId: id })}
+        />
+      )}
 
       {/* Right Now tile */}
       <Card style={{ background: tod.cardBg }}>

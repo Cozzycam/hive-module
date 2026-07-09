@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { HIVE } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 import { testLanConnection, setStoredLanIp, setStoredColonyId, fetchColonies } from '../api/client';
-import { localModule } from '../localModule';
+import { localModule, AUTOSTART_KEY } from '../localModule';
 
 function agoLabel(unix: number): string {
   if (!unix) return 'never seen';
@@ -22,20 +22,36 @@ interface EmptyProps {
 export function Empty({ onConnected }: EmptyProps) {
   const [showModal, setShowModal] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [errMsg, setErrMsg] = useState<string | null>(null);
 
   // Boot a queen module on THIS phone: run the sim locally, enrol its own
   // colony, push a first snapshot to the hive, then connect the app to it.
   async function runLocalModule() {
-    setStarting(true);
+    setStarting(true); setErrMsg(null); setStatusMsg('loading engine');
     try {
-      await localModule.start();
+      await localModule.start(setStatusMsg);
+      setStatusMsg('founding');
       await localModule.pushNow();     // ensure the colony exists on the VPS before connecting
+      setStatusMsg('connecting');
       onConnected(localModule.identity.colony_id);
-    } catch (e) {
+    } catch (e: any) {
       console.error('[empty] local module failed', e);
+      setErrMsg(String(e?.message || e?.stack || e));
+      setStatusMsg(null);
       setStarting(false);
     }
   }
+
+  // The Settings "Start a fresh colony" reset reloads with this flag set —
+  // boot the freshly-minted colony immediately instead of waiting for a tap.
+  useEffect(() => {
+    if (localStorage.getItem(AUTOSTART_KEY)) {
+      localStorage.removeItem(AUTOSTART_KEY);
+      runLocalModule();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div style={{
@@ -86,6 +102,22 @@ export function Empty({ onConnected }: EmptyProps) {
       >
         {starting ? 'starting your colony…' : 'Run a queen module on this phone'}
       </button>
+
+      {/* Diagnostic surface — shows which step is running, or the error text,
+          so a phone with no console still reveals what failed. */}
+      {starting && statusMsg && (
+        <div style={{ fontSize: SIZES.xs, color: HIVE.dimText, marginBottom: 12 }}>
+          {statusMsg}…
+        </div>
+      )}
+      {errMsg && (
+        <div style={{
+          fontSize: SIZES.xs, color: HIVE.alert, marginBottom: 12,
+          maxWidth: 320, wordBreak: 'break-word', lineHeight: 1.4,
+        }}>
+          Couldn’t start: {errMsg}
+        </div>
+      )}
 
       <button
         onClick={() => setShowModal(true)}
