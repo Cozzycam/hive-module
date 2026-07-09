@@ -171,6 +171,21 @@ constexpr float QUEEN_MEAL_COST       = QUEEN_FOOD_PER_DAY / 6.0f;   // 0.50 per
 constexpr float HUNGER_STARVE         = 100.0f;    // death threshold
 constexpr float HUNGER_SLOWDOWN       = 80.0f;     // speed penalty starts
 
+// ---- Gateway incubation / princess (tamagotchi) tuning ----
+// Only in effect when a Chamber has incubation_mode = true (the app's single
+// raised conker). Entirely inert on hardware / normal colonies. A princess is
+// queen-like: she never dies, only goes DORMANT (tardigrade) when neglected,
+// losing only maturation progress + keeper-bond until care resumes.
+constexpr uint32_t INCUBATION_EGG_MS           = 15u * 60u * 1000u;    // ~15 min timed egg → hatch (a near-term "care for it and hatch it" beat)
+constexpr float    PRINCESS_EAT_FLOOR          = 15.0f;                // hunger past which she'll go to a keeper-dropped pile (lower = more eager to be fed; 0-100 over a day)
+constexpr uint32_t PRINCESS_READY_MS           = 3u * 86400u * 1000u;  // ~3 sim-days attended → queen-ready (maturation cap; no age-out)
+constexpr float    KEEPER_BOND_PER_FEED        = 0.01f;                // each hand-feeding deepens closeness a little — bond builds over ~2 weeks of continued care (cap 1.0)
+constexpr float    PRINCESS_SOCIAL_BOOP_RELIEF = 0.15f;                // a boop is a bit of company, but less than a colony boop (spammable; loneliness climbs back)
+constexpr float    KEEPER_BOND_DECAY_DORMANT   = 0.15f / SECS_PER_DAY; // full bond cools over ~6-7 days dormant (per sim-sec)
+constexpr float    MATURATION_DECAY_MS_PER_SEC = 500.0f;               // maturation slips at ~0.5x realtime while dormant
+constexpr float    DORMANT_HUNGER_PARK         = 95.0f;                // hunger parked just below STARVE while dormant
+constexpr float    DORMANT_WAKE_HUNGER         = 60.0f;                // a keeper feed drops hunger below this → she rouses
+
 // ---- Queen laying (real-time) ----
 constexpr int   FOUNDING_EGG_COUNT        = FOUNDER_COHORT_SIZE;  // founding phase = founder cohort
 constexpr float ESTABLISHED_LAY_RATE_BASE = 6.0f;   // eggs/day minimum

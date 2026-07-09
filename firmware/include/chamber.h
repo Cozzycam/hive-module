@@ -125,6 +125,8 @@ public:
     EventBus*    event_bus = nullptr;   // transient, set per-tick by Sim
     uint32_t     tick_num  = 0;         // transient, set per-tick by Sim
     bool         is_garden = false;     // garden role: more critters, wild sprouts
+    bool         incubation_mode = false; // Gateway tamagotchi: a single raised "princess" conker —
+                                          // never dies (dormant on neglect), no queen/founding. OFF on hardware.
     // Followed conkers (app pins) — the renderer stars them on the glass
     static constexpr int MAX_FOLLOWED = 8;
     uint32_t     followed[MAX_FOLLOWED] = {};

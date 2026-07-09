@@ -25,6 +25,19 @@ function randHex(bytes: number): string {
   crypto.getRandomValues(b);
   return [...b].map(x => x.toString(16).padStart(2, '0')).join('');
 }
+
+// FNV-1a → uint32. Seeds the sim from the install's unique colony_id so each
+// phone founds a DISTINCT colony (and re-founds the same one across reloads,
+// until IDBFS persistence lands). Without this every install shared one seed
+// and produced the identical queen + cast.
+function seedFromString(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
 export function getIdentity(): ModuleIdentity {
   try { const raw = localStorage.getItem(ID_KEY); if (raw) return JSON.parse(raw); } catch { /**/ }
   const id: ModuleIdentity = { colony_id: 'app-' + randHex(6), secret: randHex(24), enrolled: false };
@@ -32,6 +45,27 @@ export function getIdentity(): ModuleIdentity {
   return id;
 }
 function saveIdentity(id: ModuleIdentity) { localStorage.setItem(ID_KEY, JSON.stringify(id)); }
+
+// Flag read by Empty.tsx on the next load to auto-boot the fresh colony.
+export const AUTOSTART_KEY = 'hive_autostart_module';
+// Set by the "Start a fresh colony" reset; the next boot wipes the persisted
+// /colony dir so the module founds from scratch instead of restoring.
+export const WIPE_KEY = 'hive_wipe_persistence';
+// Wall-clock unix of the last time this install's module was active. On reopen
+// the module fast-forwards by (now − this) so the colony lives in real time even
+// while the app was closed (like an always-on hardware module).
+export const LAST_ACTIVE_KEY = 'hive_last_active';
+
+// Mint a brand-new install identity → a genuinely fresh, unique colony. The
+// colony seed is derived from colony_id, so a new id means a new queen + cast.
+// The running WASM still holds the OLD colony, so the caller must reload to get
+// a clean instance that founds the new one (there's no cross-reload persistence
+// yet, so nothing is lost). Returns the new identity.
+export function resetColonyIdentity(): ModuleIdentity {
+  const id: ModuleIdentity = { colony_id: 'app-' + randHex(6), secret: randHex(24), enrolled: false };
+  saveIdentity(id);
+  return id;
+}
 
 async function hmacHex(secret: string, body: string): Promise<string> {
   const enc = new TextEncoder();
@@ -77,20 +111,49 @@ class LocalModule {
   private fns: Record<string, any> = {};
   private started = false;
   private startPromise: Promise<void> | null = null;
+  private syncing = false;
   private W = 480; private H = 320;
   private image: ImageData | null = null;
   private lastPush = 0;
   private lastFrame = 0;
 
-  start(): Promise<void> {
+  start(onStatus?: (s: string) => void): Promise<void> {
     if (this.startPromise) return this.startPromise;
+    const step = (s: string) => { try { onStatus?.(s); } catch { /**/ } };
     this.startPromise = (async () => {
+      step('loading engine');
       await loadScript();
+      step('starting engine');
       const M = await window.createHiveModule!({ locateFile: (p: string) => `${BASE_URL}hive/${p}` });
       this.M = M;
+      step('opening storage');
+      // Never let storage setup block boot — race the whole thing against a hard
+      // cap so IndexedDB trouble (mobile/incognito) can't wedge startup.
+      await Promise.race([
+        this.mountPersistence(M),
+        new Promise<void>((r) => setTimeout(r, 6000)),
+      ]);
+      step('building colony');
       const cw = (n: string, ret: any, args: any[]) => M.cwrap(n, ret, args);
       this.fns = {
         boot: cw('host_boot', null, ['number']),
+        bootInc: cw('host_boot_incubation', null, []),
+        feedPrincess: cw('host_feed_princess', null, []),
+        warp: cw('host_warp', null, ['number', 'number']),
+        prMat: cw('host_pr_maturity', 'number', []),
+        prBond: cw('host_pr_bond', 'number', []),
+        prHunger: cw('host_pr_hunger', 'number', []),
+        prDormant: cw('host_pr_dormant', 'number', []),
+        prHatched: cw('host_pr_hatched', 'number', []),
+        prPx: cw('host_pr_px', 'number', []),
+        prPy: cw('host_pr_py', 'number', []),
+        prBoredom: cw('host_pr_boredom', 'number', []),
+        prSocial: cw('host_pr_social', 'number', []),
+        prRest: cw('host_pr_rest', 'number', []),
+        foundedUnix: cw('host_founded_unix', 'number', []),
+        conkers: cw('host_conkers', 'number', []),
+        seed: cw('host_seed', null, ['number']),
+        catchup: cw('host_catchup', null, ['number']),
         setNow: cw('host_set_now', null, ['number']),
         step: cw('host_step', null, ['number']),
         fb: cw('host_fb', 'number', []),
@@ -113,11 +176,18 @@ class LocalModule {
         rename: cw('host_rename', null, ['number', 'string']),
         setTint: cw('host_set_tint', null, ['number', 'number', 'number']),
       };
+      // Unique colony per install — must precede boot. Guarded so a stale cached
+      // hive.wasm without host_seed (mid-PWA-update skew) degrades to a default
+      // colony instead of throwing and leaving the button dead.
+      try { this.fns.seed(seedFromString(this.identity.colony_id)); }
+      catch (e) { console.warn('[module] host_seed unavailable (stale wasm?)', e); }
       this.fns.setNow(Date.now() / 1000);
       this.applyClock();
       this.fetchWeather();
       setInterval(() => this.fetchWeather(), 15 * 60 * 1000);
-      this.fns.boot(120);                     // fast-forward ~2h founding
+      this.fns.bootInc();                     // tamagotchi: raise ONE princess (no queen/colony) — she becomes a queen only at coronation, on a module
+
+      this.catchUpFromLastActive();           // fast-forward the time the app was closed (always-on-module behaviour)
       this.W = this.fns.w(); this.H = this.fns.h();
       this.canvas.width = this.W; this.canvas.height = this.H;
       this.canvas.style.imageRendering = 'pixelated';
@@ -125,10 +195,106 @@ class LocalModule {
       this.image = ctx.createImageData(this.W, this.H);
       this.started = true;
       this.lastFrame = performance.now();
+      step('running');
       this.loop(ctx);
       this.pushLoop();
+      setInterval(() => this.persist(), 10000);   // flush colony state to IndexedDB
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', () => {
+          if (document.hidden) { this.markActive(); this.persist(); }
+          else this.catchUpFromLastActive();   // foreground resume → fast-forward the background gap
+        });
+        // bfcache restore (mobile) resumes the frozen page without re-running start()
+        window.addEventListener('pageshow', (e) => { if ((e as PageTransitionEvent).persisted) this.catchUpFromLastActive(); });
+      }
     })();
     return this.startPromise;
+  }
+
+  // Mount /colony on IDBFS so the firmware's registry persistence (manifest,
+  // identities, brood, bonds) survives reloads. Must run before host_boot: the
+  // registry reads /colony/manifest.json at init and restores the colony (Case
+  // C) instead of re-founding. If IDBFS is unavailable the module still runs,
+  // just ephemerally (per session).
+  private async mountPersistence(M: any): Promise<void> {
+    try {
+      const FS = M.FS;
+      if (!FS?.filesystems?.IDBFS) { console.warn('[module] IDBFS unavailable — colony will not persist'); return; }
+      try { FS.mkdir('/colony'); } catch { /* already exists */ }
+      FS.mount(FS.filesystems.IDBFS, {}, '/colony');
+      // Load persisted colony, but NEVER let a slow/stuck IndexedDB block boot
+      // (iOS home-screen PWAs can stall syncfs). Time out → run from whatever
+      // loaded; the colony simply won't restore this once.
+      await this.syncfsSafe(FS, true);
+      if (localStorage.getItem(WIPE_KEY)) {                             // reset flow → start fresh
+        this.wipeColonyDir(FS);
+        await this.syncfsSafe(FS, false);
+        localStorage.removeItem(WIPE_KEY);
+      }
+    } catch (e) {
+      console.warn('[module] persistence mount failed — running ephemerally', e);
+    }
+  }
+
+  // syncfs that always resolves — on callback, on error, or after a timeout —
+  // so IndexedDB flakiness can never wedge startup.
+  private syncfsSafe(FS: any, populate: boolean, ms = 4000): Promise<void> {
+    return new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => { if (!done) { done = true; resolve(); } };
+      const timer = setTimeout(finish, ms);
+      try { FS.syncfs(populate, () => { clearTimeout(timer); finish(); }); }
+      catch { clearTimeout(timer); finish(); }
+    });
+  }
+
+  // Empty /colony (keep the mount point) — used by the reset flow so a fresh
+  // identity founds a clean colony instead of restoring the old one.
+  private wipeColonyDir(FS: any) {
+    const rm = (dir: string) => {
+      let names: string[] = [];
+      try { names = FS.readdir(dir).filter((n: string) => n !== '.' && n !== '..'); } catch { return; }
+      for (const n of names) {
+        const p = `${dir}/${n}`;
+        try {
+          if (FS.isDir(FS.stat(p).mode)) { rm(p); FS.rmdir(p); }
+          else FS.unlink(p);
+        } catch { /* best effort */ }
+      }
+    };
+    rm('/colony');
+  }
+
+  // Record "the module was active now" — read on the next open to size catch-up.
+  private markActive(): void {
+    try { localStorage.setItem(LAST_ACTIVE_KEY, String(Math.floor(Date.now() / 1000))); } catch { /**/ }
+  }
+
+  // Fast-forward the colony by however long it was inactive, then re-mark now.
+  // Called on boot AND every time the app returns to the foreground — on mobile
+  // you background/resume far more often than you reload, and the sim clock only
+  // advances while foregrounded, so without this the eggs' timers stall.
+  private catchUpFromLastActive(): void {
+    if (!this.fns?.catchup) return;
+    try {
+      const last = Number(localStorage.getItem(LAST_ACTIVE_KEY) || 0);
+      if (last > 0) {
+        const away = Math.floor(Date.now() / 1000) - last;
+        if (away > 60) this.fns.catchup(away);
+      }
+    } catch (e) { console.warn('[module] catch-up skipped', e); }
+    this.markActive();
+  }
+
+  // Flush the in-memory FS to IndexedDB (only dirty files are written). Never
+  // wedges: the syncing flag self-clears via timeout if the callback stalls.
+  private persist(): void {
+    if (this.syncing || !this.M?.FS) return;
+    this.syncing = true;
+    const done = () => { this.syncing = false; };
+    const timer = setTimeout(done, 5000);
+    try { this.M.FS.syncfs(false, () => { clearTimeout(timer); done(); }); }
+    catch { clearTimeout(timer); done(); }
   }
 
   private loop(ctx: CanvasRenderingContext2D) {
@@ -191,6 +357,10 @@ class LocalModule {
   }
 
   private async pushLoop() {
+    // Dev: run the module fully in-process — don't enrol/push to the live VPS
+    // (the tamagotchi reads its princess straight from here; the push is only for
+    // backup/cross-device, which local dev doesn't need). Prod pushes normally.
+    if (import.meta.env.DEV) return;
     // Push immediately (enrols), then every PUSH_INTERVAL_MS.
     while (this.started) {
       try { await this.pushNow(); await this.pushEvents(); }
@@ -232,6 +402,7 @@ class LocalModule {
   }
 
   async pushNow(): Promise<number> {
+    if (import.meta.env.DEV) return 200;   // dev: run in-process, don't enrol on the live VPS
     const len = this.fns.snapshot();
     const bytes = this.M.HEAPU8.slice(this.fns.snapshotPtr(), this.fns.snapshotPtr() + len);
     let json = new TextDecoder().decode(bytes);
@@ -244,6 +415,7 @@ class LocalModule {
     });
     if (res.ok && !this.identity.enrolled) { this.identity.enrolled = true; saveIdentity(this.identity); }
     this.lastPush = Date.now();
+    this.markActive();   // keep last-active fresh so catch-up measures from here
     return res.status;
   }
 
@@ -256,6 +428,53 @@ class LocalModule {
   gatherAt(clientX: number, clientY: number) { const [x, y] = this.toPx(clientX, clientY); this.fns.gather(x, y); }
   gatherEnd() { this.fns.gatherEnd(); }
   selected(): number { return this.fns.selected(); }
+
+  // ---- Incubation / princess (tamagotchi) surface for the Her care screen ----
+  // The screen renders a zoomed portrait crop of the live framebuffer centred on
+  // her; these read the same in-process WASM the loop ticks (no VPS round-trip).
+  isRunning(): boolean { return this.started; }
+  frameImage(): ImageData | null { return this.image; }        // full 480x320 RGBA, updated each loop tick
+  dims() { return { w: this.W, h: this.H }; }
+  tapFb(fx: number, fy: number) { try { this.fns.tap(Math.round(fx), Math.round(fy)); } catch { /**/ } }
+  feedPrincess() { try { this.fns.feedPrincess(); } catch { /**/ } }
+  conkerCount(): number { try { return this.fns.conkers() ?? 0; } catch { return 0; } }
+  // The full colony snapshot (the same JSON pushed to the VPS) read in-process —
+  // lets the About screen show her name/personality/traits without a VPS round-trip.
+  colonySnapshot(): Record<string, unknown> | null {
+    if (!this.started || !this.fns.snapshot) return null;
+    try {
+      const len = this.fns.snapshot();
+      const bytes = this.M.HEAPU8.slice(this.fns.snapshotPtr(), this.fns.snapshotPtr() + len);
+      return JSON.parse(new TextDecoder().decode(bytes));
+    } catch { return null; }
+  }
+  renameConker(id: number, name: string) { try { this.fns.rename(id >>> 0, name); } catch { /**/ } }
+  // Dev-only: fast-forward sim time (fed = an attentive keeper feeds; else neglect).
+  warp(seconds: number, fed: boolean) { try { this.fns.warp(seconds, fed ? 1 : 0); } catch { /**/ } }
+  princessStats(): PrincessStats | null {
+    if (!this.started || !this.fns.prHatched) return null;
+    try {
+      return {
+        maturity: (this.fns.prMat() ?? 0) / 1000,     // 0..1
+        bond:     this.fns.prBond() ?? 0,             // 0..100
+        hunger:   this.fns.prHunger() ?? 0,
+        dormant:  !!this.fns.prDormant(),
+        hatched:  !!this.fns.prHatched(),
+        boredom:  this.fns.prBoredom() ?? 0,
+        social:   this.fns.prSocial() ?? 0,
+        rest:     this.fns.prRest() ?? 0,
+        founded:  this.fns.foundedUnix() ?? 0,
+        px:       this.fns.prPx() ?? (this.W / 2),
+        py:       this.fns.prPy() ?? (this.H / 2),
+      };
+    } catch { return null; }
+  }
+}
+
+export interface PrincessStats {
+  maturity: number; bond: number; hunger: number; dormant: boolean; hatched: boolean;
+  boredom: number; social: number; rest: number; founded: number; px: number; py: number;
 }
 
 export const localModule = new LocalModule();
+if (import.meta.env.DEV) (globalThis as { localModule?: LocalModule }).localModule = localModule;

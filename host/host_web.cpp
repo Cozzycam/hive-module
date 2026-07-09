@@ -22,6 +22,8 @@
 #include "names.h"
 #include "events.h"
 #include "config.h"
+#include "conker.h"        // conker_activity / _short + render_scale (boop overlay)
+#include "rng.h"           // g_rng (host_seed reseeds it per install)
 #include "time_of_day.h"   // g_tod (host_set_now)
 #include "weather.h"       // g_weather (host_set_weather)
 #include <Arduino.h>
@@ -70,6 +72,52 @@ void drain_bus() {
         g_sim.coordinator._journal_from_bus_events(drained, n, g_sim.tick_count);
     }
 }
+
+// Boop/selection overlay — highlight ring + a name/activity pill above the
+// tapped conker. On hardware this is drawn in main.cpp's loop (not compiled
+// into the WASM build), so the app never showed it; redraw it each frame onto
+// the same canvas, right after the scene. Mirrors main.cpp:1183 verbatim minus
+// the dirty-rect calls (the host blits the whole framebuffer every frame).
+void draw_selection_overlay() {
+    if (g_sim.selected_conker_id == 0) return;
+    Chamber& ch = chamber();
+    int sel = -1;
+    for (int i = 0; i < ch.conker_count; i++) {
+        if (ch.conkers[i].id == g_sim.selected_conker_id) { sel = i; break; }
+    }
+    if (sel < 0) { g_sim.selected_conker_id = 0; return; }   // no longer in chamber
+    Conker& w = ch.conkers[sel];
+    if (!w.alive) { g_sim.selected_conker_id = 0; return; }   // died while selected
+
+    Arduino_Canvas* cv = g_gfx;
+    int px = (int)(w.x * Cfg::CELL_SIZE);
+    int py = (int)(w.y * Cfg::CELL_SIZE);
+    int radius = (int)(w.render_scale() * 6.0f);
+
+    cv->drawCircle(px, py, radius, 0xFFFF);
+    cv->drawCircle(px, py, radius + 1, 0xFFFF);
+
+    const char* name = w.name[0] ? w.name : "???";
+    const char* act  = conker_activity_short(conker_activity(w, ch));
+    cv->setTextSize(1);
+    cv->setTextWrap(false);
+    int nw = 0; for (const char* p = name; *p; p++) nw += 6;
+    int aw = 0; for (const char* p = act;  *p; p++) aw += 6;
+    int tw = (nw > aw) ? nw : aw;
+    const int pill_h = 20;
+    int lx = px - tw / 2;
+    if (lx < 3) lx = 3;
+    if (lx + tw + 3 > 480) lx = 480 - tw - 3;
+    int top = py - radius - 3 - pill_h;
+    if (top < 2) top = 2;
+    cv->fillRoundRect(lx - 3, top, tw + 6, pill_h, 3, 0x0000);
+    cv->setCursor(lx + (tw - nw) / 2, top + 2);
+    cv->setTextColor(0xFFFF);           // name — bright
+    cv->print(name);
+    cv->setCursor(lx + (tw - aw) / 2, top + 11);
+    cv->setTextColor(0xC618);           // activity — soft grey
+    cv->print(act);
+}
 }  // namespace
 
 extern "C" {
@@ -105,6 +153,53 @@ void host_set_weather(int condition, double temp_c) {
     g_weather.valid = true;
     g_weather.condition = (WeatherCondition)condition;
     g_weather.temperature_c = (float)temp_c;
+}
+
+// Seed the sim's RNGs from this install's unique id (JS derives a uint32 from
+// the persisted colony_id). MUST be called before host_boot: g_rng drives every
+// conker's personality/lifespan/behaviour, and esp_random names the queen + the
+// registry. Without it, g_rng stays at its Rng(1) default and esp_random runs a
+// fixed sequence — so every phone founds the IDENTICAL colony (same queen, same
+// cast). Physical modules avoid this by seeding g_rng from the hardware RNG in
+// main.cpp, which the WASM build doesn't compile.
+EMSCRIPTEN_KEEPALIVE
+void host_seed(uint32_t seed) {
+    g_rng = Rng(seed);
+    esp_random_seed(seed ^ 0x5bd1e995u);   // decorrelate names from behaviour
+}
+
+// Catch up to real wall-clock time on reopen — like an always-on hardware
+// module. Fast-forward the (restored) colony by `away_seconds`, ticking so brood
+// hatches/ages and recording the events to the diary. Time-budgeted so it can't
+// freeze the phone: a small colony catches up fully in a blink; a big colony
+// after a long absence catches up as much as fits in the budget, then lands the
+// clock exactly at now. Founded-age is always correct.
+EMSCRIPTEN_KEEPALIVE
+void host_catchup(double away_seconds) {
+    if (away_seconds < 60.0) return;
+    const double MAX_AWAY = 30.0 * 86400.0;          // 30-day sanity cap
+    if (away_seconds > MAX_AWAY) away_seconds = MAX_AWAY;
+    const uint32_t total_ticks = (uint32_t)(away_seconds * 8.0);
+    const uint32_t now_unix   = g_tod.unix_time;     // JS set this to real now before boot
+    const uint32_t start_unix = now_unix - (uint32_t)away_seconds;
+    const double BUDGET_MS = 2500.0;                 // max freeze on reopen
+    const double t0 = emscripten_get_now();
+    uint32_t t = 0;
+    for (; t < total_ticks; t++) {
+        g_sim.tick(1.0f / 8.0f);
+        g_host_millis += (unsigned long)TICK_MS;
+        g_tod.unix_time = start_unix + (uint32_t)(t / 8u);   // ~1s of wall clock per 8 ticks
+        if ((t & 7) == 0) {                          // ~once/sim-second: record events to the diary
+            Event ev[128];
+            int n = g_sim.event_bus.drain(ev, 128);
+            if (n > 0) g_sim.coordinator._journal_from_bus_events(ev, n, g_sim.tick_count);
+        }
+        if ((t & 2047) == 0 && emscripten_get_now() - t0 > BUDGET_MS) { t++; break; }
+    }
+    g_tod.unix_time = now_unix;                      // land exactly at now regardless of how far we got
+    Event ev[128];
+    while (g_sim.event_bus.drain(ev, 128) > 0) {}    // drop leftover display-bus animations
+    accumulate_events();                             // catch-up hatches → accumulator → pushed to /events
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -177,8 +272,11 @@ void host_step(double dt_ms) {
     }
     accumulate_events();   // new diary events -> accumulator (pushed to /events in JS)
     g_renderer.draw(chamber(), (float)(g_accum_ms / TICK_MS));
-    hud_draw(g_gfx, chamber());     // same HUD strip the physical module shows
-    hud_draw_version(g_gfx);
+    draw_selection_overlay();       // boop name/activity pill (main.cpp draws this on HW)
+    if (!chamber().incubation_mode) {
+        hud_draw(g_gfx, chamber());     // same HUD strip the physical module shows
+        hud_draw_version(g_gfx);
+    }                                   // incubation: the app draws its own slim chrome (time/weather/day)
 }
 
 EMSCRIPTEN_KEEPALIVE uintptr_t host_fb() { return (uintptr_t)g_gfx->getFramebuffer(); }
@@ -210,7 +308,10 @@ void host_tap(int tx, int ty) {
         if (c.needs[NEED_BOREDOM] < 0.0f) c.needs[NEED_BOREDOM] = 0.0f;
         c.afterglow_ticks = Cfg::AFTERGLOW_TICKS;
         if (Cfg::NEEDS_ACTIVE_MASK & (1 << NEED_SOCIAL)) {
-            c.needs[NEED_SOCIAL] -= Cfg::SOCIAL_BOOP_RELIEF;
+            // A lone princess's boop gives less company than a colony boop (she's
+            // always alone, so loneliness should stay a live, tendable need).
+            c.needs[NEED_SOCIAL] -= ch.incubation_mode ? Cfg::PRINCESS_SOCIAL_BOOP_RELIEF
+                                                        : Cfg::SOCIAL_BOOP_RELIEF;
             if (c.needs[NEED_SOCIAL] < 0.0f) c.needs[NEED_SOCIAL] = 0.0f;
         }
         if (c.sleeping) {
@@ -272,5 +373,126 @@ EMSCRIPTEN_KEEPALIVE void host_rename(uint32_t id, const char* name) { g_sim.coo
 EMSCRIPTEN_KEEPALIVE void host_set_tint(int r, int g, int b) {
     g_sim.coordinator.cmd_set_floor_tint(0, (uint8_t)r, (uint8_t)g, (uint8_t)b);
 }
+
+// ---- Gateway incubation / princess (tamagotchi) — the app's single raised conker ----
+// Boot the colony, then convert it to a single-princess incubation chamber: no
+// queen, no founding, one timed egg. incubation_mode makes her queen-like — she
+// never dies, only goes dormant when neglected (see conker.cpp).
+EMSCRIPTEN_KEEPALIVE
+void host_boot_incubation() {
+    host_boot(0);                       // reuse the full setup (gfx/renderer/hud/sim.init)
+    Chamber& ch = chamber();
+    ch.incubation_mode = true;
+    ch.has_queen = false;
+    ch.queen_obj.alive = false;         // a dead/absent queen never lays (Queen::tick early-returns)
+    ch.food_pile_count = 0;
+    // A hand-fed pet has no colony food economy — keep the colony "store" full so
+    // food_pressure() reads ~0 (never famine). Otherwise a lone conker with an
+    // empty store reads as PERMANENT FAMINE, which suppresses sleep and trips
+    // cannibalism/hustle behaviours meant for a starving colony. Nothing consumes
+    // it in incubation (she eats from keeper piles), so this stays true.
+    if (ch.colony) ch.colony->food_store = 1000.0f;
+    // No queen until coronation — there is ONLY the princess. host_boot founded a
+    // normal colony (which mints a queen name); blank it so nothing reports a
+    // phantom queen. The princess (a Conker) becomes the queen when crowned; at
+    // that point her name is promoted here.
+    g_sim.coordinator.registry.manifest().queen_name[0] = '\0';
+
+    // Exactly ONE princess. host_boot just restored the persisted colony (Case C),
+    // so on a reload she comes back with her age/name/colour/personality intact.
+    // Keep only the first restored conker and mark any accumulated extras DEAD in
+    // the registry so they never restore again (before this guard, every boot added
+    // a fresh egg on top of the restored ones — they piled up, one per reload). If
+    // nothing was restored (fresh install), found her single egg.
+    if (ch.conker_count == 0 && ch.brood_count == 0) {
+        ch.add_brood_with_duration(Cfg::GRID_WIDTH / 2, Cfg::GRID_HEIGHT / 2, Cfg::INCUBATION_EGG_MS);
+    } else {
+        for (int i = 1; i < ch.conker_count; i++)
+            g_sim.coordinator.registry.mark_dead(ch.conkers[i].id, g_tod.unix_time);
+        if (ch.conker_count > 1) ch.conker_count = 1;
+        ch.brood_count = 0;
+    }
+    g_events_len = 0;
+    accumulate_events();
+}
+
+// A keeper feed: DROP a food pile near her — she toddles over and eats it (the
+// eating is what deepens the bond, see conker.cpp). Not insta-nourish.
+EMSCRIPTEN_KEEPALIVE
+void host_feed_princess() {
+    Chamber& ch = chamber();
+    int fx = Cfg::GRID_WIDTH / 2, fy = Cfg::GRID_HEIGHT / 2;
+    if (ch.conker_count > 0) {
+        fx = ch.conkers[0].cell_x() + 2;
+        fy = ch.conkers[0].cell_y();
+        if (fx >= Cfg::GRID_WIDTH - 1) fx = ch.conkers[0].cell_x() - 2;
+    }
+    if (fx < 1) fx = 1;
+    if (fy < 1) fy = 1;
+    if (fx > Cfg::GRID_WIDTH - 2)  fx = Cfg::GRID_WIDTH - 2;
+    if (fy > Cfg::GRID_HEIGHT - 2) fy = Cfg::GRID_HEIGHT - 2;
+    ch.add_food(fx, fy, Cfg::TAP_FEED_AMOUNT);
+}
+
+// Test convenience: fast-forward `seconds` of sim life. fed=1 → an attentive
+// keeper feeds ~hourly (watch her grow/mature); fed=0 → neglect (watch her go
+// dormant). Lets dormancy be exercised in seconds instead of real days.
+EMSCRIPTEN_KEEPALIVE
+void host_warp(double seconds, int fed) {
+    const uint32_t ticks = (uint32_t)(seconds * 8.0);
+    for (uint32_t t = 0; t < ticks; t++) {
+        g_sim.tick(1.0f / 8.0f);
+        g_host_millis += (unsigned long)TICK_MS;
+        if ((t & 7) == 0) {
+            g_tod.unix_time += 1;
+            // Advance the day/night clock with simulated time so a warp actually
+            // cycles day→night (otherwise it stays frozen at the wall clock, and
+            // e.g. a night-owl princess never gets a daytime nap → tiredness pegs).
+            uint32_t hod = (g_tod.unix_time / 3600u) % 24u;
+            g_tod.local_hour   = (uint8_t)hod;
+            g_tod.local_minute = (uint8_t)((g_tod.unix_time / 60u) % 60u);
+            g_tod.day_of_year  = (uint16_t)((g_tod.unix_time / 86400u) % 365u);
+            if (hod >= 7 && hod < 19)       { g_tod.night_factor = 0.0f; g_tod.phase = PHASE_DAY; }
+            else if (hod >= 5 && hod < 7)   { g_tod.night_factor = 1.0f - (hod - 5) / 2.0f; g_tod.phase = PHASE_DAWN; }
+            else if (hod >= 19 && hod < 21) { g_tod.night_factor = (hod - 19) / 2.0f; g_tod.phase = PHASE_DUSK; }
+            else                            { g_tod.night_factor = 1.0f; g_tod.phase = PHASE_NIGHT; }
+            Event ev[64];
+            int n = g_sim.event_bus.drain(ev, 64);
+            if (n > 0) g_sim.coordinator._journal_from_bus_events(ev, n, g_sim.tick_count);
+        }
+        // "cared for": an attentive keeper drops food only when she's peckish
+        // and has nothing to eat — not on a fixed clock (which litters piles).
+        if (fed && (t & 511) == 0) {
+            Chamber& ch2 = chamber();
+            if (ch2.conker_count > 0 && ch2.conkers[0].hunger > 40.0f && ch2.food_pile_count == 0)
+                host_feed_princess();
+        }
+    }
+    Event ev[64];
+    while (g_sim.event_bus.drain(ev, 64) > 0) {}   // drop leftover display anims
+    accumulate_events();
+}
+
+// Princess readouts for the test UI (no conker yet → 0s).
+EMSCRIPTEN_KEEPALIVE int host_pr_maturity() {   // 0..1000 promille of queen-ready
+    Chamber& ch = chamber(); if (!ch.conker_count) return 0;
+    uint32_t l = ch.conkers[0].lived_ms, m = Cfg::PRINCESS_READY_MS;
+    return l >= m ? 1000 : (int)((uint64_t)l * 1000u / m);
+}
+EMSCRIPTEN_KEEPALIVE int host_pr_bond()    { Chamber& ch = chamber(); return ch.conker_count ? (int)(ch.conkers[0].keeper_bond * 100.0f) : 0; }
+EMSCRIPTEN_KEEPALIVE int host_pr_hunger()  { Chamber& ch = chamber(); return ch.conker_count ? (int)ch.conkers[0].hunger : 0; }
+EMSCRIPTEN_KEEPALIVE int host_pr_dormant() { Chamber& ch = chamber(); return ch.conker_count ? (ch.conkers[0].dormant ? 1 : 0) : 0; }
+EMSCRIPTEN_KEEPALIVE int host_pr_hatched() { return chamber().conker_count > 0 ? 1 : 0; }
+// Framebuffer pixel position of the princess — the app camera centres on her.
+EMSCRIPTEN_KEEPALIVE int host_pr_px() { Chamber& ch = chamber(); return ch.conker_count ? (int)(ch.conkers[0].x * Cfg::CELL_SIZE) : g_gfx->width() / 2; }
+EMSCRIPTEN_KEEPALIVE int host_pr_py() { Chamber& ch = chamber(); return ch.conker_count ? (int)(ch.conkers[0].y * Cfg::CELL_SIZE) : g_gfx->height() / 2; }
+EMSCRIPTEN_KEEPALIVE uint32_t host_founded_unix() { return g_sim.coordinator.registry.manifest().founded_unix; }
+EMSCRIPTEN_KEEPALIVE int host_pr_state() { Chamber& ch = chamber(); return ch.conker_count ? (int)ch.conkers[0].state : -1; }
+EMSCRIPTEN_KEEPALIVE int host_pr_foodpiles() { return chamber().food_pile_count; }
+EMSCRIPTEN_KEEPALIVE int host_pr_sleeping() { Chamber& ch = chamber(); return ch.conker_count ? (ch.conkers[0].sleeping?1:0) : 0; }
+// Live needs (0..100), all active per NEEDS_ACTIVE_MASK — the app shows them as bars.
+EMSCRIPTEN_KEEPALIVE int host_pr_boredom() { Chamber& ch = chamber(); return ch.conker_count ? (int)(ch.conkers[0].needs[NEED_BOREDOM]*100.0f) : 0; }
+EMSCRIPTEN_KEEPALIVE int host_pr_social()  { Chamber& ch = chamber(); return ch.conker_count ? (int)(ch.conkers[0].needs[NEED_SOCIAL]*100.0f) : 0; }
+EMSCRIPTEN_KEEPALIVE int host_pr_rest()    { Chamber& ch = chamber(); return ch.conker_count ? (int)(ch.conkers[0].needs[NEED_REST]*100.0f) : 0; }
 
 }  // extern "C"

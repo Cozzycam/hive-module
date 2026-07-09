@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Hive — Incubation test</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#0e0c0a; color:#eee; font:14px/1.4 system-ui, sans-serif;
+         display:flex; flex-direction:column; align-items:center; gap:12px; padding:14px; }
+  h1 { font-size:14px; margin:0; font-weight:600; color:#e8d9b5; opacity:.7; }
+  .device { width:300px; max-width:92vw; background:#1b1712; border-radius:22px; padding:10px;
+            box-shadow:0 10px 40px #000a, inset 0 0 0 1px #ffffff10; }
+  .chrome { display:flex; justify-content:space-between; align-items:center; padding:4px 8px 8px;
+            font-size:12px; color:#c9b892; letter-spacing:.02em; }
+  .chrome .wx { color:#a9c0d0; }
+  .screen { width:100%; aspect-ratio:3/4; border-radius:14px; overflow:hidden; background:#000; position:relative; }
+  canvas { width:100%; height:100%; image-rendering:pixelated; display:block; cursor:pointer; }
+  .status { text-align:center; font-size:12.5px; color:#c9b892; min-height:1.2em; padding:0 6px; }
+  .status.dormant { color:#8fb0d8; }
+  .stats { width:300px; max-width:92vw; display:grid; gap:7px; }
+  .row { display:grid; grid-template-columns:76px 1fr 42px; align-items:center; gap:8px; }
+  .row label { color:#a99; font-size:12px; }
+  .bar { height:11px; border-radius:6px; background:#241f1a; overflow:hidden; }
+  .bar > i { display:block; height:100%; width:0; border-radius:6px; transition:width .25s ease; }
+  .bar.mat  > i { background:linear-gradient(90deg,#6a8f3c,#a7d05a); }
+  .bar.bond > i { background:linear-gradient(90deg,#c0568f,#e88ab5); }
+  .bar.hun  > i { background:linear-gradient(90deg,#4a8f6a,#d0b05a); }
+  .bar.need > i { background:linear-gradient(90deg,#6a5a8f,#b09ad0); }   /* needs: higher = wants attention */
+  .num { text-align:right; font-variant-numeric:tabular-nums; color:#ddd; font-size:12px; }
+  .btns { display:flex; flex-wrap:wrap; gap:7px; justify-content:center; max-width:320px; }
+  button { background:#241f1a; color:#eee; border:1px solid #443c33; border-radius:8px;
+           padding:8px 11px; font-size:12.5px; cursor:pointer; }
+  button:hover { background:#332c24; }
+  button.primary { background:#5a7d3c; border-color:#6a8f3c; }
+  button.warn { background:#7a4a2a; border-color:#8f5a33; }
+  .hint { color:#776; font-size:11.5px; text-align:center; max-width:300px; }
+</style>
+</head>
+<body>
+<h1>🥚 Hive — Incubation test</h1>
+
+<div class="device">
+  <div class="chrome"><span id="clock">–</span><span id="day">Day 1</span><span class="wx" id="wx">…</span></div>
+  <div class="screen"><canvas id="c" width="150" height="200"></canvas></div>
+</div>
+<div class="status" id="status">loading engine…</div>
+
+<div class="stats">
+  <div class="row"><label>Maturity</label><div class="bar mat"><i id="matBar"></i></div><span class="num" id="matNum">0%</span></div>
+  <div class="row"><label>Keeper bond</label><div class="bar bond"><i id="bondBar"></i></div><span class="num" id="bondNum">0%</span></div>
+  <div class="row"><label>Hunger</label><div class="bar hun"><i id="hunBar"></i></div><span class="num" id="hunNum">0</span></div>
+  <div class="row"><label>Boredom</label><div class="bar need"><i id="borBar"></i></div><span class="num" id="borNum">0</span></div>
+  <div class="row"><label>Loneliness</label><div class="bar need"><i id="lonBar"></i></div><span class="num" id="lonNum">0</span></div>
+  <div class="row"><label>Tiredness</label><div class="bar need"><i id="tirBar"></i></div><span class="num" id="tirNum">0</span></div>
+</div>
+
+<div class="btns">
+  <button class="primary" id="feed">🍎 Drop food</button>
+  <button id="w1">⏩ +1h (cared for)</button>
+  <button id="w6">⏩ +6h (cared for)</button>
+  <button class="warn" id="n2">😴 Neglect 2d</button>
+  <button class="warn" id="n5">😴 Neglect 5d</button>
+  <button id="reset">↺ New egg</button>
+</div>
+<div class="hint">Tap the glass to drop food where you tap — she toddles over and eats it, and being
+hand-fed is what deepens her bond. Tap her directly to boop. Warp buttons fast-forward sim time.</div>
+
+<script src="./hive.js?v=13"></script>
+<script>
+(async () => {
+  const $ = id => document.getElementById(id);
+  const status = $('status');
+  const setStatus = (s, d) => { status.textContent = s; status.classList.toggle('dormant', !!d); };
+
+  let M;
+  try { M = await createHiveModule({ locateFile: p => './' + p + '?v=13' }); }
+  catch (e) { setStatus('failed to load engine: ' + e); return; }
+  const cw = (n, r, a) => M.cwrap(n, r, a);
+  const fns = {
+    bootInc: cw('host_boot_incubation', null, []),
+    setNow:  cw('host_set_now', null, ['number']),
+    setClock:cw('host_set_clock', null, ['number','number','number','number','number']),
+    setWx:   cw('host_set_weather', null, ['number','number']),
+    step:    cw('host_step', null, ['number']),
+    fb: cw('host_fb','number',[]), w: cw('host_w','number',[]), h: cw('host_h','number',[]),
+    tap:     cw('host_tap', null, ['number','number']),
+    feed:    cw('host_feed_princess', null, []),
+    warp:    cw('host_warp', null, ['number','number']),
+    mat: cw('host_pr_maturity','number',[]), bond: cw('host_pr_bond','number',[]),
+    hunger: cw('host_pr_hunger','number',[]), dormant: cw('host_pr_dormant','number',[]),
+    hatched: cw('host_pr_hatched','number',[]),
+    px: cw('host_pr_px','number',[]), py: cw('host_pr_py','number',[]),
+    founded: cw('host_founded_unix','number',[]),
+    conkers: cw('host_conkers','number',[]),
+    boredom: cw('host_pr_boredom','number',[]), social: cw('host_pr_social','number',[]), rest: cw('host_pr_rest','number',[]),
+    seed: cw('host_seed', null, ['number']),
+  };
+  window.__H = fns; window.__M = M;   // debug handle
+
+  const FBW = 480, FBH = 320;
+  const CROP_W = 174, CROP_H = 232;                 // portrait window into the framebuffer (zoom; larger = zoomed out)
+  const fbCanvas = document.createElement('canvas'); fbCanvas.width = FBW; fbCanvas.height = FBH;
+  const fbCtx = fbCanvas.getContext('2d', { alpha:false });
+  const fbImg = fbCtx.createImageData(FBW, FBH);
+  const c = $('c'); c.width = CROP_W; c.height = CROP_H;
+  const ctx = c.getContext('2d', { alpha:false }); ctx.imageSmoothingEnabled = false;
+  let camX = FBW/2 - CROP_W/2, camY = FBH/2 - CROP_H/2, last = performance.now(), booted = false;
+
+  const clampC = (v, max) => v < 0 ? 0 : (v > max ? max : v);
+
+  function applyClock() {
+    const d = new Date(), h = d.getHours() + d.getMinutes()/60;
+    let nf, phase;
+    if (h>=7&&h<19){nf=0;phase=2;} else if(h>=5&&h<7){nf=1-(h-5)/2;phase=1;}
+    else if(h>=19&&h<21){nf=(h-19)/2;phase=3;} else {nf=1;phase=0;}
+    const soy = new Date(d.getFullYear(),0,0), doy = Math.floor((d - soy)/86400000);
+    fns.setClock(d.getHours(), d.getMinutes(), doy, nf, phase);
+    $('clock').textContent = d.toTimeString().slice(0,5);
+  }
+
+  const WLABEL = ['clear','cloudy','overcast','fog','drizzle','rain','heavy rain','snow','storm'];
+  function wmo(code){ if(code===0)return 0; if(code===1||code===2)return 1; if(code===3)return 2;
+    if(code===45||code===48)return 3; if(code>=51&&code<=57)return 4; if(code===65||code===82)return 6;
+    if((code>=61&&code<=64)||code===80||code===81)return 5; if((code>=71&&code<=77)||code===85||code===86)return 7;
+    if(code>=95)return 8; return 1; }
+  async function fetchWx() {
+    try {
+      const r = await fetch('https://api.open-meteo.com/v1/forecast?latitude=51.5&longitude=-0.13&current=weather_code,temperature_2m');
+      const j = await r.json();
+      const cond = wmo(j?.current?.weather_code ?? 0), temp = j?.current?.temperature_2m ?? 15;
+      fns.setWx(cond, temp);
+      $('wx').textContent = WLABEL[cond] + ' ' + Math.round(temp) + '°';
+    } catch { $('wx').textContent = 'clear'; }
+  }
+
+  function boot() {
+    // Each princess is seeded — from ?seed= (testing), else a per-egg seed kept
+    // for this page (so reload = same princess), else a fresh random one. In the
+    // real app this seed comes from the install's colony_id (like the phone module).
+    const p = new URLSearchParams(location.search).get('seed');
+    let s = p != null ? (parseInt(p) >>> 0) : Number(sessionStorage.getItem('hive_seed') || 0);
+    if (!s) { s = (Math.floor(Math.random() * 4294967295)) >>> 0; sessionStorage.setItem('hive_seed', String(s)); }
+    fns.seed(s);                                     // MUST precede bootInc — sets name/size/colour/personality
+    fns.setNow(Date.now()/1000); applyClock(); fns.bootInc();
+    camX = FBW/2 - CROP_W/2; camY = FBH/2 - CROP_H/2; booted = true;
+  }
+  boot(); fetchWx(); setInterval(fetchWx, 15*60*1000);
+
+  c.addEventListener('click', (e) => {
+    if (!booted) return;
+    const r = c.getBoundingClientRect();
+    const fx = camX + ((e.clientX - r.left) / r.width)  * CROP_W;   // display -> framebuffer
+    const fy = camY + ((e.clientY - r.top)  / r.height) * CROP_H;
+    fns.tap(Math.round(fx), Math.round(fy));                        // drop food where tapped / boop her
+  });
+  $('feed').addEventListener('click', () => booted && fns.feed());
+  $('w1').addEventListener('click', () => fns.warp(3600, 1));
+  $('w6').addEventListener('click', () => fns.warp(6*3600, 1));
+  $('n2').addEventListener('click', () => fns.warp(2*86400, 0));
+  $('n5').addEventListener('click', () => fns.warp(5*86400, 0));
+  $('reset').addEventListener('click', () => {
+    // A fresh princess needs a clean WASM instance (re-init in place keeps stale
+    // registry state) — mint a new seed and reload, exactly like the real app.
+    sessionStorage.setItem('hive_seed', String((Math.floor(Math.random()*4294967295))>>>0));
+    location.href = location.pathname;   // drop any ?seed= and reload
+  });
+
+  function updateStats() {
+    const hatched = fns.hatched(), dormant = fns.dormant();
+    const mat = fns.mat()/10, bond = fns.bond(), hun = fns.hunger();
+    $('matBar').style.width = mat+'%';  $('matNum').textContent = Math.round(mat)+'%';
+    $('bondBar').style.width = bond+'%'; $('bondNum').textContent = bond+'%';
+    $('hunBar').style.width = hun+'%';   $('hunNum').textContent = hun;
+    const bor = fns.boredom(), lon = fns.social(), tir = fns.rest();
+    $('borBar').style.width = bor+'%'; $('borNum').textContent = bor;
+    $('lonBar').style.width = lon+'%'; $('lonNum').textContent = lon;
+    $('tirBar').style.width = tir+'%'; $('tirNum').textContent = tir;
+    const founded = fns.founded();
+    if (founded > 0) $('day').textContent = 'Day ' + (Math.floor((Date.now()/1000 - founded)/86400) + 1);
+    if (!hatched) setStatus('🥚 incubating… (hit “+1h” to hurry her along)');
+    else if (dormant) setStatus('😴 dormant — she curled up. Drop food to rouse her.', true);
+    else if (mat >= 100) setStatus('👑 fully grown — ready to bloom (needs a module to be crowned)');
+    else setStatus('🐛 growing — keep her fed and she’ll mature');
+  }
+
+  function loop(now) {
+    if (booted) {
+      const dt = now - last; last = now;
+      fns.setNow(Date.now()/1000); applyClock(); fns.step(dt);
+      const p = fns.fb(), src = M.HEAPU16.subarray(p>>1, (p>>1) + FBW*FBH), d = fbImg.data;
+      for (let i=0,o=0; i<FBW*FBH; i++, o+=4) {
+        const v=src[i], r5=(v>>11)&31, g6=(v>>5)&63, b5=v&31;
+        d[o]=(r5<<3)|(r5>>2); d[o+1]=(g6<<2)|(g6>>4); d[o+2]=(b5<<3)|(b5>>2); d[o+3]=255;
+      }
+      fbCtx.putImageData(fbImg, 0, 0);
+      // camera centres on her — snap on big jumps (warp), smooth-follow in play
+      const tx = clampC(fns.px() - CROP_W/2, FBW-CROP_W), ty = clampC(fns.py() - CROP_H/2, FBH-CROP_H);
+      if (Math.abs(tx-camX) > 50 || Math.abs(ty-camY) > 50) { camX = tx; camY = ty; }
+      else { camX += (tx - camX) * 0.12; camY += (ty - camY) * 0.12; }
+      ctx.drawImage(fbCanvas, camX, camY, CROP_W, CROP_H, 0, 0, CROP_W, CROP_H);
+      updateStats();
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

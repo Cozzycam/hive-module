@@ -32,7 +32,7 @@ FW_SRC=(
 # ArduinoJson is header-only and portable — point at the PlatformIO checkout.
 AJSON_INC="firmware/.pio/libdeps/esp32s3/ArduinoJson/src"
 
-EXPORTS='_host_boot,_host_set_now,_host_set_clock,_host_set_weather,_host_step,_host_fb,_host_w,_host_h,_host_tap,_host_gather,_host_gather_end,_host_selected,_host_conkers,_host_snapshot,_host_snapshot_ptr,_host_events_ptr,_host_events_len,_host_events_clear,_host_grant_wish,_host_feed_colony,_host_care_package,_host_rename,_host_set_tint,_malloc,_free'
+EXPORTS='_host_boot,_host_boot_incubation,_host_feed_princess,_host_warp,_host_pr_maturity,_host_pr_bond,_host_pr_hunger,_host_pr_dormant,_host_pr_hatched,_host_pr_px,_host_pr_py,_host_pr_boredom,_host_pr_social,_host_pr_rest,_host_founded_unix,_host_seed,_host_catchup,_host_set_now,_host_set_clock,_host_set_weather,_host_step,_host_fb,_host_w,_host_h,_host_tap,_host_gather,_host_gather_end,_host_selected,_host_conkers,_host_snapshot,_host_snapshot_ptr,_host_events_ptr,_host_events_len,_host_events_clear,_host_grant_wish,_host_feed_colony,_host_care_package,_host_rename,_host_set_tint,_malloc,_free'
 
 echo "[build_web] compiling -> host/web/hive.js"
 # ArduinoJson auto-enables Arduino String/Stream/Print integration when ARDUINO
@@ -47,8 +47,10 @@ emcc \
   -sMODULARIZE=1 -sEXPORT_NAME=createHiveModule \
   -sENVIRONMENT=web \
   -sEXPORTED_FUNCTIONS="$EXPORTS" \
-  -sEXPORTED_RUNTIME_METHODS=cwrap,HEAPU8,HEAPU16,UTF8ToString \
-  -sALLOW_MEMORY_GROWTH=1 \
+  -sEXPORTED_RUNTIME_METHODS=cwrap,HEAPU8,HEAPU16,UTF8ToString,FS \
+  -sINITIAL_MEMORY=67108864 \
+  -sFORCE_FILESYSTEM=1 \
+  -lidbfs.js \
   -o host/web/hive.js
 
 echo "[build_web] done. Serve host/web/ over HTTP and open index.html"

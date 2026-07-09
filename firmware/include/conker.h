@@ -126,6 +126,11 @@ struct Conker {
     uint32_t lived_ms       = 0;           // cumulative sim-running time
     bool     alive          = true;
 
+    // Gateway incubation / princess (tamagotchi) — only meaningful when the
+    // chamber has incubation_mode = true. She never dies; neglect suspends her.
+    bool     dormant        = false;       // tardigrade sleep (neglected) — suspended, not dead
+    float    keeper_bond    = 0.0f;        // closeness to the keeper (0..1); grows w/ care, cools while dormant
+
     Role     role           = ROLE_CONKER;
     uint8_t  move_ticks;                   // kept for reference
     uint8_t  sense_radius;

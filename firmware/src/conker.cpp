@@ -98,6 +98,24 @@ void Conker::init(int8_t px, int8_t py, Role c, bool pioneer) {
 void Conker::tick(Chamber& ch, float dt) {
     if (!alive) return;
 
+    // Incubation/princess mode (Gateway tamagotchi): a lone raised conker is
+    // queen-like — she never dies, only goes DORMANT when neglected. While
+    // dormant she is suspended (no behaviour), losing only maturation progress
+    // + keeper-bond until you resume care (a keeper feed drops her hunger and
+    // rouses her). Inert on hardware / normal colonies (incubation_mode = false).
+    if (ch.incubation_mode && dormant) {
+        if (keeper_bond > 0.0f) {
+            keeper_bond -= Cfg::KEEPER_BOND_DECAY_DORMANT * dt;
+            if (keeper_bond < 0.0f) keeper_bond = 0.0f;
+        }
+        uint32_t erode = static_cast<uint32_t>(Cfg::MATURATION_DECAY_MS_PER_SEC * dt);
+        lived_ms = (lived_ms > erode) ? lived_ms - erode : 0;
+        // A keeper dropping food nearby rouses her — she stirs, then toddles over
+        // to eat it (she can't forage while suspended, so food presence is the wake).
+        if (ch.food_pile_count > 0) { dormant = false; if (hunger > Cfg::DORMANT_WAKE_HUNGER) hunger = Cfg::DORMANT_WAKE_HUNGER; }
+        return;
+    }
+
     // Gather override: rush toward finger in a ring, lean when close
     if (ch.gather_active) {
         lived_ms += static_cast<uint32_t>(dt * 1000.0f);
@@ -154,7 +172,12 @@ void Conker::tick(Chamber& ch, float dt) {
     // Accumulate lived time (only advances while sim is running)
     lived_ms += static_cast<uint32_t>(dt * 1000.0f);
 
-    if (lived_ms >= lifespan_ms) {
+    // Princess (incubation mode): matures to "queen-ready" then holds, and
+    // never ages out — she's queen-like, awaiting coronation.
+    if (ch.incubation_mode && lived_ms > Cfg::PRINCESS_READY_MS)
+        lived_ms = Cfg::PRINCESS_READY_MS;
+
+    if (lived_ms >= lifespan_ms && !ch.incubation_mode) {
         alive = false;
         if (ch.colony->worker_census > 0) ch.colony->worker_census--;
         extern uint16_t g_deaths_old_age;
@@ -171,6 +194,13 @@ void Conker::tick(Chamber& ch, float dt) {
     float hardiness_scale = 1.2f - 0.4f * personality[PERS_HARDINESS];
     hunger += Cfg::WORKER_HUNGER_PER_DAY / Cfg::SECS_PER_DAY * dt * hardiness_scale;
     if (hunger >= Cfg::HUNGER_STARVE) {
+        // Princess (incubation mode): neglect suspends her — she does not starve
+        // to death. Park hunger just below the threshold and go dormant.
+        if (ch.incubation_mode) {
+            dormant = true;
+            hunger = Cfg::DORMANT_HUNGER_PARK;
+            return;
+        }
         alive = false;
         if (ch.colony->worker_census > 0) ch.colony->worker_census--;
         extern uint16_t g_deaths_starved;
@@ -229,7 +259,8 @@ void Conker::tick(Chamber& ch, float dt) {
     // Return-home timer — crisis overrides animation. The posted gardener is
     // exempt: being away IS the job; her needs bring her home instead (v189).
     if (ticks_away >= Cfg::RETURN_HOME_TICKS && state != STATE_TO_HOME
-            && !(ch.is_garden && ch.posted_gardener == id)) {
+            && !(ch.is_garden && ch.posted_gardener == id)
+            && !ch.incubation_mode) {   // a lone princess has no home to be marched back to
         state = STATE_TO_HOME;
         has_target = false;
         has_target_cell = false;
@@ -515,6 +546,20 @@ void Conker::_pick_task(Chamber& ch) {
         return;
     }
 
+    // Incubation/princess (Gateway tamagotchi): a lone raised conker with no
+    // queen or food store. When peckish she eats directly from the food piles
+    // the keeper drops (STATE_EATING routes to the nearest pile in _do_eating);
+    // otherwise she potters/plays via the normal idle arbiter below. She skips
+    // the no-queen "go home" sweep (there is no home to go to).
+    if (ch.incubation_mode) {
+        if (hunger > Cfg::PRINCESS_EAT_FLOOR && ch.food_pile_count > 0) {
+            state = STATE_EATING;
+            has_target = false;
+            has_target_cell = false;
+            return;
+        }
+    }
+
     // The garden post: a green thumb on the garden module holds (or takes)
     // the post instead of being swept home by the no-queen rule below. Their
     // own needs still outrank the job — a posted gardener too hungry to work
@@ -540,7 +585,7 @@ void Conker::_pick_task(Chamber& ch) {
         }
     }
 
-    if (!posted_here && !ch.has_queen) {
+    if (!posted_here && !ch.has_queen && !ch.incubation_mode) {
         state = STATE_TO_HOME;
         has_target = false;
         has_target_cell = false;
@@ -744,7 +789,11 @@ void Conker::_pick_task(Chamber& ch) {
     bool forage_hours = (g_tod.phase != PHASE_NIGHT)
                      || pressure >= Cfg::NIGHT_FORAGE_MIN_PRESSURE;
 
-    if (forage_hours && col->gatherer_count < max_foragers) {
+    // Incubation/princess: no colony to forage for — she never becomes a
+    // forager (that loop, TO_FOOD→TO_HOME, would trap her out of eating/idling).
+    // She eats from keeper piles when hungry (handled above) and potters/plays
+    // otherwise (falls through to idle below).
+    if (forage_hours && col->gatherer_count < max_foragers && !ch.incubation_mode) {
         // Go gather
         state = STATE_TO_FOOD;
         has_target = false;
@@ -1053,6 +1102,39 @@ void Conker::_do_tend_queen(Chamber& ch) {
 }
 
 void Conker::_do_eating(Chamber& ch) {
+    // Incubation/princess: no queen or store — she walks to the nearest food
+    // pile the keeper dropped and eats from it directly. Eating the food you
+    // gave her is what deepens the keeper-bond (not raw taps).
+    if (ch.incubation_mode) {
+        if (ch.food_pile_count == 0) {
+            state = STATE_IDLE; has_target = false; has_target_cell = false;
+            return;
+        }
+        int best = -1, bestd = 1 << 30;
+        for (int i = 0; i < ch.food_pile_count; i++) {
+            int dx = ch.food_piles[i].x - cell_x(), dy = ch.food_piles[i].y - cell_y();
+            int d = dx * dx + dy * dy;
+            if (d < bestd) { bestd = d; best = i; }
+        }
+        int8_t fx = ch.food_piles[best].x, fy = ch.food_piles[best].y;
+        if (abs(fx - cell_x()) + abs(fy - cell_y()) <= 1) {
+            ch.take_food(fx, fy, Cfg::WORKER_MEAL_COST * 2.0f);   // a bite from the pile
+            hunger = 0.0f;
+            speed = base_speed();
+            keeper_bond += Cfg::KEEPER_BOND_PER_FEED;             // fed by hand → closer to you
+            if (keeper_bond > 1.0f) keeper_bond = 1.0f;
+            anim_type = LG_ANIM_GROOMING;
+            anim_remaining_ticks = Cfg::GREETING_DURATION_TICKS;
+            float qdx = fx - x, qdy = fy - y;
+            if (fabsf(qdx) >= fabsf(qdy)) { anim_lean_dx = (qdx > 0) ? 1 : -1; anim_lean_dy = 0; }
+            else { anim_lean_dx = 0; anim_lean_dy = (qdy > 0) ? 1 : -1; }
+            has_target = false; has_target_cell = false;
+            _pick_task(ch);
+            return;
+        }
+        _step_toward_cell(fx, fy, ch);
+        return;
+    }
     if (!ch.has_queen) {
         state = STATE_IDLE; has_target = false; has_target_cell = false;
         return;

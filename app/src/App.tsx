@@ -10,6 +10,8 @@ import { Chambers } from './screens/Chambers';
 import { Diary } from './screens/Diary';
 import { Feedback } from './screens/Feedback';
 import Module from './screens/Module';
+import { Her } from './screens/Her';
+import { About } from './screens/About';
 import { localModule, getIdentity } from './localModule';
 import { Empty } from './screens/Empty';
 import { Settings, notificationManager } from './screens/Settings';
@@ -22,7 +24,12 @@ import { HIVE } from './theme/palette';
 import { SIZES } from './theme/fonts';
 import type { ColonyEvent, DataSource } from './api/types';
 
-type Tab = 'home' | 'module' | 'characters' | 'chambers' | 'diary' | 'feedback';
+type Tab = 'home' | 'module' | 'characters' | 'chambers' | 'diary' | 'feedback' | 'her' | 'about' | 'guide';
+
+// Colony mode (a physical module, or a founded colony): the full app.
+const COLONY_TABS: Tab[] = ['home', 'module', 'characters', 'chambers', 'diary', 'feedback'];
+// Tamagotchi mode (raising a single princess, pre-coronation): a calm, slimmed shell.
+const TAMAGOTCHI_TABS: Tab[] = ['her', 'about', 'diary', 'guide', 'feedback'];
 
 const TAB_LABELS: Record<Tab, string> = {
   home: 'Home',
@@ -31,6 +38,9 @@ const TAB_LABELS: Record<Tab, string> = {
   chambers: 'Chambers',
   diary: 'Diary',
   feedback: 'Feedback',
+  her: 'Nest',
+  about: 'About',
+  guide: 'Guide',
 };
 
 const TAB_ICONS: Record<Tab, string> = {
@@ -40,6 +50,9 @@ const TAB_ICONS: Record<Tab, string> = {
   chambers: '\u{1F9E9}',
   diary: '\u{1F4D6}',
   feedback: '\u{1F4AC}',
+  her: '\u{1FABA}',      // nest with egg — where she's raised
+  about: '\u{1F338}',    // blossom — who she is
+  guide: '\u{1F50D}',    // magnifier — field guide
 };
 
 // localStorage key: unix of the most recent neighbour gift the user has seen.
@@ -381,6 +394,20 @@ export function App() {
     await sendCommand(colonyId, 'ota_update', {});
   }, [colonyId]);
 
+  // Tamagotchi mode: this install's OWN colony while she's still a single raised
+  // princess (no queen yet). A physical module, or a colony she's founded, is the
+  // full "colony mode" app. She runs in-process (localModule), so treat the phone's
+  // own colony as a tamagotchi even before the first VPS snapshot lands — queen_name
+  // is only ever set once she's actually been crowned.
+  const ownColony = colonyId === getIdentity().colony_id;
+  const isTamagotchi = ownColony && (!colonyState.snapshot || !colonyState.snapshot.queen_name);
+
+  // Keep the active tab valid for the current mode (default to Her in tamagotchi).
+  useEffect(() => {
+    if (isTamagotchi && !TAMAGOTCHI_TABS.includes(tab)) setTab('her');
+    else if (!isTamagotchi && !COLONY_TABS.includes(tab)) setTab('home');
+  }, [isTamagotchi, tab]);
+
   const discoveryText = (() => {
     if (!latestDiscovery) return '';
     const critter = String((latestDiscovery.data as Record<string, unknown>)?.critter || 'critter');
@@ -394,8 +421,9 @@ export function App() {
     return <Empty onConnected={handleConnect} />;
   }
 
-  // Loading
-  if (colonyState.loading && !colonyState.snapshot) {
+  // Loading — but the phone's OWN princess runs in-process; show her straight
+  // away rather than waiting on a VPS round-trip.
+  if (colonyState.loading && !colonyState.snapshot && !ownColony) {
     return (
       <div style={{
         background: HIVE.cream, minHeight: '100vh',
@@ -407,8 +435,9 @@ export function App() {
     );
   }
 
-  // No snapshot available (offline, never loaded)
-  if (!colonyState.snapshot && !colonyState.loading) {
+  // No snapshot available (offline, never loaded) — again, the own princess
+  // doesn't need one (the other tabs fill in as the VPS syncs).
+  if (!colonyState.snapshot && !colonyState.loading && !ownColony) {
     return <Empty onConnected={handleConnect} />;
   }
 
@@ -459,6 +488,10 @@ export function App() {
                     {tab === 'chambers' && <Chambers />}
                     {tab === 'diary' && <Diary />}
                     {tab === 'feedback' && <Feedback />}
+                    {/* Tamagotchi mode */}
+                    {tab === 'her' && <Her />}
+                    {tab === 'about' && <About />}
+                    {tab === 'guide' && <FieldGuide onBack={() => setTab('her')} />}
                   </>
                 )}
               </div>
@@ -599,7 +632,7 @@ export function App() {
                   paddingBottom: 'env(safe-area-inset-bottom, 0)',
                   flexShrink: 0,
                 }}>
-                  {(Object.keys(TAB_LABELS) as Tab[])
+                  {(isTamagotchi ? TAMAGOTCHI_TABS : COLONY_TABS)
                     // The Module tab is only for a colony running ON this phone;
                     // a physical module already exists, so hide it there.
                     .filter(t => t !== 'module' || colonyId === getIdentity().colony_id)
