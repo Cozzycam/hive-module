@@ -6,7 +6,8 @@
  * earns them (they come from her event history).
  */
 import { useEffect, useState } from 'react';
-import { localModule, type PrincessStats } from '../localModule';
+import { localModule, resetColonyIdentity, AUTOSTART_KEY, WIPE_KEY, LAST_ACTIVE_KEY, type PrincessStats } from '../localModule';
+import { clearConnection } from '../api/client';
 import { PersonalityPetals } from '../components/PersonalityPetals';
 import type { Personality } from '../api/types';
 import { HIVE } from '../theme/palette';
@@ -47,10 +48,44 @@ export function About() {
     if (next && /^[A-Za-z]{1,15}$/.test(next.trim())) localModule.renameConker(guy.id, next.trim());
   };
 
+  // Start over with a fresh egg. Mint a new identity (a new colony_id reseeds the
+  // sim, so a genuinely different Conker), flag the persisted colony for a wipe and
+  // the next load to auto-hatch, drop the old connection, and reload. Same sequence
+  // as Settings' "Start a fresh colony" — the only reset path tamagotchi mode has.
+  const hatchNew = () => {
+    const who = guy?.name ? guy.name : 'this little one';
+    if (!window.confirm(
+      `Hatch a new Conker? ${who} — and everything you’ve raised together — will be gone for good.`)) return;
+    resetColonyIdentity();
+    localStorage.setItem(AUTOSTART_KEY, '1');   // Empty.tsx auto-hatches the new egg on load
+    localStorage.setItem(WIPE_KEY, '1');        // clear the persisted colony so it hatches fresh, not restores
+    localStorage.removeItem(LAST_ACTIVE_KEY);   // no catch-up from the old egg's clock
+    clearConnection();
+    window.location.reload();
+  };
+
+  const hatchNewSection = (
+    <div style={{ marginTop: 24, paddingTop: 16, borderTop: `1px solid ${HIVE.parchment}`, textAlign: 'center' }}>
+      <button
+        onClick={hatchNew}
+        style={{
+          background: 'none', border: `1px solid ${HIVE.sand}`, borderRadius: 20,
+          padding: '8px 18px', color: HIVE.dimText, fontSize: SIZES.xs, cursor: 'pointer',
+        }}
+      >
+        {'\u{1F95A}'} Hatch a new Conker
+      </button>
+      <div style={{ fontSize: SIZES.xs, color: HIVE.dimText, marginTop: 6, opacity: 0.85 }}>
+        Start over with a fresh egg — this one won’t come back.
+      </div>
+    </div>
+  );
+
   if (!guy) {
     return (
       <div style={{ padding: '32px 16px', textAlign: 'center', color: HIVE.dimText, fontSize: SIZES.base }}>
         {stats?.hatched === false ? 'She’s still an egg — she’ll be here once she hatches. 🥚' : 'Warming up…'}
+        {hatchNewSection}
       </div>
     );
   }
@@ -92,6 +127,8 @@ export function About() {
       <div style={{ fontSize: SIZES.xs, color: HIVE.dimText, textAlign: 'center', marginTop: 4 }}>
         Titles &amp; keepsakes appear here as she earns them.
       </div>
+
+      {hatchNewSection}
     </div>
   );
 }
