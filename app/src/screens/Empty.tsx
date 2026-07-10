@@ -25,13 +25,14 @@ export function Empty({ onConnected }: EmptyProps) {
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
 
-  // Boot a queen module on THIS phone: run the sim locally, enrol its own
-  // colony, push a first snapshot to the hive, then connect the app to it.
+  // Hatch a Conker of your own on THIS phone: run the sim locally as a
+  // single-princess incubation chamber, enrol its own colony, push a first
+  // snapshot to the hive, then connect the app to it.
   async function runLocalModule() {
     setStarting(true); setErrMsg(null); setStatusMsg('loading engine');
     try {
       await localModule.start(setStatusMsg);
-      setStatusMsg('founding');
+      setStatusMsg('hatching');
       // Best-effort first push so the colony exists on the VPS — but the princess
       // runs entirely in-process, so a push failure (VPS down / offline / flaky
       // network) must NEVER block connecting to her. pushLoop retries every 30s,
@@ -81,12 +82,12 @@ export function Empty({ onConnected }: EmptyProps) {
       </div>
 
       <h1 style={{ fontSize: SIZES.xl, fontWeight: 700, color: HIVE.ink, margin: '0 0 12px' }}>
-        The colony hasn't begun yet.
+        Your nest is empty.
       </h1>
 
       <p style={{ fontSize: SIZES.base, color: HIVE.dimText, maxWidth: 320, lineHeight: 1.5, marginBottom: 32 }}>
-        This app is a window onto a Hive Module. The colony lives on the modules
-        themselves — connect to a queen module to see your colony here.
+        Hatch a Conker of your very own and raise it right here on your phone —
+        or connect to a physical Hive Module to watch its colony live.
       </p>
 
       <button
@@ -105,7 +106,7 @@ export function Empty({ onConnected }: EmptyProps) {
           opacity: starting ? 0.7 : 1,
         }}
       >
-        {starting ? 'starting your colony…' : 'Run a queen module on this phone'}
+        {starting ? 'hatching…' : '\u{1F95A} Hatch your very own Conker'}
       </button>
 
       {/* Diagnostic surface — shows which step is running, or the error text,
