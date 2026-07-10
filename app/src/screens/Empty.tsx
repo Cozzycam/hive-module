@@ -32,7 +32,12 @@ export function Empty({ onConnected }: EmptyProps) {
     try {
       await localModule.start(setStatusMsg);
       setStatusMsg('founding');
-      await localModule.pushNow();     // ensure the colony exists on the VPS before connecting
+      // Best-effort first push so the colony exists on the VPS — but the princess
+      // runs entirely in-process, so a push failure (VPS down / offline / flaky
+      // network) must NEVER block connecting to her. pushLoop retries every 30s,
+      // and the app already treats an own colony as a tamagotchi before its first
+      // VPS snapshot lands. (Only start() failing is fatal — that's a dead engine.)
+      try { await localModule.pushNow(); } catch (e) { console.warn('[empty] first push deferred', e); }
       setStatusMsg('connecting');
       onConnected(localModule.identity.colony_id);
     } catch (e: any) {
