@@ -489,7 +489,7 @@ export function App() {
                     {tab === 'diary' && <Diary />}
                     {tab === 'feedback' && <Feedback />}
                     {/* Tamagotchi mode */}
-                    {tab === 'her' && <Her />}
+                    {tab === 'her' && <Her onNavigate={handleNavigate} />}
                     {tab === 'about' && <About />}
                     {tab === 'guide' && <FieldGuide onBack={() => setTab('her')} />}
                   </>

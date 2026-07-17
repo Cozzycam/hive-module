@@ -15,7 +15,7 @@ import { SIZES } from '../theme/fonts';
 const FBW = 480, FBH = 320;
 const CROP_W = 174, CROP_H = 232;   // portrait window into the framebuffer (zoom)
 
-export function Her() {
+export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [status, setStatus] = useState<'loading' | 'running' | 'error'>('loading');
   const [stats, setStats] = useState<PrincessStats | null>(null);
@@ -90,7 +90,19 @@ export function Her() {
       <div style={{ width: '100%', maxWidth: 320, display: 'flex', justifyContent: 'space-between',
                     fontSize: SIZES.xs, color: HIVE.dimText, padding: '0 4px' }}>
         <span>{new Date().toTimeString().slice(0, 5)}</span>
-        <span>Day {dayN}</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          Day {dayN}
+          <button
+            onClick={() => onNavigate?.('settings')}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: 16, color: HIVE.dimText, padding: '2px 4px',
+            }}
+            aria-label="Settings"
+          >
+            &#9881;
+          </button>
+        </span>
       </div>
 
       {/* the glass */}

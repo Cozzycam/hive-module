@@ -398,19 +398,32 @@ void host_boot_incubation() {
     // that point her name is promoted here.
     g_sim.coordinator.registry.manifest().queen_name[0] = '\0';
 
-    // Exactly ONE princess. host_boot just restored the persisted colony (Case C),
+    // Exactly ONE princess — hatched (a conker) or still brood (egg/seed), never
+    // both, never extras. host_boot just restored the persisted colony (Case C),
     // so on a reload she comes back with her age/name/colour/personality intact.
-    // Keep only the first restored conker and mark any accumulated extras DEAD in
-    // the registry so they never restore again (before this guard, every boot added
-    // a fresh egg on top of the restored ones — they piled up, one per reload). If
-    // nothing was restored (fresh install), found her single egg.
-    if (ch.conker_count == 0 && ch.brood_count == 0) {
-        ch.add_brood_with_duration(Cfg::GRID_WIDTH / 2, Cfg::GRID_HEIGHT / 2, Cfg::INCUBATION_EGG_MS);
-    } else {
+    // Extra conkers are marked DEAD in the registry and extra brood records are
+    // removed so they never restore again (before this guard, every boot added a
+    // fresh egg on top of the restored ones — they piled up, one per reload).
+    // The still-an-egg case must KEEP the restored brood: an earlier version
+    // zeroed brood_count whenever anything was restored, which deleted the egg
+    // on any mid-incubation reload and left the nest permanently empty (the
+    // registry record survived, so every boot restored-then-wiped it again).
+    if (ch.conker_count > 0) {
+        // Hatched. Only her — drop extra conkers and any leftover brood.
         for (int i = 1; i < ch.conker_count; i++)
             g_sim.coordinator.registry.mark_dead(ch.conkers[i].id, g_tod.unix_time);
-        if (ch.conker_count > 1) ch.conker_count = 1;
+        ch.conker_count = 1;
+        for (int i = 0; i < ch.brood_count; i++)
+            if (ch.brood[i].id != 0) g_sim.coordinator.registry.remove_brood(ch.brood[i].id);
         ch.brood_count = 0;
+    } else if (ch.brood_count > 0) {
+        // Still incubating — keep her egg/seed exactly where it left off.
+        for (int i = 1; i < ch.brood_count; i++)
+            if (ch.brood[i].id != 0) g_sim.coordinator.registry.remove_brood(ch.brood[i].id);
+        ch.brood_count = 1;
+    } else {
+        // Fresh install — found her single egg.
+        ch.add_brood_with_duration(Cfg::GRID_WIDTH / 2, Cfg::GRID_HEIGHT / 2, Cfg::INCUBATION_EGG_MS);
     }
     g_events_len = 0;
     accumulate_events();
