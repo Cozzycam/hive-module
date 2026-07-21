@@ -60,6 +60,10 @@ struct IdentityRecord {
     // friend restores half of the credit and clears it.
     float    grief_social = 0;
     float    grief_play   = 0;
+    // Incubation/princess (Gateway): closeness to the keeper survives reloads —
+    // the PWA reloads constantly, so a RAM-only bond read as "impossible to
+    // build" (feedback #51). Always 0 outside incubation mode.
+    float    keeper_bond  = 0;
     bool     dirty        = false;    // RAM-only: needs flush to disk
 };
 

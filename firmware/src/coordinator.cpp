@@ -2135,6 +2135,7 @@ void Coordinator::_persist_update_positions() {
             rec->last_tiredness  = w.needs[NEED_REST];
             rec->last_loneliness = w.needs[NEED_SOCIAL];
             rec->last_hunger     = w.hunger;
+            rec->keeper_bond     = w.keeper_bond;  // incubation: bond survives reloads
             if (rec->tint_seed == 0 && w.tint_seed != 0)
                 rec->tint_seed = w.tint_seed;
             rec->dirty = true;
@@ -2363,6 +2364,7 @@ void Coordinator::_persist_restore_from_disk() {
         chamber.conkers[idx].needs[NEED_REST]    = r.last_tiredness;
         chamber.conkers[idx].needs[NEED_SOCIAL]  = r.last_loneliness;
         chamber.conkers[idx].hunger              = r.last_hunger;
+        chamber.conkers[idx].keeper_bond         = r.keeper_bond;  // incubation
         chamber.conker_count++;
     }
 

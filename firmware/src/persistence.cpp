@@ -312,6 +312,7 @@ bool ConkerRegistry::_write_record(const IdentityRecord& rec, bool async,
     doc["need_h"]  = rec.last_hunger;
     doc["grief_s"] = rec.grief_social;     // drift restore-credit (grief)
     doc["grief_p"] = rec.grief_play;
+    doc["kb"]      = rec.keeper_bond;      // incubation: keeper-bond survives reloads
 
     char buf[768];   // headroom for the need + grief-credit fields
     size_t len = serializeJson(doc, buf, sizeof(buf));
@@ -423,6 +424,7 @@ bool ConkerRegistry::_load_living_records() {
                         r.last_hunger     = doc["need_h"] | 0.0f;
                         r.grief_social    = doc["grief_s"] | 0.0f;
                         r.grief_play      = doc["grief_p"] | 0.0f;
+                        r.keeper_bond     = doc["kb"] | 0.0f;
                         r.dirty      = false;
 
                         _alive_count++;
@@ -736,6 +738,7 @@ bool ConkerRegistry::revive(uint32_t id) {
     r.last_hunger     = doc["need_h"] | 0.0f;
     r.grief_social    = doc["grief_s"] | 0.0f;
     r.grief_play      = doc["grief_p"] | 0.0f;
+    r.keeper_bond     = doc["kb"] | 0.0f;
     r.dirty      = false;
     _alive_count++;
 

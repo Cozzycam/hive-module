@@ -78,9 +78,12 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
   const ready = maturePct >= 100;
   const dayN = stats?.founded ? Math.floor((Date.now() / 1000 - stats.founded) / 86400) + 1 : 1;
 
+  const hungry = (stats?.hunger ?? 0) > 60;
+
   const statusText =
     !hatched ? '🥚 An egg. Keep it warm — she’ll hatch soon.'
     : dormant ? '😴 She’s curled up asleep. Drop some food to wake her.'
+    : hungry  ? '🍎 She’s hungry — drop some food and she’ll toddle over.'
     : ready   ? '👑 Fully grown, and ready to bloom into a queen.'
     :           '🌱 Growing up. Keep her fed and she’ll thrive.';
 
@@ -126,6 +129,7 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
       <div style={{ width: '100%', maxWidth: 320, display: 'grid', gap: 8 }}>
         <Bar label="Growing up" value={maturePct} color={HIVE.leafGreen} suffix="%" />
         <Bar label="Your bond" value={Math.round(stats?.bond ?? 0)} color="#c0568f" suffix="%" />
+        <Bar label="Hunger"     value={Math.round(stats?.hunger ?? 0)} color="#c9873d" />
         <Bar label="Boredom"    value={Math.round(stats?.boredom ?? 0)} color="#9a86c0" />
         <Bar label="Loneliness" value={Math.round(stats?.social ?? 0)}  color="#9a86c0" />
         <Bar label="Tiredness"  value={Math.round(stats?.rest ?? 0)}    color="#9a86c0" />

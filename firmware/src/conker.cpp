@@ -2072,8 +2072,19 @@ float Conker::_social_desire(Chamber& ch) const {
 // full day. A daytime NAP is a short top-up: up once it's restored to its target,
 // not drained to empty like a night's sleep.
 bool Conker::_should_wake(Chamber& ch) const {
-    if (ch.colony->food_pressure() > Cfg::FAMINE_SLOWDOWN_PRESSURE || hunger > 60.0f)
+    // Incubation/princess: she can only eat food the keeper dropped, so hunger
+    // rouses her ONLY when a pile is actually there to toddle to. Without this
+    // gate an unfed sleeping princess spins wake→(nothing to eat)→sleep every
+    // repoll, so sleep never accrues and tiredness pins at max ("always sleepy",
+    // feedback #51). Neglect = sleep; dropped food = the wake (same rule as the
+    // dormant rouse above in tick()).
+    if (ch.incubation_mode) {
+        if (ch.food_pile_count > 0 && hunger > Cfg::PRINCESS_EAT_FLOOR)
+            return true;
+    } else if (ch.colony->food_pressure() > Cfg::FAMINE_SLOWDOWN_PRESSURE
+               || hunger > 60.0f) {
         return true;
+    }
     if (daytime_nap)
         return needs[NEED_REST] <= nap_wake_target;
     if (g_tod.phase == PHASE_DAY) return true;   // never sleep through the working day
