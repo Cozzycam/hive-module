@@ -167,6 +167,8 @@ class LocalModule {
         selected: cw('host_selected', 'number', []),
         snapshot: cw('host_snapshot', 'number', []),
         snapshotPtr: cw('host_snapshot_ptr', 'number', []),
+        exportPrincess: cw('host_export_princess', 'number', []),
+        exportPrincessPtr: cw('host_export_princess_ptr', 'number', []),
         eventsPtr: cw('host_events_ptr', 'number', []),
         eventsLen: cw('host_events_len', 'number', []),
         eventsClear: cw('host_events_clear', null, []),
@@ -449,6 +451,37 @@ class LocalModule {
     } catch { return null; }
   }
   renameConker(id: number, name: string) { try { this.fns.rename(id >>> 0, name); } catch { /**/ } }
+  // Gateway coronation: serialize the raised princess (name, colour,
+  // personality, traits, bond — her whole identity) for the VPS handoff.
+  exportPrincess(): Record<string, unknown> | null {
+    if (!this.started || !this.fns.exportPrincess) return null;
+    try {
+      const len = this.fns.exportPrincess();
+      if (!len) return null;
+      const bytes = this.M.HEAPU8.slice(this.fns.exportPrincessPtr(), this.fns.exportPrincessPtr() + len);
+      return JSON.parse(new TextDecoder().decode(bytes));
+    } catch { return null; }
+  }
+  // Park her on the VPS under a one-time claim token (HMAC-signed by this
+  // install's colony — the same auth as the snapshot push). Returns the token
+  // the module's summon_queen command will claim, or null on failure.
+  async parkHandoff(): Promise<string | null> {
+    const p = this.exportPrincess();
+    if (!p) return null;
+    p.from_colony = this.identity.colony_id;   // in-process manifest id is blank; stamp like pushNow
+    const body = JSON.stringify(p);
+    const sig = await hmacHex(this.identity.secret, body);
+    const headers: Record<string, string> = { 'Content-Type': 'application/json', 'x-hmac-sha256': sig };
+    if (!this.identity.enrolled) headers['x-enroll-secret'] = this.identity.secret;
+    try {
+      const res = await fetch(`${VPS_BASE}/api/v1/colonies/${this.identity.colony_id}/handoff`, {
+        method: 'POST', headers, body,
+      });
+      if (!res.ok) return null;
+      const j = await res.json();
+      return typeof j.token === 'string' ? j.token : null;
+    } catch { return null; }
+  }
   // Dev-only: fast-forward sim time (fed = an attentive keeper feeds; else neglect).
   warp(seconds: number, fed: boolean) { try { this.fns.warp(seconds, fed ? 1 : 0); } catch { /**/ } }
   princessStats(): PrincessStats | null {

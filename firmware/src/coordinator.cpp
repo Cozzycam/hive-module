@@ -1500,6 +1500,17 @@ void Coordinator::_persist_process_hatches() {
                     }
                     // Initial bond: child → carer at 0.3
                     bonds.set(id, carer_id, 0.3f);
+                } else if (registry.manifest().queen_imported) {
+                    // Gateway coronation: untended hatches (the founding
+                    // cohort) take after an imported queen — the colony
+                    // inherits the character she grew on the phone. Same
+                    // blend as carer inheritance; identity, not power.
+                    for (int d = 0; d < PERS_COUNT; d++) {
+                        float random_part = chamber.conkers[i].personality[d];
+                        chamber.conkers[i].personality[d] =
+                            0.7f * random_part
+                            + 0.3f * registry.manifest().q_pers[d];
+                    }
                 }
 
                 IdentityRecord rec;
@@ -2164,6 +2175,46 @@ void Coordinator::_persist_sync_colony_state(uint32_t tick_num) {
     }
 }
 
+// Gateway coronation: if a summoned queen was staged across the reset reboot
+// (vps_push summon_queen → NVS "handoff"/"queen"), found with HER instead of
+// a random queen — her name, her identity, the colony_id the app is already
+// watching, and her personality as the inheritance source for untended
+// hatches. One-shot: the staged blob is consumed (success or not) so a bad
+// payload can never wedge founding. Returns true when she took the throne.
+static bool _summon_staged_apply(ColonyManifest& m) {
+    Preferences prefs;
+    prefs.begin("handoff", false);
+    String blob = prefs.getString("queen", "");
+    if (blob.length() > 0) prefs.remove("queen");
+    prefs.end();
+    if (blob.length() == 0) return false;
+
+    JsonDocument doc;
+    const char* qname = "";
+    if (deserializeJson(doc, blob.c_str()) == DeserializationError::Ok)
+        qname = doc["name"] | "";
+    if (!qname[0]) {
+        Serial.println("[summon] staged queen unreadable — founding fresh instead");
+        return false;
+    }
+    strlcpy(m.queen_name, qname, sizeof(m.queen_name));
+    const char* keep_id = doc["colony_id"] | "";
+    if (keep_id[0]) strlcpy(m.colony_id, keep_id, sizeof(m.colony_id));
+    m.queen_imported = true;
+    JsonArray pers = doc["personality"];
+    for (int i = 0; i < 8 && i < (int)pers.size(); i++)
+        m.q_pers[i] = pers[i] | 0.5f;
+    m.q_tint      = doc["tint_seed"] | 0;
+    m.q_bond      = doc["keeper_bond"] | 0.0f;
+    m.q_born_unix = doc["born_unix"] | 0;
+    m.q_traits    = doc["traits"] | 0;
+    m.q_catches   = doc["catches"] | 0;
+    strlcpy(m.q_from, doc["from_colony"] | "", sizeof(m.q_from));
+    Serial.printf("[summon] crowned Queen %s — raised on %s, founding her colony\r\n",
+                  m.queen_name, m.q_from[0] ? m.q_from : "an unknown chamber");
+    return true;
+}
+
 void Coordinator::_persist_migrate_live_colony() {
     // Case B: first boot with SD — migrate existing live colony to persistence.
     // Called when SD is available but no manifest exists.
@@ -2173,7 +2224,8 @@ void Coordinator::_persist_migrate_live_colony() {
     m.schema = 1;
     registry.generate_colony_id();
     name_random(m.queen_name, sizeof(m.queen_name));
-    Serial.printf("[persist] the queen is named %s\r\n", m.queen_name);
+    if (!_summon_staged_apply(m))
+        Serial.printf("[persist] the queen is named %s\r\n", m.queen_name);
 
     // Read founding time from HUD's NVS if available
     Preferences prefs;

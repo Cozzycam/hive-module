@@ -11,6 +11,7 @@ import { Diary } from './screens/Diary';
 import { Feedback } from './screens/Feedback';
 import Module from './screens/Module';
 import { Her } from './screens/Her';
+import { Crown } from './screens/Crown';
 import { About } from './screens/About';
 import { localModule, getIdentity } from './localModule';
 import { Empty } from './screens/Empty';
@@ -88,6 +89,7 @@ export function App() {
   const [colonyId, setColonyIdState] = useState<string | null>(getStoredColonyId);
   const [tab, setTab] = useState<Tab>('home');
   const [showSettings, setShowSettings] = useState(false);
+  const [showCrown, setShowCrown] = useState(false);
   const [showFieldGuide, setShowFieldGuide] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
   const [showSaga, setShowSaga] = useState(false);
@@ -221,6 +223,10 @@ export function App() {
       setShowSettings(true);
       return;
     }
+    if (target === 'crown') {
+      setShowCrown(true);
+      return;
+    }
     if (target === 'fieldguide') {
       setNavParams(params || {});
       setShowFieldGuide(true);
@@ -238,6 +244,7 @@ export function App() {
     setTab(target as Tab);
     setNavParams(params || {});
     setShowSettings(false);
+    setShowCrown(false);
     setShowFieldGuide(false);
     setShowGallery(false);
     setShowSaga(false);
@@ -455,7 +462,9 @@ export function App() {
             }}>
               {/* Main content area */}
               <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch' }}>
-                {showSettings ? (
+                {showCrown ? (
+                  <Crown onBack={() => setShowCrown(false)} />
+                ) : showSettings ? (
                   <Settings
                     onBack={() => setShowSettings(false)}
                     onDisconnect={handleDisconnect}
@@ -624,7 +633,7 @@ export function App() {
               )}
 
               {/* Tab bar */}
-              {!showSettings && (
+              {!showSettings && !showCrown && (
                 <nav style={{
                   display: 'flex',
                   borderTop: `1px solid ${HIVE.parchment}`,

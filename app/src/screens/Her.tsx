@@ -173,6 +173,14 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
             When you bring her home to a Hive Module, she’ll be crowned and found a colony of her own —
             same name, same colours, the personality you raised.
           </div>
+          <button
+            onClick={() => onNavigate?.('crown')}
+            style={{ marginTop: 10, padding: '10px 18px', borderRadius: 10, border: 'none',
+                     cursor: 'pointer', background: HIVE.ink, color: HIVE.white,
+                     fontSize: SIZES.sm, fontWeight: 600 }}
+          >
+            👑 Begin her coronation
+          </button>
         </div>
       )}
     </div>

@@ -270,7 +270,7 @@ export async function fetchColonies(): Promise<ColoniesListResponse | null> {
 // Queue a command for the queen (applied on her next VPS poll, ~30s)
 export async function sendCommand(
   colonyId: string,
-  type: 'name_conker' | 'feed_colony' | 'set_module_role' | 'set_floor_tint' | 'gift_care_package' | 'ota_update' | 'set_followed' | 'grant_wish',
+  type: 'name_conker' | 'feed_colony' | 'set_module_role' | 'set_floor_tint' | 'gift_care_package' | 'ota_update' | 'set_followed' | 'grant_wish' | 'summon_queen',
   payload: Record<string, unknown>,
 ): Promise<boolean> {
   // A colony running ON this phone applies commands directly — no VPS round-trip

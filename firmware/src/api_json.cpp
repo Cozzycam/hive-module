@@ -100,6 +100,13 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
     doc["schema"] = 1;
     doc["colony_id"] = coord.registry.manifest().colony_id;
     doc["queen_name"] = coord.registry.manifest().queen_name;
+    // Gateway coronation: a summoned (app-raised) queen carries her origin —
+    // the app uses this to confirm the handoff landed and to open her
+    // pre-coronation Chronicle from the colony she grew up in.
+    if (coord.registry.manifest().queen_imported) {
+        doc["queen_imported"] = true;
+        doc["queen_from"] = coord.registry.manifest().q_from;
+    }
     doc["fw_version"] = FW_VERSION;
     doc["founded_unix"] = coord.registry.manifest().founded_unix;
     doc["now_unix"] = g_tod.unix_time;

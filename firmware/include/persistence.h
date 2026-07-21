@@ -117,6 +117,20 @@ struct ColonyManifest {
     // Module role
     uint8_t  module_role     = 0;     // ModuleRole enum
 
+    // Gateway coronation: a queen summoned from the app (a raised princess).
+    // All-zero on ordinary colonies — set once at founding from the staged
+    // handoff (vps_push summon_queen), then immutable. q_pers is the
+    // inheritance source for untended (founding) hatches, so the colony
+    // takes after the character she grew on the phone.
+    bool     queen_imported  = false;
+    float    q_pers[8]       = {};
+    uint8_t  q_tint          = 0;     // her body tint (queen render tint, future)
+    float    q_bond          = 0;     // keeper-bond at coronation ("beloved" seed)
+    uint32_t q_born_unix     = 0;     // when she hatched on the phone
+    uint32_t q_traits        = 0;     // traits she earned solo
+    uint8_t  q_catches       = 0;     // her critter tally (Bug Hunter history)
+    char     q_from[25]      = {};    // the app colony she grew up in (prehistory)
+
     // Live positions (written with manifest, avoids per-record file writes)
     static constexpr int MAX_POS = 48;   // tracks MAX_CONKERS; JSON load clamps
     struct PosEntry { uint32_t id; float x, y; };

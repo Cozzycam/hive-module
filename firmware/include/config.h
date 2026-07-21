@@ -28,7 +28,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 216;
+constexpr uint32_t FW_VERSION = 217;
 
 namespace Cfg {
 
@@ -181,8 +181,8 @@ constexpr float    PRINCESS_EAT_FLOOR          = 15.0f;                // hunger
 constexpr uint32_t PRINCESS_READY_MS           = 3u * 86400u * 1000u;  // ~3 sim-days attended → queen-ready (maturation cap; no age-out)
 constexpr float    KEEPER_BOND_PER_FEED        = 0.01f;                // each hand-feeding deepens closeness a little — bond builds over ~2 weeks of continued care (cap 1.0)
 constexpr float    PRINCESS_SOCIAL_BOOP_RELIEF = 0.15f;                // a boop is a bit of company, but less than a colony boop (spammable; loneliness climbs back)
-constexpr float    KEEPER_BOND_DECAY_DORMANT   = 0.15f / SECS_PER_DAY; // full bond cools over ~6-7 days dormant (per sim-sec)
-constexpr float    MATURATION_DECAY_MS_PER_SEC = 500.0f;               // maturation slips at ~0.5x realtime while dormant
+constexpr float    KEEPER_BOND_DECAY_DORMANT   = 0.08f / SECS_PER_DAY; // full bond cools over ~2 weeks dormant (per sim-sec)
+constexpr float    MATURATION_DECAY_MS_PER_SEC = 150.0f;               // maturation slips at ~0.15x realtime while dormant — a weekend away costs ~5%, not half her growth (v217 soften; was 500 = 0.5x, a 5-day gap wiped a near-ready princess to zero)
 constexpr float    DORMANT_HUNGER_PARK         = 95.0f;                // hunger parked just below STARVE while dormant
 constexpr float    DORMANT_WAKE_HUNGER         = 60.0f;                // a keeper feed drops hunger below this → she rouses
 

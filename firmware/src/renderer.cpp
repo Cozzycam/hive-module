@@ -1514,9 +1514,15 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
                     case MOOD_HAPPY:    glyph = "\x03"; mc = _rgb565(255, 140, 160); break; // afterglow heart
                     default: break;
                 }
+                // Clear the sprite by half its SCALED height (render_x/y is
+                // the centre) — a fixed offset sat the glyph on top of grown
+                // conkers (feedback #48: "should show higher, not on the
+                // wee guys"). Same sizing idea as the worn-hat offset.
+                float ers = w.render_scale();
+                int e_top = sd.render_y - (int)(ers * 5.0f);   // scaled head top
                 if (glyph) {
                     int ex = sd.render_x + 4;
-                    int ey = sd.render_y - 12;
+                    int ey = e_top - 9;
                     _gfx->setTextSize(1);
                     _gfx->setTextColor(mc);
                     _gfx->setCursor(ex, ey);
@@ -1528,7 +1534,7 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
                 if (w.mood == MOOD_LONELY) {
                     int bob = (_frame / 12) % 2;
                     int cxp = sd.render_x + 5;
-                    int cyp = sd.render_y - 13 + bob;
+                    int cyp = e_top - 10 + bob;
                     uint16_t cc = _rgb565(120, 130, 160);
                     _gfx->fillCircle(cxp - 3, cyp + 1, 2, cc);
                     _gfx->fillCircle(cxp,     cyp,     3, cc);

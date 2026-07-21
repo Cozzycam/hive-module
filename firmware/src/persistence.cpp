@@ -195,6 +195,21 @@ bool ConkerRegistry::_load_manifest() {
     _manifest.queen_state.x             = qs["x"] | (int8_t)Cfg::QUEEN_SPAWN_X;
     _manifest.queen_state.y             = qs["y"] | (int8_t)Cfg::QUEEN_SPAWN_Y;
 
+    // Gateway coronation: imported-queen identity (absent on ordinary colonies)
+    _manifest.queen_imported = doc["queen_imported"] | false;
+    if (_manifest.queen_imported) {
+        JsonObject qi = doc["queen_import"];
+        JsonArray qp = qi["personality"];
+        for (int i = 0; i < 8 && i < (int)qp.size(); i++)
+            _manifest.q_pers[i] = qp[i] | 0.5f;
+        _manifest.q_tint      = qi["tint_seed"] | 0;
+        _manifest.q_bond      = qi["keeper_bond"] | 0.0f;
+        _manifest.q_born_unix = qi["born_unix"] | 0;
+        _manifest.q_traits    = qi["traits"] | 0;
+        _manifest.q_catches   = qi["catches"] | 0;
+        strlcpy(_manifest.q_from, qi["from_colony"] | "", sizeof(_manifest.q_from));
+    }
+
     // Live positions
     _manifest.pos_count = 0;
     JsonArray pos = doc["positions"];
@@ -236,6 +251,20 @@ bool ConkerRegistry::_save_manifest() {
     qs["x"]             = _manifest.queen_state.x;
     qs["y"]             = _manifest.queen_state.y;
 
+    // Gateway coronation: imported-queen identity (only written when set)
+    if (_manifest.queen_imported) {
+        doc["queen_imported"] = true;
+        JsonObject qi = doc["queen_import"].to<JsonObject>();
+        JsonArray qp = qi["personality"].to<JsonArray>();
+        for (int i = 0; i < 8; i++) qp.add(_manifest.q_pers[i]);
+        qi["tint_seed"]   = _manifest.q_tint;
+        qi["keeper_bond"] = _manifest.q_bond;
+        qi["born_unix"]   = _manifest.q_born_unix;
+        qi["traits"]      = _manifest.q_traits;
+        qi["catches"]     = _manifest.q_catches;
+        qi["from_colony"] = _manifest.q_from;
+    }
+
     // Live positions (avoids per-record file writes)
     JsonArray pos = doc["positions"].to<JsonArray>();
     for (int i = 0; i < _manifest.pos_count; i++) {
@@ -246,7 +275,8 @@ bool ConkerRegistry::_save_manifest() {
     }
 
     // Use PSRAM-allocated buffer for larger manifest with positions
-    size_t buf_size = 512 + _manifest.pos_count * 40;
+    // (base covers the queen_import block on coronated colonies)
+    size_t buf_size = 900 + _manifest.pos_count * 40;
     char* buf = (char*)malloc(buf_size);
     if (!buf) return false;
     size_t len = serializeJson(doc, buf, buf_size);

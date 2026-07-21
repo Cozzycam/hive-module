@@ -407,6 +407,15 @@ void vps_ota_update(Coordinator& coord) {
 static bool    _pending_convert = false;
 static uint8_t _pending_convert_role = 0;
 
+// summon_queen (Gateway coronation) follows the same deferred shape: the
+// fetched queen is staged in NVS, the ack lands, then wipe + reboot into a
+// founding that crowns her (coordinator _summon_staged_apply).
+static bool _pending_summon = false;
+// Only a YOUNG colony may be refounded by summon — the command queue is
+// public/unauth, so an established colony must be immune to a hostile
+// summon. A just-plugged-in module (the intended target) is always young.
+static constexpr uint32_t SUMMON_YOUNG_WINDOW_S = 2 * 3600;
+
 static uint32_t _submit_commands_poll(Coordinator& coord) {
     char path[96];
     snprintf(path, sizeof(path), "/api/v1/colonies/%s/commands/pending",
@@ -482,6 +491,38 @@ static uint32_t _handle_commands_body(Coordinator& coord, const char* body) {
                 if (id != 0) ids[n++] = id;
             }
             coord.cmd_set_followed(ids, n);
+        } else if (strcmp(type, "summon_queen") == 0) {
+            // Gateway coronation: crown a princess raised in the app onto
+            // this module. Fetch the parked queen by her one-time token,
+            // stage her in NVS, then (after the ack) wipe the throwaway
+            // fresh colony and reboot — founding re-runs with her on the
+            // same colony_id the app is already watching.
+            const char* tok = cmd["payload"]["token"] | "";
+            ColonyManifest& m = coord.registry.manifest();
+            bool young = (m.total_workers_born <= Cfg::FOUNDER_COHORT_SIZE)
+                      || (g_tod.unix_time - m.founded_unix < SUMMON_YOUNG_WINDOW_S);
+            if (tok[0] && young && strlen(tok) < 40) {
+                char hp[96];
+                snprintf(hp, sizeof(hp), "/api/v1/handoff/%s", tok);
+                JsonDocument hdoc;
+                const char* qn = "";
+                if (_get_json(hp, hdoc)) qn = hdoc["name"] | "";
+                if (qn[0]) {
+                    hdoc["colony_id"] = m.colony_id;  // keep the id she was promised to
+                    String blob;
+                    serializeJson(hdoc, blob);
+                    Preferences prefs;
+                    prefs.begin("handoff", false);
+                    prefs.putString("queen", blob.c_str());
+                    prefs.end();
+                    _pending_summon = true;
+                    Serial.printf("[summon] staged Queen %s for coronation\r\n", qn);
+                } else {
+                    Serial.println("[summon] handoff fetch failed/invalid — ignoring");
+                }
+            } else {
+                Serial.println("[summon] refused (established colony or bad token)");
+            }
         } else if (strcmp(type, "reset_to_satellite") == 0) {
             // Conversion: this board abandons its sovereign colony and
             // reboots as a blank satellite (or specialised role), ready to
@@ -524,6 +565,16 @@ static void _handle_ack_result(Coordinator& coord, bool acked) {
         ESP.restart();
     }
     _pending_convert = false;
+    if (_pending_summon && acked) {
+        // The staged queen (NVS "handoff") survives this wipe; founding
+        // re-runs on reboot and crowns her.
+        Serial.println("[summon] ack landed — wiping fresh colony, rebooting to found hers");
+        chores_drain();
+        colony_reset_wipe();
+        delay(200);
+        ESP.restart();
+    }
+    _pending_summon = false;
 }
 
 // ---- Public API ----

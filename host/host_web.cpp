@@ -28,6 +28,8 @@
 #include "weather.h"       // g_weather (host_set_weather)
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>
+#include <ArduinoJson.h>    // princess export (host_export_princess)
+#include <Preferences.h>    // summon staging shim (host_stage_summon)
 #include <emscripten.h>
 
 namespace {
@@ -359,6 +361,48 @@ int host_snapshot() {
     return g_snap_len;
 }
 EMSCRIPTEN_KEEPALIVE uintptr_t host_snapshot_ptr() { return (uintptr_t)g_snap; }
+
+// Gateway coronation: serialize the raised princess for the VPS handoff park.
+// The app POSTs this under a one-time claim token; the module's summon_queen
+// command fetches it, stages it in NVS, and founds with her after a reset.
+static char g_princess_buf[768];
+EMSCRIPTEN_KEEPALIVE
+int host_export_princess() {
+    Chamber& ch = chamber();
+    if (!ch.conker_count) { g_princess_buf[0] = '\0'; return 0; }
+    Conker& p = ch.conkers[0];
+    JsonDocument doc;
+    doc["schema"]      = 1;
+    doc["name"]        = p.name;
+    doc["from_colony"] = g_sim.coordinator.registry.manifest().colony_id;
+    doc["tint_seed"]   = p.tint_seed;
+    doc["scale_factor"] = p.scale_factor;
+    doc["keeper_bond"] = p.keeper_bond;
+    doc["lived_ms"]    = p.lived_ms;
+    JsonArray pers = doc["personality"].to<JsonArray>();
+    for (int i = 0; i < 8; i++) pers.add(p.personality[i]);
+    IdentityRecord* rec = g_sim.coordinator.registry.get(p.id);
+    if (rec) {
+        doc["born_unix"] = rec->born_unix;
+        doc["traits"]    = rec->traits;
+        doc["catches"]   = rec->catches;
+        doc["accessory"] = rec->accessory;
+    }
+    int len = (int)serializeJson(doc, g_princess_buf, sizeof(g_princess_buf));
+    return len;
+}
+EMSCRIPTEN_KEEPALIVE uintptr_t host_export_princess_ptr() { return (uintptr_t)g_princess_buf; }
+
+// Test-only: stage a summoned queen exactly as the hardware summon_queen
+// command does (NVS "handoff"/"queen") — lets the Node/browser harness prove
+// the founding-side import without hardware. Call BEFORE host_boot.
+EMSCRIPTEN_KEEPALIVE
+void host_stage_summon(const char* json) {
+    Preferences prefs;
+    prefs.begin("handoff", false);
+    prefs.putString("queen", json);
+    prefs.end();
+}
 
 // Accumulated diary events (the /events payload inner array), pushed by JS.
 EMSCRIPTEN_KEEPALIVE uintptr_t host_events_ptr() { return (uintptr_t)g_events; }

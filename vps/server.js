@@ -98,6 +98,18 @@ db.exec(`
     sub TEXT NOT NULL,
     created_at INTEGER DEFAULT (unixepoch())
   );
+
+  -- Gateway coronation: a raised princess parked by the app under a
+  -- one-time claim token; the target module's summon_queen command fetches
+  -- her and founds with her. Rows are kept after claim (provenance).
+  CREATE TABLE IF NOT EXISTS handoffs (
+    token TEXT PRIMARY KEY,
+    from_colony TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    created_at INTEGER DEFAULT (unixepoch()),
+    claimed_at INTEGER DEFAULT 0,
+    claimed_by TEXT DEFAULT ''
+  );
 `);
 
 // Migrations for pre-existing databases (idempotent)
@@ -184,7 +196,11 @@ const stmts = {
 // reset_to_satellite (full colony wipe) is admin-only — queue it by hand:
 //   sqlite3 hive.db "INSERT INTO commands (colony_id,type,payload)
 //                    VALUES ('<id>','reset_to_satellite','{\"role\":\"garden\"}')"
-const COMMAND_TYPES = new Set(['name_conker', 'feed_colony', 'set_module_role', 'set_floor_tint', 'gift_care_package', 'ota_update', 'set_followed', 'grant_wish']);
+// summon_queen is queueable from the app but SAFE despite the open queue:
+// the firmware only honours it on a YOUNG (just-founded) colony, and the
+// payload is just a claim token that must resolve to a validly-parked
+// handoff (parking requires the sender colony's HMAC).
+const COMMAND_TYPES = new Set(['name_conker', 'feed_colony', 'set_module_role', 'set_floor_tint', 'gift_care_package', 'ota_update', 'set_followed', 'grant_wish', 'summon_queen']);
 
 // ---- HMAC verification ----
 function verifyHmac(body, signature) {
@@ -650,6 +666,49 @@ app.post('/api/v1/colonies/:colony_id/commands/ack', colonyAuth, (req, res) => {
     stmts.ackCommand.run(req.params.colony_id, id);
   }
   res.json({ status: 'ok', acked: ids.length });
+});
+
+// ---- Gateway coronation: queen handoff (app -> module) ----
+
+// POST /api/v1/colonies/:colony_id/handoff  (app, HMAC-signed by the
+// princess's own colony) — park a raised queen, get a one-time claim token.
+app.post('/api/v1/colonies/:colony_id/handoff', colonyAuth, (req, res) => {
+  const { colony_id } = req.params;
+  const body = req.body.toString();
+  let parsed;
+  try { parsed = JSON.parse(body); } catch { return res.status(400).json({ error: 'invalid json' }); }
+  if (!parsed.name || typeof parsed.name !== 'string') {
+    return res.status(400).json({ error: 'no queen in payload' });
+  }
+  if (body.length > 2048) return res.status(400).json({ error: 'payload too large' });
+
+  parsed.from_colony = colony_id;   // authoritative — signed by this colony
+  const token = crypto.randomBytes(8).toString('hex');
+  db.prepare(`INSERT INTO handoffs (token, from_colony, payload) VALUES (?, ?, ?)`)
+    .run(token, colony_id, JSON.stringify(parsed));
+  console.log(`handoff parked: ${parsed.name} from ${colony_id} (token ${token})`);
+  res.json({ status: 'parked', token });
+});
+
+// GET /api/v1/handoff/:token  (module) — claim the parked queen. Effectively
+// single-use: the first fetch stamps claimed_at; refetches are allowed for
+// 15 minutes after that (module retry after a failed reboot), then 410.
+// Unclaimed parks expire after 48h.
+app.get('/api/v1/handoff/:token', (req, res) => {
+  const row = db.prepare(`SELECT * FROM handoffs WHERE token = ?`).get(req.params.token);
+  if (!row) return res.status(404).json({ error: 'unknown token' });
+  const now = Math.floor(Date.now() / 1000);
+  if (row.claimed_at === 0 && now - row.created_at > 48 * 3600) {
+    return res.status(410).json({ error: 'expired' });
+  }
+  if (row.claimed_at !== 0 && now - row.claimed_at > 900) {
+    return res.status(410).json({ error: 'already claimed' });
+  }
+  if (row.claimed_at === 0) {
+    db.prepare(`UPDATE handoffs SET claimed_at = ?, claimed_by = ? WHERE token = ?`)
+      .run(now, String(req.query.by || ''), req.params.token);
+  }
+  res.type('application/json').send(row.payload);
 });
 
 // POST /api/v1/feedback  (from app — no HMAC; length-capped + daily rate cap)
