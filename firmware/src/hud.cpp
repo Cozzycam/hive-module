@@ -517,9 +517,15 @@ void hud_draw(Arduino_Canvas* gfx, const Chamber& ch) {
 
     char buf[16];
     if (_awaiting) {
-        // Verdant chamber — no colony yet. The left side says only what it
-        // is; the living world (weather/time, right side) carries on.
-        _draw_text(gfx, x, text_y, "awaiting opportunity", ink2);
+        // Verdant chamber — no colony yet. Lead with the module's identity
+        // (its colony_id) so a keeper can tell WHICH board to crown from the
+        // app's list, then its state. The living world (weather/time, right
+        // side) carries on.
+        if (_colony_name[0]) {
+            x += _draw_text(gfx, x, text_y, _colony_name, acc);
+            x += 10;
+        }
+        _draw_text(gfx, x, text_y, "awaiting a queen", ink2);
     } else {
     // --- Population cluster ---
     // [icon]  N  Conkers
