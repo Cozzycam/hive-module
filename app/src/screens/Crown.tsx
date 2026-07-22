@@ -13,17 +13,17 @@ import { fetchColonies, fetchSnapshot, sendCommand, setStoredColonyId } from '..
 import { HIVE } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 
-// A module is crownable while its colony is YOUNG — the firmware refuses
-// summon_queen on established colonies (2h window / founder-cohort gate).
-const YOUNG_WINDOW_S = 2 * 3600;
-const SUMMON_FW_MIN = 217;
+// A module is crownable only while it's a VERDANT chamber — empty, alive,
+// "awaiting opportunity". The firmware refuses summon_queen on any chamber
+// that holds a colony.
+const SUMMON_FW_MIN = 218;
 
 interface Candidate {
   colony_id: string;
   queen_name: string;
   founded_unix: number;
   fw_version: number;
-  young: boolean;
+  awaiting: boolean;
   fwOk: boolean;
 }
 
@@ -52,17 +52,17 @@ export function Crown({ onBack }: { onBack: () => void }) {
       const snap = await fetchSnapshot(c.colony_id);
       if (!snap) continue;
       const s = snap.data;
-      const now = Math.floor(Date.now() / 1000);
       out.push({
         colony_id: c.colony_id,
-        queen_name: s.queen_name || '(unfounded)',
+        queen_name: s.queen_name || '',
         founded_unix: s.founded_unix || 0,
         fw_version: s.fw_version || 0,
-        young: now - (s.founded_unix || 0) < YOUNG_WINDOW_S,
+        awaiting: s.awaiting === true,
         fwOk: (s.fw_version || 0) >= SUMMON_FW_MIN,
       });
     }
-    out.sort((a, b) => b.founded_unix - a.founded_unix);
+    // Verdant chambers first, then the rest
+    out.sort((a, b) => Number(b.awaiting) - Number(a.awaiting));
     setCandidates(out);
   }, []);
 
@@ -145,10 +145,10 @@ export function Crown({ onBack }: { onBack: () => void }) {
           {candidates !== null && candidates.length === 0 &&
             <span style={{ fontSize: SIZES.sm, color: HIVE.dimText }}>No modules found yet.</span>}
           {candidates?.map(c => {
-            const crownable = c.young && c.fwOk;
+            const crownable = c.awaiting && c.fwOk;
             const why = !c.fwOk ? 'needs a firmware update first'
-                      : !c.young ? 'already an established colony'
-                      : 'ready for a queen';
+                      : !c.awaiting ? `home to queen ${c.queen_name || '?'} already`
+                      : 'a verdant chamber, awaiting its queen';
             return (
               <button key={c.colony_id} disabled={!crownable}
                 onClick={() => { setChosen(c); setPhase('confirm'); }}
@@ -156,9 +156,11 @@ export function Crown({ onBack }: { onBack: () => void }) {
                          padding: '12px 14px', cursor: crownable ? 'pointer' : 'default',
                          border: `1px solid ${crownable ? HIVE.green : HIVE.parchment}`,
                          background: HIVE.white, opacity: crownable ? 1 : 0.55 }}>
-                <div style={{ fontSize: SIZES.sm, fontWeight: 600, color: HIVE.ink }}>{c.colony_id}</div>
+                <div style={{ fontSize: SIZES.sm, fontWeight: 600, color: HIVE.ink }}>
+                  {c.awaiting ? '🌿 ' : ''}{c.colony_id}
+                </div>
                 <div style={{ fontSize: SIZES.xs, color: HIVE.dimText }}>
-                  queen {c.queen_name} · fw v{c.fw_version} · {why}
+                  fw v{c.fw_version} · {why}
                 </div>
               </button>
             );
@@ -175,8 +177,8 @@ export function Crown({ onBack }: { onBack: () => void }) {
         <>
           <div style={{ fontSize: SIZES.sm, color: HIVE.soil }}>
             Crown <b>{name}</b> onto <b>{chosen.colony_id}</b>?<br /><br />
-            The module’s just-founded colony (queen {chosen.queen_name}) will make way for her.
-            She’ll leave the phone for good — the nest here will be empty until you hatch a new egg.
+            She’ll take the verdant chamber as her own and found her colony there.
+            She leaves the phone for good — the nest here stays empty until you hatch a new egg.
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <button onClick={() => void crown(chosen)}

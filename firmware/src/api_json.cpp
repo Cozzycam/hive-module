@@ -107,6 +107,9 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
         doc["queen_imported"] = true;
         doc["queen_from"] = coord.registry.manifest().q_from;
     }
+    // Verdant chamber: an empty living chamber awaiting its queen — the app's
+    // Crown screen lists exactly these as crownable.
+    if (coord.registry.manifest().awaiting) doc["awaiting"] = true;
     doc["fw_version"] = FW_VERSION;
     doc["founded_unix"] = coord.registry.manifest().founded_unix;
     doc["now_unix"] = g_tod.unix_time;

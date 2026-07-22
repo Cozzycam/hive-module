@@ -195,6 +195,9 @@ bool ConkerRegistry::_load_manifest() {
     _manifest.queen_state.x             = qs["x"] | (int8_t)Cfg::QUEEN_SPAWN_X;
     _manifest.queen_state.y             = qs["y"] | (int8_t)Cfg::QUEEN_SPAWN_Y;
 
+    // Verdant chamber: identity exists, colony doesn't (awaiting a queen)
+    _manifest.awaiting = doc["awaiting"] | false;
+
     // Gateway coronation: imported-queen identity (absent on ordinary colonies)
     _manifest.queen_imported = doc["queen_imported"] | false;
     if (_manifest.queen_imported) {
@@ -250,6 +253,8 @@ bool ConkerRegistry::_save_manifest() {
     qs["egg_accum"]     = _manifest.queen_state.egg_accum;
     qs["x"]             = _manifest.queen_state.x;
     qs["y"]             = _manifest.queen_state.y;
+
+    if (_manifest.awaiting) doc["awaiting"] = true;
 
     // Gateway coronation: imported-queen identity (only written when set)
     if (_manifest.queen_imported) {

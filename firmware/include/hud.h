@@ -14,6 +14,10 @@ void hud_draw(Arduino_Canvas* gfx, const Chamber& ch);
 // Colony name shown centered in the strip — set once after persistence init
 void hud_set_colony_name(const char* name);
 
+// Verdant chamber (Gateway coronation): an empty chamber awaiting its queen.
+// The HUD's left side collapses to "awaiting opportunity"; weather/time stay.
+void hud_set_awaiting(bool awaiting);
+
 // Founding time (unix) — set once after persistence init from the colony
 // manifest, which is the authoritative SD-persisted value the app also uses.
 // This is what the "Day N" counter is measured from. Pass 0 to leave the

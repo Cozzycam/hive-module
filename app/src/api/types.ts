@@ -5,7 +5,8 @@ export interface ColonySnapshot {
   colony_id: string;
   queen_name?: string;   // assigned at founding (fw v98+)
   fw_version?: number;   // module firmware version (fw v98+)
-  founded_unix: number;
+  awaiting?: boolean;    // verdant chamber — empty, alive, awaiting a queen (fw v218+)
+  founded_unix?: number; // 0/absent on a verdant chamber (nothing founded yet)
   now_unix: number;
   wish?: { id: number; kind: 'treat' | 'boop'; name?: string };  // v186+
   world: World;

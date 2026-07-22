@@ -117,6 +117,11 @@ struct ColonyManifest {
     // Module role
     uint8_t  module_role     = 0;     // ModuleRole enum
 
+    // Verdant chamber (Gateway coronation): the module has an identity and a
+    // living chamber but NO colony yet — it sits "awaiting opportunity" until
+    // a summon_queen crowns a raised princess (or a reset refounds normally).
+    bool     awaiting        = false;
+
     // Gateway coronation: a queen summoned from the app (a raised princess).
     // All-zero on ordinary colonies — set once at founding from the staged
     // handoff (vps_push summon_queen), then immutable. q_pers is the

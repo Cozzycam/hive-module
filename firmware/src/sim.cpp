@@ -22,11 +22,22 @@ void Sim::init() {
         bool has_manifest = (ps == PERSIST_OK &&
                              coordinator.registry.manifest().colony_id[0] != '\0');
 
-        if (has_manifest) {
+        if (has_manifest && coordinator.registry.manifest().awaiting) {
+            // VERDANT: an empty living chamber awaiting its queen. Identity
+            // (colony_id) exists so the VPS/app can see it; weather, day/
+            // night and critters run; no queen, no colony, no founding —
+            // until a summon_queen crowns a raised princess.
+            coordinator._verdant_boot();
+        } else if (has_manifest) {
             // Case C: SD card with manifest — restore from disk
             coordinator._persist_restore_from_disk();
             coordinator._bond_load();
             tick_count = coordinator.registry.manifest().last_tick;
+        } else if (ps == PERSIST_OK && Coordinator::consume_verdant_flag()) {
+            // `reset verdant` staged this across the wipe/reboot: mint the
+            // chamber's identity, then sit awaiting instead of founding.
+            coordinator._verdant_create_manifest();
+            coordinator._verdant_boot();
         } else {
             // Case A (no SD) or Case B (SD, no manifest): fresh colony, queen only
             Chamber& ch = coordinator.chamber;

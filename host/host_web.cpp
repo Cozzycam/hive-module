@@ -404,6 +404,16 @@ void host_stage_summon(const char* json) {
     prefs.end();
 }
 
+// Test-only: stage the verdant flag exactly as `reset verdant` does — the
+// next host_boot enters the empty awaiting chamber instead of founding.
+EMSCRIPTEN_KEEPALIVE
+void host_set_verdant() {
+    Preferences prefs;
+    prefs.begin("handoff", false);
+    prefs.putBool("verdant", true);
+    prefs.end();
+}
+
 // Accumulated diary events (the /events payload inner array), pushed by JS.
 EMSCRIPTEN_KEEPALIVE uintptr_t host_events_ptr() { return (uintptr_t)g_events; }
 EMSCRIPTEN_KEEPALIVE int host_events_len() { return (int)g_events_len; }

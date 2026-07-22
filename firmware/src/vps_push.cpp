@@ -410,11 +410,11 @@ static uint8_t _pending_convert_role = 0;
 // summon_queen (Gateway coronation) follows the same deferred shape: the
 // fetched queen is staged in NVS, the ack lands, then wipe + reboot into a
 // founding that crowns her (coordinator _summon_staged_apply).
+// GATE: only an AWAITING (verdant, colony-less) chamber may be summoned —
+// the command queue is public/unauth, and a chamber with any colony at all
+// must be immune to a hostile summon. Nothing exists to destroy in a verdant
+// chamber, so the griefing surface is nil.
 static bool _pending_summon = false;
-// Only a YOUNG colony may be refounded by summon — the command queue is
-// public/unauth, so an established colony must be immune to a hostile
-// summon. A just-plugged-in module (the intended target) is always young.
-static constexpr uint32_t SUMMON_YOUNG_WINDOW_S = 2 * 3600;
 
 static uint32_t _submit_commands_poll(Coordinator& coord) {
     char path[96];
@@ -499,9 +499,7 @@ static uint32_t _handle_commands_body(Coordinator& coord, const char* body) {
             // same colony_id the app is already watching.
             const char* tok = cmd["payload"]["token"] | "";
             ColonyManifest& m = coord.registry.manifest();
-            bool young = (m.total_workers_born <= Cfg::FOUNDER_COHORT_SIZE)
-                      || (g_tod.unix_time - m.founded_unix < SUMMON_YOUNG_WINDOW_S);
-            if (tok[0] && young && strlen(tok) < 40) {
+            if (tok[0] && m.awaiting && strlen(tok) < 40) {
                 char hp[96];
                 snprintf(hp, sizeof(hp), "/api/v1/handoff/%s", tok);
                 JsonDocument hdoc;
@@ -521,7 +519,7 @@ static uint32_t _handle_commands_body(Coordinator& coord, const char* body) {
                     Serial.println("[summon] handoff fetch failed/invalid — ignoring");
                 }
             } else {
-                Serial.println("[summon] refused (established colony or bad token)");
+                Serial.println("[summon] refused (chamber not awaiting, or bad token)");
             }
         } else if (strcmp(type, "reset_to_satellite") == 0) {
             // Conversion: this board abandons its sovereign colony and

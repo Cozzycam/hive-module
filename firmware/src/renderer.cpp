@@ -1361,7 +1361,14 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
             break;
         }
         case SK_QUEEN:
-            _draw_sprite_scaled(sd.render_x, sd.render_y, QUEEN, QUEEN_W, QUEEN_H, SCALE_QUEEN);
+            // An app-raised queen wears her own colour (the tint she grew up
+            // with on the phone) — same luma-keyed remap as the workers.
+            if (ch.queen_tint != 0)
+                _draw_sprite_scaled_tinted(sd.render_x, sd.render_y, QUEEN,
+                                           QUEEN_W, QUEEN_H, SCALE_QUEEN,
+                                           false, ch.queen_tint, 0.0f);
+            else
+                _draw_sprite_scaled(sd.render_x, sd.render_y, QUEEN, QUEEN_W, QUEEN_H, SCALE_QUEEN);
             break;
         case SK_WORKER: {
             auto& w = ch.conkers[sd.entity_idx];

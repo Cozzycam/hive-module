@@ -78,6 +78,12 @@ public:
     void _persist_restore_from_disk();
     void _bond_load();
 
+    // Verdant chamber (Gateway coronation): an empty living chamber that
+    // awaits a summoned queen instead of founding a colony.
+    void _verdant_boot();             // un-queen the chamber, run world-only
+    void _verdant_create_manifest();  // mint colony_id + awaiting=true
+    static bool consume_verdant_flag();  // NVS marker staged by `reset verdant`
+
     // Challenges — called from serial commands
     void challenge_start(uint8_t type, float severity, uint32_t tick_num);
     void challenge_end(uint32_t tick_num);

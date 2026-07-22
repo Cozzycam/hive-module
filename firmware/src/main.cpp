@@ -655,6 +655,20 @@ static void process_serial_line(const char* line) {
         Serial.println("[reset] rebooting...");
         delay(100);
         ESP.restart();
+    } else if (strcmp(line, "reset verdant") == 0) {
+        // Gateway coronation: wipe, then reboot into an EMPTY living chamber
+        // ("awaiting opportunity") instead of founding — the state a module
+        // sits in until a raised princess is crowned onto it from the app.
+        colony_reset_wipe();
+        {
+            Preferences prefs;
+            prefs.begin("handoff", false);
+            prefs.putBool("verdant", true);
+            prefs.end();
+        }
+        Serial.println("[reset] rebooting into a verdant chamber...");
+        delay(100);
+        ESP.restart();
     } else if (strcmp(line, "render fullredraw on") == 0) {
         renderer.force_full_flush = true;
         Serial.println("[render] full redraw ON (dirty-rect disabled)");
@@ -936,6 +950,9 @@ void setup() {
         hud_init();
         hud_set_colony_name(sim.coordinator.registry.manifest().colony_id);
         hud_set_founded_unix(sim.coordinator.registry.manifest().founded_unix);
+        // Verdant chamber: the HUD says only "awaiting opportunity" (left)
+        // while weather/time stay live (right).
+        hud_set_awaiting(sim.coordinator.registry.manifest().awaiting);
         if (wizard_choice == SETUP_FOUNDED) {
             setup_wizard_ceremony(gfx,
                 sim.coordinator.registry.manifest().colony_id,

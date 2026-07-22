@@ -2184,7 +2184,9 @@ void Coordinator::_persist_sync_colony_state(uint32_t tick_num) {
 static bool _summon_staged_apply(ColonyManifest& m) {
     Preferences prefs;
     prefs.begin("handoff", false);
-    String blob = prefs.getString("queen", "");
+    // isKey first — a bare getString on a missing key makes the ESP32
+    // Preferences lib log a scary "nvs_get_str len fail" line every founding.
+    String blob = prefs.isKey("queen") ? prefs.getString("queen", "") : String();
     if (blob.length() > 0) prefs.remove("queen");
     prefs.end();
     if (blob.length() == 0) return false;
@@ -2215,6 +2217,46 @@ static bool _summon_staged_apply(ColonyManifest& m) {
     return true;
 }
 
+// ---- Verdant chamber (Gateway coronation) ----
+
+// Marker staged across the `reset verdant` wipe/reboot (NVS survives the
+// colony wipe). One-shot.
+bool Coordinator::consume_verdant_flag() {
+    Preferences prefs;
+    prefs.begin("handoff", false);
+    bool flagged = prefs.getBool("verdant", false);
+    if (flagged) prefs.remove("verdant");
+    prefs.end();
+    return flagged;
+}
+
+void Coordinator::_verdant_create_manifest() {
+    ColonyManifest& m = registry.manifest();
+    m.schema = 1;
+    registry.generate_colony_id();
+    m.queen_name[0] = '\0';
+    m.awaiting = true;
+    m.founded_unix = 0;   // nothing has been founded
+    m.module_role = role;
+    registry.flush_manifest();
+    Serial.printf("[verdant] chamber %s minted — awaiting opportunity\r\n",
+                  m.colony_id);
+}
+
+void Coordinator::_verdant_boot() {
+    // The chamber was init'd with a queen (queen-role default); un-seat her.
+    // The world still runs — weather, day/night, critters, fireflies — it's
+    // a living chamber with nobody home yet.
+    chamber.has_queen = false;
+    colony = ColonyState();
+    colony.population = 0;
+    colony.worker_census = 0;
+    colony.food_store = 0;
+    colony.food_total = 0;
+    Serial.printf("[verdant] empty chamber %s awaiting its queen\r\n",
+                  registry.manifest().colony_id);
+}
+
 void Coordinator::_persist_migrate_live_colony() {
     // Case B: first boot with SD — migrate existing live colony to persistence.
     // Called when SD is available but no manifest exists.
@@ -2224,7 +2266,9 @@ void Coordinator::_persist_migrate_live_colony() {
     m.schema = 1;
     registry.generate_colony_id();
     name_random(m.queen_name, sizeof(m.queen_name));
-    if (!_summon_staged_apply(m))
+    if (_summon_staged_apply(m))
+        chamber.queen_tint = m.q_tint;   // she arrives wearing her colour
+    else
         Serial.printf("[persist] the queen is named %s\r\n", m.queen_name);
 
     // Read founding time from HUD's NVS if available
@@ -2318,6 +2362,9 @@ void Coordinator::_persist_restore_from_disk() {
         registry.flush_manifest();
         Serial.printf("[persist] queen named retroactively: %s\r\n", m.queen_name);
     }
+
+    // An imported (app-raised) queen keeps wearing her colour after reboots
+    if (m.queen_imported) chamber.queen_tint = m.q_tint;
 
     // Restore colony state
     colony.food_store = m.food_store;

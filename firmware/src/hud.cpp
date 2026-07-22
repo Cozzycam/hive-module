@@ -107,9 +107,14 @@ static void _store_founded(uint32_t t, bool reliable) {
 }
 
 static char _colony_name[25] = {};
+static bool _awaiting = false;   // verdant chamber — no colony yet
 
 void hud_set_colony_name(const char* name) {
     strlcpy(_colony_name, name ? name : "", sizeof(_colony_name));
+}
+
+void hud_set_awaiting(bool awaiting) {
+    _awaiting = awaiting;
 }
 
 static uint32_t _colony_age_days() {
@@ -395,7 +400,8 @@ void hud_set_founded_unix(uint32_t founded_unix) {
 void hud_draw(Arduino_Canvas* gfx, const Chamber& ch) {
     // Record founding time — only with a reliable clock (NTP/RTC).
     // Re-record if previously stored from simulated fallback clock.
-    if (g_tod.unix_time > 1000000) {
+    // An awaiting (verdant) chamber has no founding to record.
+    if (g_tod.unix_time > 1000000 && !_awaiting) {
         bool have_clock = g_tod.ntp_synced || g_tod.rtc_valid;
         if (!_founded_stored && have_clock) {
             _store_founded(g_tod.unix_time, true);
@@ -509,12 +515,17 @@ void hud_draw(Arduino_Canvas* gfx, const Chamber& ch) {
     int icon_y = text_y + 1;  // vertically center 8px icon with text
     int dot_y  = text_y + 3;  // center dot vertically with text baseline
 
+    char buf[16];
+    if (_awaiting) {
+        // Verdant chamber — no colony yet. The left side says only what it
+        // is; the living world (weather/time, right side) carries on.
+        _draw_text(gfx, x, text_y, "awaiting opportunity", ink2);
+    } else {
     // --- Population cluster ---
     // [icon]  N  Conkers
     _draw_icon(gfx, x, icon_y, ICON_POP, acc);
     x += 12;
 
-    char buf[16];
     int pop_display = (int)roundf(_anim_pop.current);
     snprintf(buf, sizeof(buf), "%d", pop_display);
     x += _draw_text(gfx, x, text_y, buf, ink);
@@ -554,6 +565,7 @@ void hud_draw(Arduino_Canvas* gfx, const Chamber& ch) {
         int cw = _text_width(_colony_name);
         int name_x = (SCREEN_W - cw) / 2;
         if (name_x > x + 10) _draw_text(gfx, name_x, text_y, _colony_name, acc);
+    }
     }
 
     // --- Right-aligned: weather + time + day phase + pulse dot ---
