@@ -91,6 +91,7 @@ public:
     // Remote commands — queued by the companion app, applied via VPS poll
     bool cmd_rename_conker(uint32_t id, const char* new_name);
     bool cmd_set_conker_tint(uint32_t id, uint8_t tint_seed);
+    bool cmd_set_colony_title(const char* title);
     bool cmd_feed_colony(float amount);
     bool cmd_set_module_role(uint16_t target_id, uint8_t new_role);
     bool cmd_set_floor_tint(uint16_t target_id, uint8_t r, uint8_t g, uint8_t b);

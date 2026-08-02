@@ -100,6 +100,10 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
     doc["schema"] = 1;
     doc["colony_id"] = coord.registry.manifest().colony_id;
     doc["queen_name"] = coord.registry.manifest().queen_name;
+    // Keeper's chosen colony name (feedback #40). Only emitted when set, so
+    // clients keep falling back to colony_id and old snapshots stay valid.
+    if (coord.registry.manifest().title[0])
+        doc["title"] = coord.registry.manifest().title;
     // Gateway coronation: a summoned (app-raised) queen carries her origin —
     // the app uses this to confirm the handoff landed and to open her
     // pre-coronation Chronicle from the colony she grew up in.

@@ -178,6 +178,7 @@ class LocalModule {
         rename: cw('host_rename', null, ['number', 'string']),
         setTint: cw('host_set_tint', null, ['number', 'number', 'number']),
         tintConker: cw('host_tint_conker', null, ['number', 'number']),
+        setColonyTitle: cw('host_set_colony_title', null, ['string']),
         throwBall: cw('host_throw_ball', null, ['number', 'number']),
         prBall: cw('host_pr_ball', 'number', []),
       };
@@ -398,6 +399,7 @@ class LocalModule {
       case 'gift_care_package': this.fns.carePackage(); return true;
       case 'name_conker':      this.fns.rename(payload?.id >>> 0, String(payload?.name ?? '')); return true;
       case 'tint_conker':      this.tintConker(Number(payload?.id ?? 0), Number(payload?.tint ?? 0)); return true;
+      case 'set_colony_title': try { this.fns.setColonyTitle?.(String(payload?.title ?? '')); } catch { /* stale wasm */ } return true;
       case 'set_floor_tint': {
         const rgb = payload?.rgb ?? 0;
         this.fns.setTint((rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff); return true;

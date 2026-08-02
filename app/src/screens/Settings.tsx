@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useColony, timeSince } from '../state/colony';
-import { getStoredLanIp, getStoredColonyId, clearConnection, testLanConnection, setStoredLanIp, setStoredColonyId, fetchColonies, enablePushNotifications, disablePushNotifications, pushSupported, sendTestPush } from '../api/client';
+import { getStoredLanIp, getStoredColonyId, clearConnection, testLanConnection, setStoredLanIp, setStoredColonyId, fetchColonies, enablePushNotifications, disablePushNotifications, pushSupported, sendTestPush, sendCommand } from '../api/client';
 import type { PushResult } from '../api/client';
 import { Card } from '../components/Card';
 import { getIdentity, resetColonyIdentity, AUTOSTART_KEY, WIPE_KEY, LAST_ACTIVE_KEY } from '../localModule';
@@ -97,6 +97,20 @@ export function Settings({ onBack, onDisconnect, onReconnect }: SettingsProps) {
 
   // This install is running its own on-phone colony (not viewing a physical one).
   const isOwnColony = !!colonyId && colonyId === getIdentity().colony_id;
+
+  // Name the colony (feedback #40). Display name only — colony_id is the address
+  // and never changes, so this can't orphan the connection. Blank clears it back
+  // to the id. Routes through sendCommand, so it works for an on-phone colony
+  // (applied locally) and a physical module (queued on the VPS) alike.
+  const renameColony = async () => {
+    if (!colonyId) return;
+    const current = snapshot?.title || '';
+    const next = window.prompt(
+      'Name your colony (leave blank to go back to its given name):', current);
+    if (next === null) return;                    // cancelled
+    const clean = next.trim().slice(0, 24);
+    await sendCommand(colonyId, 'set_colony_title', { title: clean });
+  };
 
   // Start over: mint a new install identity (→ a new seed → a new queen + cast),
   // then reload so a clean WASM instance founds it. Destructive — the current
@@ -225,6 +239,23 @@ export function Settings({ onBack, onDisconnect, onReconnect }: SettingsProps) {
         Connection
       </div>
       <Card style={{ background: '#F5ECDD' }}>
+        <InfoRow
+          label="Colony name"
+          value={
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <span>{snapshot?.title || snapshot?.colony_id || colonyId || 'Unknown'}</span>
+              {colonyId && (
+                <button
+                  onClick={renameColony}
+                  style={{ background: 'none', border: `1px solid ${HIVE.sand}`, borderRadius: 7,
+                           padding: '2px 8px', color: HIVE.soil, fontSize: SIZES.xs, cursor: 'pointer' }}
+                >
+                  ✎
+                </button>
+              )}
+            </span>
+          }
+        />
         <InfoRow label="Colony ID" value={storedColonyId || colonyId || 'Unknown'} />
         <InfoRow label="Queen LAN IP" value={lanIp || 'Not configured'} />
         <InfoRow label="VPS" value="hive.campbell.fish" />

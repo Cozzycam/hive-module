@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { HIVE } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 import { testLanConnection, setStoredLanIp, setStoredColonyId, fetchColonies } from '../api/client';
+import type { ColonySummary } from '../api/types';
 import { localModule, AUTOSTART_KEY } from '../localModule';
 
 function agoLabel(unix: number): string {
@@ -170,7 +171,7 @@ function ConnectModal({ onClose, onConnected }: {
   onClose: () => void;
   onConnected: (colonyId: string) => void;
 }) {
-  const [colonies, setColonies] = useState<{ colony_id: string; last_snapshot_unix: number }[] | null>(null);
+  const [colonies, setColonies] = useState<ColonySummary[] | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [lanIp, setLanIp] = useState('');
 
@@ -237,10 +238,12 @@ function ConnectModal({ onClose, onConnected }: {
               }}
             >
               <div style={{ fontSize: SIZES.base, fontWeight: 600, color: HIVE.ink }}>
-                {c.colony_id}
+                {c.title || c.colony_id}
               </div>
               <div style={{ fontSize: SIZES.xs, color: HIVE.dimText }}>
-                {agoLabel(c.last_snapshot_unix)}
+                {/* keep the id visible when a keeper has renamed it — it's still
+                    the address you'd quote to identify the colony (feedback #40) */}
+                {c.title ? `${c.colony_id} · ` : ''}{agoLabel(c.last_snapshot_unix)}
               </div>
             </button>
           ))

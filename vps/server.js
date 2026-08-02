@@ -167,7 +167,13 @@ const stmts = {
       ORDER BY unix DESC, tick DESC LIMIT ?
     ) ORDER BY unix, tick
   `),
-  listColonies: db.prepare(`SELECT colony_id, last_snapshot_unix FROM colonies`),
+  // title comes out of the stored snapshot rather than its own column: the
+  // module is the source of truth for it, so there's nothing to migrate or keep
+  // in sync. NULL whenever unset or the snapshot predates it (feedback #40).
+  listColonies: db.prepare(
+    `SELECT colony_id, last_snapshot_unix,
+            json_extract(last_snapshot, '$.title') AS title
+       FROM colonies`),
   insertCommand: db.prepare(`
     INSERT INTO commands (colony_id, type, payload) VALUES (?, ?, ?)
   `),
@@ -203,7 +209,7 @@ const stmts = {
 // tint_conker recolours ONE conker (keeper feedback #43/#49) — cosmetic only, so
 // it's safe on the unauth queue in a way a destructive command would not be
 // (cf. reset_to_satellite, removed in the 2026-07-05 security pass).
-const COMMAND_TYPES = new Set(['name_conker', 'feed_colony', 'set_module_role', 'set_floor_tint', 'tint_conker', 'gift_care_package', 'ota_update', 'set_followed', 'grant_wish', 'summon_queen']);
+const COMMAND_TYPES = new Set(['name_conker', 'feed_colony', 'set_module_role', 'set_floor_tint', 'tint_conker', 'set_colony_title', 'gift_care_package', 'ota_update', 'set_followed', 'grant_wish', 'summon_queen']);
 
 // ---- HMAC verification ----
 function verifyHmac(body, signature) {

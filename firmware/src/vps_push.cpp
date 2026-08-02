@@ -444,6 +444,9 @@ static uint32_t _handle_commands_body(Coordinator& coord, const char* body) {
             uint32_t cid = cmd["payload"]["id"] | 0;
             const char* name = cmd["payload"]["name"] | "";
             coord.cmd_rename_conker(cid, name);
+        } else if (strcmp(type, "set_colony_title") == 0) {
+            const char* t = cmd["payload"]["title"] | "";   // "" clears it
+            coord.cmd_set_colony_title(t);
         } else if (strcmp(type, "tint_conker") == 0) {
             uint32_t cid  = cmd["payload"]["id"]   | 0;
             uint32_t tint = cmd["payload"]["tint"] | 0;   // 1-255, cosmetic only

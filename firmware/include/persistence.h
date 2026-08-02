@@ -100,6 +100,10 @@ struct ColonyManifest {
     uint8_t  schema          = 1;
     char     colony_id[25]   = {};    // 12-byte hex string
     char     queen_name[16]  = {};    // random plant name, assigned at founding
+    char     title[25]       = {};    // keeper's chosen name for the colony (feedback
+                                      // #40). EMPTY = fall back to colony_id, which
+                                      // stays the immutable API/identity key — this is
+                                      // a display name only, never an address.
     uint32_t founded_unix    = 0;
     uint32_t next_lilguy_id  = 1;     // monotonic, never decremented
     uint32_t last_tick       = 0;     // sim tick_count at last flush

@@ -1582,6 +1582,26 @@ bool Coordinator::cmd_rename_conker(uint32_t id, const char* new_name) {
     return true;
 }
 
+// Name the colony (keeper feedback #40: "the colony title should be chooseable
+// and show up when connected to other colonies"). This is a DISPLAY name only —
+// colony_id stays the immutable identity/API key, so renaming can never orphan
+// a colony's snapshots, events or the app's connection. Empty title = show the id.
+bool Coordinator::cmd_set_colony_title(const char* title) {
+    char clean[25] = {};
+    int j = 0;
+    for (int i = 0; title && title[i] && j < 24; i++) {
+        char ch = title[i];
+        if (ch >= 32 && ch < 127) clean[j++] = ch;   // printable ASCII, as names are
+    }
+    // Trim trailing spaces so " " can't masquerade as a title and hide the id.
+    while (j > 0 && clean[j - 1] == ' ') clean[--j] = '\0';
+
+    strlcpy(registry.manifest().title, clean, sizeof(registry.manifest().title));
+    registry.flush_manifest();   // a name the keeper chose must survive a power cut
+    Serial.printf("[cmd] colony title set to '%s'\r\n", clean[0] ? clean : "(cleared)");
+    return true;
+}
+
 // Recolour a conker (keeper feedback #43/#49: "customise the first baby",
 // "being able to change the colour"). tint_seed is the hue the renderer's
 // luma-key remap keys off, so this is purely cosmetic — identity, not power.

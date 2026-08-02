@@ -24,6 +24,7 @@ createHiveModule().then((M) => {
   const setNow = f('host_set_now', null, ['number']);
   const throwBall = f('host_throw_ball', null, ['number', 'number']);
   const tintConker = f('host_tint_conker', null, ['number', 'number']);
+  const setTitle = f('host_set_colony_title', null, ['string']);
   const ball = f('host_pr_ball', 'number', []);
   const state = f('host_pr_state', 'number', []);
   const bond = f('host_pr_bond', 'number', []);
@@ -116,6 +117,27 @@ createHiveModule().then((M) => {
   } else {
     console.log('      (no lilguys in snapshot — skipping tint check)');
   }
+
+  // ---- colony title (#40): a display name that never becomes an address ----
+  const idBefore = (snapshot() || {}).colony_id;
+  setTitle('Ambers Lot  ');
+  const titled = snapshot();
+  // trailing spaces trimmed, so " " can't masquerade as a name and hide the id
+  check('colony title applied + trimmed', titled.title === 'Ambers Lot', `title=${JSON.stringify(titled.title)}`);
+  check('colony_id is NOT changed by titling', titled.colony_id === idBefore, `${idBefore} -> ${titled.colony_id}`);
+
+  setTitle('');
+  const cleared = snapshot();
+  check('blank title falls back to the id', !cleared.title, `title=${JSON.stringify(cleared.title)}`);
+  check('colony_id survives clearing', cleared.colony_id === idBefore);
+
+  setTitle('   ');
+  check('whitespace-only title cannot masquerade as a name', !(snapshot().title || '').trim());
+
+  // Non-ASCII is stripped (the record is a fixed char buffer, and the glass font
+  // is CP437) — a smart-quoted name must degrade, never corrupt the manifest.
+  setTitle('Amber’s Lot');
+  check('non-ASCII stripped from title', snapshot().title === 'Ambers Lot', `title=${JSON.stringify(snapshot().title)}`);
 
   // ---- regression: a NORMAL colony must be untouched by all of this ----
   seed(7);

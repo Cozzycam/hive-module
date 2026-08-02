@@ -4,6 +4,7 @@ export interface ColonySnapshot {
   schema: number;
   colony_id: string;
   queen_name?: string;   // assigned at founding (fw v98+)
+  title?: string;        // keeper's chosen colony name (fw v221+); absent = show colony_id
   fw_version?: number;   // module firmware version (fw v98+)
   awaiting?: boolean;    // verdant chamber — empty, alive, awaiting a queen (fw v218+)
   founded_unix?: number; // 0/absent on a verdant chamber (nothing founded yet)
@@ -203,9 +204,15 @@ export interface ColonyEvent {
 
 // ---- Colonies list (GET /api/v1/colonies) ----
 
+export interface ColonySummary {
+  colony_id: string;
+  last_snapshot_unix: number;
+  title?: string | null;   // keeper's chosen name (fw v221+); null/absent = show the id
+}
+
 export interface ColoniesListResponse {
   schema: number;
-  colonies: { colony_id: string; last_snapshot_unix: number }[];
+  colonies: ColonySummary[];
 }
 
 // ---- Health (GET /api/v1/health) ----

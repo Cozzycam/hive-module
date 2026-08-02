@@ -432,6 +432,10 @@ EMSCRIPTEN_KEEPALIVE void host_set_tint(int r, int g, int b) {
 EMSCRIPTEN_KEEPALIVE void host_tint_conker(uint32_t id, int tint) {
     g_sim.coordinator.cmd_set_conker_tint(id, (uint8_t)(tint & 0xFF));
 }
+// Name the colony (feedback #40) — display name only; colony_id is untouched.
+EMSCRIPTEN_KEEPALIVE void host_set_colony_title(const char* title) {
+    g_sim.coordinator.cmd_set_colony_title(title ? title : "");
+}
 
 // The keeper throws a ball to a spot on the floor (display pixels, like host_tap).
 // This is the interaction that ISN'T tapping her — see _do_play_ball. Throwing

@@ -413,7 +413,15 @@ void Conker::tick(Chamber& ch, float dt) {
 
     // Decision phase -- only when arrived (no pending target)
     if (state == STATE_IDLE) {
-        if (idle_ticks_remaining > 0) {
+        // A thrown ball cuts an idle rest short. Without this she only notices it
+        // whenever her next task re-pick happens to come round (a rest runs 5-30s,
+        // and idle_cooldown can push it further) — so the keeper throws, and she
+        // sits there. The ball has to interrupt, the way being tapped does.
+        if (ch.incubation_mode && ch.has_ball()) {
+            idle_ticks_remaining = 0;
+            idle_cooldown = 0;
+            _pick_task(ch);
+        } else if (idle_ticks_remaining > 0) {
             _tick_idle(ch);
         } else {
             if (idle_cooldown > 0) idle_cooldown--;
@@ -2148,6 +2156,7 @@ bool Conker::_should_wake(Chamber& ch) const {
 // bar: the friendlier the conker, the LOWER the bar, so butterflies rouse sooner.
 bool Conker::_wants_company_wake(Chamber& ch) const {
     if (daytime_nap || g_tod.phase == PHASE_DAY) return false;
+    if (ch.incubation_mode) return false;   // nobody to huddle with — see _wants_company_awake
     // Survival first: a hunger/famine wake goes to EAT, not to huddle.
     if (hunger > 60.0f || ch.colony->food_pressure() > Cfg::FAMINE_SLOWDOWN_PRESSURE)
         return false;
@@ -2164,6 +2173,13 @@ bool Conker::_wants_company_wake(Chamber& ch) const {
 // sociability gate + threshold as the night wake. Loners keep to themselves.
 bool Conker::_wants_company_awake(Chamber& ch) const {
     if (sleeping || departing) return false;
+    // A princess is alone by construction — there is no one to amble over to, so
+    // seeking company burns SOCIAL_SEEK_TIMEOUT_TICKS (150s) of her tick going
+    // nowhere, over and over, once she's lonely. _tick_seek_company owns the tick
+    // and returns before the decision phase, so while it runs she ignores food,
+    // the ball, everything. Her company is the keeper, not a nestmate.
+    // (Same family as the return-home and forager guards above.)
+    if (ch.incubation_mode) return false;
     // Priority: survival (eat) and rest (sleep) outrank socialising — a hungry or
     // sleepy conker handles that first (via _pick_task) instead of wandering off.
     if (hunger > 40.0f) return false;
