@@ -29,7 +29,15 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,png,svg,woff2}'],
+        // wasm MUST be here. hive.wasm has no content hash in its filename and was
+        // not precached, so it came from the browser's HTTP cache and could lag
+        // indefinitely while the React bundle updated around it — an install can
+        // run a MONTHS-old sim under a current UI. Caught 2026-08-02: a keeper's
+        // princess sat frozen in `seeking_company` (a bug fixed in v221) because
+        // her install was still on the v218 wasm while others were on v223.
+        // Precaching it makes the service worker revision it in lockstep with
+        // hive.js — which matters doubly, since glue and wasm must agree.
+        globPatterns: ['**/*.{js,css,html,png,svg,woff2,wasm}'],
         // Pull our push / notificationclick handlers into the generated SW
         importScripts: ['push-handler.js'],
         runtimeCaching: [
