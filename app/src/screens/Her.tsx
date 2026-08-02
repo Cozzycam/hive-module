@@ -113,6 +113,7 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
     const fy = v.y + ((e.clientY - r.top) / r.height) * v.h;
     if (tool === 'ball')       localModule.throwBallAt(fx, fy);
     else if (tool === 'water') localModule.water();
+    else if (tool === 'boop')  localModule.boopFb(fx, fy);  // boop only — a miss does nothing
     else                       localModule.tapFb(fx, fy);   // food where you tap / boop if you hit her
   };
 

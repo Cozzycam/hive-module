@@ -31,6 +31,10 @@ createHiveModule().then((M) => {
   const ownedMask = f('host_owned', 'number', []);
   const unequip = f('host_unequip', 'number', []);
   const water = f('host_water', 'number', []);
+  const boop = f('host_boop', null, ['number', 'number']);
+  const tapFb = f('host_tap', null, ['number', 'number']);
+  const foodPiles = f('host_pr_foodpiles', 'number', []);
+  const setTintOk = f('host_set_tint', 'number', ['number', 'number', 'number']);
   const flowering = f('host_flowering', 'number', []);
   const interactReady = f('host_interact_ready', 'number', ['number']);
   const ball = f('host_pr_ball', 'number', []);
@@ -160,6 +164,24 @@ createHiveModule().then((M) => {
   } else {
     console.log('      (no lilguys in snapshot — skipping tint check)');
   }
+
+  // ---- the Boop tool must NOT litter her room with food ----
+  seed(1234);
+  bootInc();
+  warp(3600, 1);
+  while (foodPiles() > 0) { warp(60, 0); }     // let her clear anything lying about
+  const pilesBefore = foodPiles();
+  boop(8, 8);                                  // a corner she is not standing in
+  check('booping empty floor drops no food', foodPiles() === pilesBefore,
+        `${pilesBefore} -> ${foodPiles()}`);
+  tapFb(8, 8);                                 // the Food tool still does
+  check('the food tool still drops food', foodPiles() > pilesBefore,
+        `${pilesBefore} -> ${foodPiles()}`);
+
+  // ---- room colour must actually reach the renderer ----
+  // It silently did nothing for a release: host_set_tint passed module id 0
+  // while topology_my_id() is 1, so it never matched "me".
+  check('setting the room colour reports success', setTintOk(150, 176, 124) === 1, 'applied');
 
   // ---- interaction cooldowns: the act always works, the PAYOFF is gated ----
   seed(808);

@@ -26,6 +26,7 @@
 #include "rng.h"           // g_rng (host_seed reseeds it per install)
 #include "time_of_day.h"   // g_tod (host_set_now)
 #include "weather.h"       // g_weather (host_set_weather)
+#include "topology.h"      // topology_my_id — floor tint must target OUR module
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>
 #include <ArduinoJson.h>    // princess export (host_export_princess)
@@ -293,8 +294,10 @@ EMSCRIPTEN_KEEPALIVE int host_conkers() { return chamber().conker_count; }
 
 // A tap at a display pixel — mirrors Sim::handle_touch: boop the nearest conker
 // (select + startle + relieve boredom), else deselect, else drop food.
-EMSCRIPTEN_KEEPALIVE
-void host_tap(int tx, int ty) {
+// allow_food=false is the Boop tool: tapping empty floor should do NOTHING.
+// With it true (the Food tool) a miss drops a pile where you tapped, which is
+// why picking Boop used to litter her room with food.
+static void host_tap_impl(int tx, int ty, bool allow_food) {
     int cx = tx / Cfg::CELL_SIZE, cy = ty / Cfg::CELL_SIZE;
     if (cx < 0 || cx >= Cfg::GRID_WIDTH || cy < 0 || cy >= Cfg::GRID_HEIGHT) return;
     Chamber& ch = chamber();
@@ -337,6 +340,7 @@ void host_tap(int tx, int ty) {
         return;
     }
     if (g_sim.selected_conker_id != 0) { g_sim.selected_conker_id = 0; return; }
+    if (!allow_food) return;
 
     ch.add_food(cx, cy, Cfg::TAP_FEED_AMOUNT);
     Event ev;
@@ -345,6 +349,9 @@ void host_tap(int tx, int ty) {
     ev.food_tapped = { (int8_t)cx, (int8_t)cy };
     g_sim.event_bus.emit(ev);
 }
+
+EMSCRIPTEN_KEEPALIVE void host_tap(int tx, int ty)  { host_tap_impl(tx, ty, true);  }
+EMSCRIPTEN_KEEPALIVE void host_boop(int tx, int ty) { host_tap_impl(tx, ty, false); }
 
 // Press-and-hold to gather: conkers rush to the finger (ring up around it).
 EMSCRIPTEN_KEEPALIVE
@@ -431,8 +438,12 @@ EMSCRIPTEN_KEEPALIVE void host_grant_wish(uint32_t id) { g_sim.coordinator.cmd_g
 EMSCRIPTEN_KEEPALIVE void host_feed_colony(double amount) { g_sim.coordinator.cmd_feed_colony((float)amount); }
 EMSCRIPTEN_KEEPALIVE void host_care_package() { g_sim.coordinator.cmd_gift_care_package(0); }
 EMSCRIPTEN_KEEPALIVE void host_rename(uint32_t id, const char* name) { g_sim.coordinator.cmd_rename_conker(id, name); }
-EMSCRIPTEN_KEEPALIVE void host_set_tint(int r, int g, int b) {
-    g_sim.coordinator.cmd_set_floor_tint(0, (uint8_t)r, (uint8_t)g, (uint8_t)b);
+EMSCRIPTEN_KEEPALIVE int host_set_tint(int r, int g, int b) {
+    // MUST be our own module id, not 0: cmd_set_floor_tint compares against
+    // topology_my_id() to decide "this is me", and the host stub returns 1. With
+    // 0 it fell through to the neighbour scan, found nothing, and silently did
+    // nothing — the room colour never changed.
+    return g_sim.coordinator.cmd_set_floor_tint(topology_my_id(), (uint8_t)r, (uint8_t)g, (uint8_t)b) ? 1 : 0;
 }
 // Recolour a conker herself (feedback #43/#49) — distinct from host_set_tint,
 // which colours the FLOOR. Cosmetic only: identity, not power.

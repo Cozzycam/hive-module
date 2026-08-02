@@ -176,7 +176,7 @@ class LocalModule {
         feedColony: cw('host_feed_colony', null, ['number']),
         carePackage: cw('host_care_package', null, []),
         rename: cw('host_rename', null, ['number', 'string']),
-        setTint: cw('host_set_tint', null, ['number', 'number', 'number']),
+        setTint: cw('host_set_tint', 'number', ['number', 'number', 'number']),
         tintConker: cw('host_tint_conker', null, ['number', 'number']),
         setColonyTitle: cw('host_set_colony_title', null, ['string']),
         throwBall: cw('host_throw_ball', null, ['number', 'number']),
@@ -186,6 +186,7 @@ class LocalModule {
         shopJson: cw('host_shop_json', 'string', []),
         owned: cw('host_owned', 'number', []),
         water: cw('host_water', 'number', []),
+        boop: cw('host_boop', null, ['number', 'number']),
         flowering: cw('host_flowering', 'number', []),
         interactReady: cw('host_interact_ready', 'number', ['number']),
         unequip: cw('host_unequip', 'number', []),
@@ -524,6 +525,11 @@ class LocalModule {
         ball:     (this.fns.prBall ? this.fns.prBall() : 0) ?? 0,
       };
     } catch { return null; }
+  }
+
+  // Boop ONLY — never drops food on a miss (that's the Food tool's job).
+  boopFb(fx: number, fy: number) {
+    try { this.fns.boop?.(Math.round(fx), Math.round(fy)); } catch { /**/ }
   }
 
   // Water her — the bud on her head opens into a flower for a few hours.
