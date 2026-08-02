@@ -643,6 +643,21 @@ EMSCRIPTEN_KEEPALIVE uint32_t host_founded_unix() { return g_sim.coordinator.reg
 EMSCRIPTEN_KEEPALIVE int host_pr_state() { Chamber& ch = chamber(); return ch.conker_count ? (int)ch.conkers[0].state : -1; }
 EMSCRIPTEN_KEEPALIVE int host_pr_foodpiles() { return chamber().food_pile_count; }
 EMSCRIPTEN_KEEPALIVE int host_pr_ball() { return chamber().has_ball() ? chamber().ball_bounces : 0; }
+// First active visiting critter, in display pixels (-1 = none about). Exists so a
+// test can prove visitors land inside her room: they're her shop income, and a
+// bug wandering the chamber outside the view is one she can never catch.
+EMSCRIPTEN_KEEPALIVE int host_pr_critter_x() {
+    Chamber& ch = chamber();
+    for (int i = 0; i < Cfg::MAX_CRITTERS; i++)
+        if (ch.critters[i].active) return (int)(ch.critters[i].x * Cfg::CELL_SIZE);
+    return -1;
+}
+EMSCRIPTEN_KEEPALIVE int host_pr_critter_y() {
+    Chamber& ch = chamber();
+    for (int i = 0; i < Cfg::MAX_CRITTERS; i++)
+        if (ch.critters[i].active) return (int)(ch.critters[i].y * Cfg::CELL_SIZE);
+    return -1;
+}
 // Her room in display pixels. The app crops EXACTLY this, so the room's wall and
 // the edge of the pane are the same line and there's no camera to chase her with.
 EMSCRIPTEN_KEEPALIVE int host_room_x() { return chamber().room_x0() * Cfg::CELL_SIZE; }

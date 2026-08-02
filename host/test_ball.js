@@ -31,6 +31,8 @@ createHiveModule().then((M) => {
   const ball = f('host_pr_ball', 'number', []);
   const ballX = f('host_pr_ball_x', 'number', []);
   const ballY = f('host_pr_ball_y', 'number', []);
+  const critterX = f('host_pr_critter_x', 'number', []);
+  const critterY = f('host_pr_critter_y', 'number', []);
   const roomX = f('host_room_x', 'number', []);
   const roomY = f('host_room_y', 'number', []);
   const roomW = f('host_room_w', 'number', []);
@@ -173,6 +175,21 @@ createHiveModule().then((M) => {
     if (x < rx - 8 || x > rx + rw + 8 || y < ry - 8 || y > ry + rh + 8) { strayed = `${x},${y}`; break; }
   }
   check('she never leaves her room', strayed === null, strayed ? `strayed to ${strayed}` : 'stayed in');
+
+  // Visitors must land INSIDE the room. The room is about a quarter of the
+  // chamber, so an unclamped spawn would put most bugs where she can neither
+  // see nor catch them — and they're the shop's entire income.
+  let seen = 0, outside = 0, worst = null;
+  for (let i = 0; i < 3000; i++) {
+    warp(2, 1);                              // ~100 sim-minutes total
+    const cx = critterX(), cy = critterY();
+    if (cx < 0) continue;
+    seen++;
+    if (cx < rx || cx > rx + rw || cy < ry || cy > ry + rh) { outside++; worst = `${cx},${cy}`; }
+  }
+  console.log(`      critter sightings: ${seen}, outside the room: ${outside}`);
+  check('visitors were actually seen', seen > 0, `${seen} sightings`);
+  check('every visitor was inside her room', outside === 0, worst ? `e.g. ${worst} vs room ${rx},${ry} ${rw}x${rh}` : 'all in');
 
   // ---- a normal colony must still have the WHOLE chamber ----
   seed(7);
