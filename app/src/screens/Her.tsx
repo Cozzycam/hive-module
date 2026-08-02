@@ -21,9 +21,10 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [status, setStatus] = useState<'loading' | 'running' | 'error'>('loading');
   const [stats, setStats] = useState<PrincessStats | null>(null);
-  // Drives the canvas CSS aspect so the room is never stretched to the old
-  // window's shape. Set once, when the sim reports its room.
-  const [aspect, setAspect] = useState(`${CROP_W} / ${CROP_H}`);
+  // Canvas size must be REACT STATE, not an imperative canvas.width assignment:
+  // width/height are JSX props here, so every re-render (the stats poll, 4x a
+  // second) resets them and silently undoes an imperative resize.
+  const [canvasSize, setCanvasSize] = useState({ w: CROP_W, h: CROP_H });
   // The view rect. Static: her room is fenced to exactly this, so everything is
   // on screen at once and nothing chases her about. Only falls back to a
   // follow-camera when the wasm predates the room.
@@ -54,10 +55,7 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
           if (room) {
             view.x = room.x; view.y = room.y; view.w = room.w; view.h = room.h;
             view.fixed = true;
-            if (canvas.width !== room.w || canvas.height !== room.h) {
-              canvas.width = room.w; canvas.height = room.h;
-              setAspect(`${room.w} / ${room.h}`);
-            }
+            setCanvasSize((s) => (s.w === room.w && s.h === room.h ? s : { w: room.w, h: room.h }));
           } else {
             // Legacy wasm: keep the old follow-camera so the Nest still works.
             const s = localModule.princessStats();
@@ -141,10 +139,10 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
                     background: '#12100e', boxShadow: '0 8px 28px rgba(0,0,0,0.25)' }}>
         <canvas
           ref={canvasRef}
-          width={CROP_W}
-          height={CROP_H}
+          width={canvasSize.w}
+          height={canvasSize.h}
           onPointerDown={onTap}
-          style={{ width: '100%', aspectRatio: aspect, display: 'block',
+          style={{ width: '100%', aspectRatio: `${canvasSize.w} / ${canvasSize.h}`, display: 'block',
                    imageRendering: 'pixelated', touchAction: 'none', cursor: 'pointer', background: '#12100e' }}
         />
       </div>

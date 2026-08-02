@@ -242,7 +242,7 @@ private:
 
     // Artifacts — conker-made works, rendered in their maker's hue
     void _draw_artworks(const Chamber& ch);
-    void _draw_ball(const Chamber& ch);   // incubation: the keeper's thrown ball
+    void _draw_ball(const Chamber& ch, float lerp_t);   // incubation: the keeper's thrown ball
     void _maker_colors(uint8_t tint_seed, uint16_t* main_out, uint16_t* dark_out);
 
     // Finger scent shimmer — fading echo of a swipe

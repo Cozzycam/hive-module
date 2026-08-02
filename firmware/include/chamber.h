@@ -144,11 +144,22 @@ public:
     // The keeper's ball (incubation only). One at a time: she chases it, bats it
     // somewhere new, chases again, until it rolls to a stop and you throw again.
     // Deliberately not an entity system — a one-creature pet needs one toy.
-    int8_t       ball_x = -1, ball_y = -1;   // -1 = nothing in play
-    uint8_t      ball_bounces = 0;           // bats left before it stops
-    bool has_ball() const { return ball_bounces > 0 && ball_x >= 0; }
+    // Cell coords, but FLOAT and with velocity — the ball rolls and slows rather
+    // than teleporting between cells (it used to blink, which read as a glitch
+    // instead of a knock-on). Same shape as Critter/Firefly so the renderer can
+    // sub-tick lerp it the same way.
+    float        ball_x = 0, ball_y = 0;
+    float        ball_prev_x = 0, ball_prev_y = 0;
+    float        ball_vx = 0, ball_vy = 0;
+    float        ball_roll = 0;              // accumulated spin phase, drives the highlight
+    bool         ball_active = false;
+    uint8_t      ball_bounces = 0;           // bats left before it rolls to a stop for good
+    uint8_t      ball_bat_cooldown = 0;      // ticks before she can bat it again
+    bool has_ball() const { return ball_active && ball_bounces > 0; }
+    bool ball_resting() const;               // slow enough to pounce on
     void throw_ball(int x, int y);           // keeper throws (resets the bounce count)
-    void bat_ball();                         // she reaches it: knock it on, or it stops
+    void bat_ball(float from_x, float from_y);  // she reaches it: knock it on, away from her
+    void _tick_ball();                       // roll + friction + wall bounce
 
     Queen  queen_obj;
     bool   has_queen = false;

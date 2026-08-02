@@ -29,7 +29,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 223;
+constexpr uint32_t FW_VERSION = 224;
 
 namespace Cfg {
 
@@ -203,7 +203,11 @@ constexpr int ROOM_Y0      = (GRID_HEIGHT - ROOM_H_CELLS) / 2;   // 3
 // Each arrival is a "bat": she knocks it somewhere new and chases again, until
 // it rolls to a stop. Throwing again is the interaction.
 constexpr uint8_t  BALL_BOUNCES            = 5;      // bats per throw before it rolls to a stop
-constexpr int      BALL_BAT_SCATTER        = 3;      // cells the ball skips when batted. Kept SHORT on purpose: the Nest window is ~11x14 cells, so a 6-cell scatter regularly knocked the ball clean out of view and the keeper lost the game they were watching
+constexpr float    BALL_BAT_SPEED          = 0.35f;  // cells/tick imparted by a bat. With the friction below it coasts ~3.5 cells over ~4s — a readable roll inside an 11-cell room (a 6-cell teleport used to fling it out of view entirely)
+constexpr float    BALL_FRICTION           = 0.90f;  // per-tick velocity decay; total roll ~= speed/(1-friction)
+constexpr float    BALL_STOP_SPEED         = 0.02f;  // below this it has stopped
+constexpr float    BALL_REST_SPEED         = 0.10f;  // slow enough for her to pounce on — she can't bat a ball still flying past her
+constexpr uint8_t  BALL_BAT_COOLDOWN_TICKS = 6;      // so one arrival is one bat, not a rally
 constexpr float    BALL_BOREDOM_RELIEF     = 0.45f;  // per bat — play is what boredom is FOR
 constexpr float    BALL_SOCIAL_RELIEF      = 0.30f;  // per bat — playing WITH you is company
 constexpr int      BALL_PLAY_DURATION_TICKS = 10;    // the pounce animation on arrival

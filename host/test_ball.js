@@ -81,19 +81,32 @@ createHiveModule().then((M) => {
   // exactly how the first version shipped. Track the worst offset all chase.
   const HALF_W = 174 / 2, HALF_H = 232 / 2;
   let sawPlaying = false, bats = 0, prev = ball();
-  let worstDx = 0, worstDy = 0;
+  let worstDx = 0, worstDy = 0, maxStep = 0, totalRoll = 0;
+  let lastBx = ballX(), lastBy = ballY();
   for (let i = 0; i < 600 && ball() > 0; i++) {   // up to 600 ticks ~75s sim
     warp(0.125, 0);
     if (state() === STATE_PLAYING) sawPlaying = true;
     if (ballX() >= 0) {
       worstDx = Math.max(worstDx, Math.abs(ballX() - px()));
       worstDy = Math.max(worstDy, Math.abs(ballY() - py()));
+      if (lastBx >= 0) {
+        const step = Math.hypot(ballX() - lastBx, ballY() - lastBy);
+        maxStep = Math.max(maxStep, step);
+        totalRoll += step;
+      }
+      lastBx = ballX(); lastBy = ballY();
     }
     if (ball() !== prev) { if (ball() < prev || ball() === 0) bats++; prev = ball(); }
   }
   check('ball stayed inside the Nest window all chase',
         worstDx <= HALF_W && worstDy <= HALF_H,
         `worst offset ${Math.round(worstDx)}x${Math.round(worstDy)}px vs ${HALF_W}x${HALF_H}`);
+  // It must ROLL, not teleport: a bat should show up as a run of small
+  // frame-to-frame steps, never one big jump to a new cell.
+  check('ball never teleports (biggest single-tick move is a roll)',
+        maxStep > 0 && maxStep < 24,
+        `biggest step ${Math.round(maxStep)}px/tick`);
+  check('ball actually travelled after a bat', totalRoll > 40, `rolled ${Math.round(totalRoll)}px`);
   check('she entered the chase (STATE_PLAYING)', sawPlaying);
   check('she batted it at least twice', bats >= 2, `bats=${bats}`);
   check('ball ran out and cleared', ball() === 0, `bounces=${ball()}`);

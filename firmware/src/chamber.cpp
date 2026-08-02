@@ -153,6 +153,7 @@ void Chamber::tick(float dt) {
     // Night ambience
     _tick_fireflies();
     _tick_critters();
+    _tick_ball();
     _detect_critter_discovery();
     _tick_plants();
     if (g_tod.unix_time > 0) chamber_artworks_lazy_load(artworks);
@@ -721,33 +722,74 @@ void Chamber::add_food(int x, int y, float amount) {
 
 // ---- the ball ----
 
+bool Chamber::ball_resting() const {
+    return fabsf(ball_vx) + fabsf(ball_vy) < Cfg::BALL_REST_SPEED;
+}
+
 void Chamber::throw_ball(int x, int y) {
     if (!in_bounds(x, y)) return;
     if (x < room_x0()) x = room_x0();
     if (x > room_x1()) x = room_x1();
     if (y < room_y0()) y = room_y0();
     if (y > room_y1()) y = room_y1();
-    ball_x = static_cast<int8_t>(x);
-    ball_y = static_cast<int8_t>(y);
+    ball_x = ball_prev_x = x + 0.5f;
+    ball_y = ball_prev_y = y + 0.5f;
+    ball_vx = ball_vy = 0.0f;
+    ball_active = true;
+    ball_bat_cooldown = 0;
     ball_bounces = Cfg::BALL_BOUNCES;   // a fresh throw always restarts the game
 }
 
-void Chamber::bat_ball() {
+// She's reached it: knock it on, AWAY from her, so the ball leads the chase
+// instead of doubling back through her.
+void Chamber::bat_ball(float from_x, float from_y) {
     if (ball_bounces == 0) return;
-    if (--ball_bounces == 0) {          // last bat — it rolls to a stop
-        ball_x = ball_y = -1;
+    if (--ball_bounces == 0) {          // that was the last one — it rolls to rest
+        ball_active = false;
+        ball_vx = ball_vy = 0.0f;
         return;
     }
-    // Knock it somewhere new nearby, clamped in-bounds so it never leaves the
-    // chamber (a ball she can't reach would strand her mid-chase).
-    int nx = ball_x + g_rng.rand_int(-Cfg::BALL_BAT_SCATTER, Cfg::BALL_BAT_SCATTER);
-    int ny = ball_y + g_rng.rand_int(-Cfg::BALL_BAT_SCATTER, Cfg::BALL_BAT_SCATTER);
-    if (nx < room_x0()) nx = room_x0();
-    if (ny < room_y0()) ny = room_y0();
-    if (nx > room_x1()) nx = room_x1();
-    if (ny > room_y1()) ny = room_y1();
-    ball_x = static_cast<int8_t>(nx);
-    ball_y = static_cast<int8_t>(ny);
+    float dx = ball_x - from_x, dy = ball_y - from_y;
+    float len = sqrtf(dx * dx + dy * dy);
+    if (len < 0.001f) {                 // she's right on top of it — any direction
+        float a = g_rng.rand_float() * 6.2832f;
+        dx = cosf(a); dy = sinf(a); len = 1.0f;
+    }
+    // Spread the direction a little so a rally isn't a straight line back and forth.
+    float ang = atan2f(dy, dx) + (g_rng.rand_float() - 0.5f) * 1.2f;
+    ball_vx = cosf(ang) * Cfg::BALL_BAT_SPEED;
+    ball_vy = sinf(ang) * Cfg::BALL_BAT_SPEED;
+    ball_bat_cooldown = Cfg::BALL_BAT_COOLDOWN_TICKS;
+}
+
+void Chamber::_tick_ball() {
+    if (ball_bat_cooldown > 0) ball_bat_cooldown--;
+    ball_prev_x = ball_x;
+    ball_prev_y = ball_y;
+    if (!ball_active) return;
+
+    ball_x += ball_vx;
+    ball_y += ball_vy;
+
+    // Bounce off the room's walls — a ball that vanished into the wall would
+    // strand her walking at it forever.
+    const float lo_x = room_x0() + 0.5f, hi_x = room_x1() + 0.5f;
+    const float lo_y = room_y0() + 0.5f, hi_y = room_y1() + 0.5f;
+    if (ball_x < lo_x) { ball_x = lo_x; ball_vx = fabsf(ball_vx) * 0.7f; }
+    if (ball_x > hi_x) { ball_x = hi_x; ball_vx = -fabsf(ball_vx) * 0.7f; }
+    if (ball_y < lo_y) { ball_y = lo_y; ball_vy = fabsf(ball_vy) * 0.7f; }
+    if (ball_y > hi_y) { ball_y = hi_y; ball_vy = -fabsf(ball_vy) * 0.7f; }
+
+    // Spin follows distance travelled, so the highlight turns at the speed the
+    // ball is actually moving and stops dead when it does.
+    float sp = sqrtf(ball_vx * ball_vx + ball_vy * ball_vy);
+    ball_roll += sp * 2.2f;
+    if (ball_roll > 6.2832f) ball_roll -= 6.2832f;
+
+    ball_vx *= Cfg::BALL_FRICTION;
+    ball_vy *= Cfg::BALL_FRICTION;
+    if (fabsf(ball_vx) < Cfg::BALL_STOP_SPEED) ball_vx = 0.0f;
+    if (fabsf(ball_vy) < Cfg::BALL_STOP_SPEED) ball_vy = 0.0f;
 }
 
 float Chamber::take_food(int x, int y, float amount) {

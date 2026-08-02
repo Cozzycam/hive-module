@@ -714,7 +714,7 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
     _draw_sorted_sprites(_floor_sprites, _floor_sprite_count, ch);
     _draw_plants(ch);     // garden crops sit on the floor layer too
     _draw_artworks(ch);   // conker-made works, in their makers' colours
-    _draw_ball(ch);       // the keeper's ball, under her so a pounce reads right
+    _draw_ball(ch, lerp_t);  // the keeper's ball, under her so a pounce reads right
 
     // Layer 3: living agents (workers, queen) — Y-sorted, queen +2 cell bias
     _build_agent_sprites(ch, lerp_t);
@@ -2164,13 +2164,22 @@ void Renderer::_maker_colors(uint8_t tint_seed, uint16_t* main_out, uint16_t* da
 // maker's colours. Memorials keep their fixed stone palette (tint 0).
 // The keeper's ball. Drawn procedurally rather than as a new sprite kind —
 // there's no ball in the artist commission and two circles beat a sprite slot.
-void Renderer::_draw_ball(const Chamber& ch) {
+// Sub-tick lerped like the critters, and the highlight ORBITS with ball_roll so
+// it reads as rolling: the spin advances with distance travelled, so it visibly
+// slows and stops turning exactly when the ball does.
+void Renderer::_draw_ball(const Chamber& ch, float lerp_t) {
     if (!ch.has_ball()) return;
-    int px = ch.ball_x * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
-    int py = ch.ball_y * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
-    _gfx->fillCircle(px, py, 4, _rgb565(232, 92, 88));            // body
-    _gfx->fillCircle(px - 1, py - 2, 1, _rgb565(255, 226, 214));  // highlight
-    _mark_dirty(px - 5, py - 6, 11, 12);
+    float t = (lerp_t < 0.0f) ? 0.0f : ((lerp_t > 1.0f) ? 1.0f : lerp_t);
+    float bx = ch.ball_prev_x + (ch.ball_x - ch.ball_prev_x) * t;
+    float by = ch.ball_prev_y + (ch.ball_y - ch.ball_prev_y) * t;
+    int px = static_cast<int>(bx * Cfg::CELL_SIZE);
+    int py = static_cast<int>(by * Cfg::CELL_SIZE);
+
+    _gfx->fillCircle(px, py, 4, _rgb565(232, 92, 88));                  // body
+    int hx = px + static_cast<int>(cosf(ch.ball_roll) * 1.6f);
+    int hy = py + static_cast<int>(sinf(ch.ball_roll) * 1.6f) - 1;
+    _gfx->fillCircle(hx, hy, 1, _rgb565(255, 226, 214));                // spinning glint
+    _mark_dirty(px - 6, py - 6, 13, 13);
 }
 
 void Renderer::_draw_artworks(const Chamber& ch) {

@@ -1131,8 +1131,11 @@ void Conker::_do_play_ball(Chamber& ch) {
         has_target = false; has_target_cell = false;
         return;
     }
-    int8_t bx = ch.ball_x, by = ch.ball_y;
-    if (abs(bx - cell_x()) + abs(by - cell_y()) <= 1) {
+    int bx = (int)ch.ball_x, by = (int)ch.ball_y;
+    // Only pounce on a ball that's slowed down, and never twice in a rally — she
+    // can't bat one that's still flying past her.
+    if (abs(bx - cell_x()) + abs(by - cell_y()) <= 1
+            && ch.ball_resting() && ch.ball_bat_cooldown == 0) {
         needs[NEED_BOREDOM] -= Cfg::BALL_BOREDOM_RELIEF;
         if (needs[NEED_BOREDOM] < 0.0f) needs[NEED_BOREDOM] = 0.0f;
         needs[NEED_SOCIAL]  -= Cfg::BALL_SOCIAL_RELIEF;
@@ -1145,9 +1148,9 @@ void Conker::_do_play_ball(Chamber& ch) {
         float qdx = bx - x, qdy = by - y;          // lean into it, as eating does
         if (fabsf(qdx) >= fabsf(qdy)) { anim_lean_dx = (qdx > 0) ? 1 : -1; anim_lean_dy = 0; }
         else                          { anim_lean_dx = 0; anim_lean_dy = (qdy > 0) ? 1 : -1; }
-        ch.bat_ball();
+        ch.bat_ball(x, y);          // knocked AWAY from her, so it leads the chase
         has_target = false; has_target_cell = false;
-        return;   // stay in STATE_PLAYING — next tick chases wherever it landed
+        return;   // stay in STATE_PLAYING — next tick chases it as it rolls
     }
     _step_toward_cell(bx, by, ch);
 }
