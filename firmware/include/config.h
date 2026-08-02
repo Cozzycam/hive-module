@@ -29,7 +29,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 221;
+constexpr uint32_t FW_VERSION = 222;
 
 namespace Cfg {
 
@@ -191,7 +191,7 @@ constexpr float    PRINCESS_SOCIAL_PLATEAU     = 0.80f;                // ...and
 // Each arrival is a "bat": she knocks it somewhere new and chases again, until
 // it rolls to a stop. Throwing again is the interaction.
 constexpr uint8_t  BALL_BOUNCES            = 5;      // bats per throw before it rolls to a stop
-constexpr int      BALL_BAT_SCATTER        = 6;      // cells the ball skips when batted
+constexpr int      BALL_BAT_SCATTER        = 3;      // cells the ball skips when batted. Kept SHORT on purpose: the Nest window is ~11x14 cells, so a 6-cell scatter regularly knocked the ball clean out of view and the keeper lost the game they were watching
 constexpr float    BALL_BOREDOM_RELIEF     = 0.45f;  // per bat — play is what boredom is FOR
 constexpr float    BALL_SOCIAL_RELIEF      = 0.30f;  // per bat — playing WITH you is company
 constexpr int      BALL_PLAY_DURATION_TICKS = 10;    // the pounce animation on arrival

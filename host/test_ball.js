@@ -26,6 +26,8 @@ createHiveModule().then((M) => {
   const tintConker = f('host_tint_conker', null, ['number', 'number']);
   const setTitle = f('host_set_colony_title', null, ['string']);
   const ball = f('host_pr_ball', 'number', []);
+  const ballX = f('host_pr_ball_x', 'number', []);
+  const ballY = f('host_pr_ball_y', 'number', []);
   const state = f('host_pr_state', 'number', []);
   const bond = f('host_pr_bond', 'number', []);
   const boredom = f('host_pr_boredom', 'number', []);
@@ -60,20 +62,34 @@ createHiveModule().then((M) => {
   const bore0 = boredom(), soc0 = social(), bond0 = bond();
   console.log(`      before throw: boredom=${bore0} social=${soc0} bond=${bond0}`);
 
-  // ---- throw it somewhere she is NOT ----
-  const CELL = 16, W = 30, H = 20;
-  let tx = px() > (W * CELL) / 2 ? 2 * CELL : (W - 3) * CELL;
-  let ty = py() > (H * CELL) / 2 ? 2 * CELL : (H - 3) * CELL;
+  // ---- throw it a short hop away, exactly as localModule.throwBall does ----
+  // (a far-corner throw is what shipped first and it landed off-screen every time)
+  const FBW = 480, FBH = 320, MARGIN = 24;
+  const clamp = (v, hi) => (v < MARGIN ? MARGIN : v > hi - MARGIN ? hi - MARGIN : v);
+  const tx = Math.round(clamp(px() + 65, FBW));
+  const ty = Math.round(clamp(py() + 40, FBH));
   throwBall(tx, ty);
   check('ball is in play after throw', ball() > 0, `bounces=${ball()}`);
 
   // ---- she should notice it and go ----
+  // The Nest shows a 174x232 window of the 480x320 chamber, centred on her. If
+  // the ball ever sits outside that, the keeper sees nothing happen — which is
+  // exactly how the first version shipped. Track the worst offset all chase.
+  const HALF_W = 174 / 2, HALF_H = 232 / 2;
   let sawPlaying = false, bats = 0, prev = ball();
+  let worstDx = 0, worstDy = 0;
   for (let i = 0; i < 600 && ball() > 0; i++) {   // up to 600 ticks ~75s sim
     warp(0.125, 0);
     if (state() === STATE_PLAYING) sawPlaying = true;
+    if (ballX() >= 0) {
+      worstDx = Math.max(worstDx, Math.abs(ballX() - px()));
+      worstDy = Math.max(worstDy, Math.abs(ballY() - py()));
+    }
     if (ball() !== prev) { if (ball() < prev || ball() === 0) bats++; prev = ball(); }
   }
+  check('ball stayed inside the Nest window all chase',
+        worstDx <= HALF_W && worstDy <= HALF_H,
+        `worst offset ${Math.round(worstDx)}x${Math.round(worstDy)}px vs ${HALF_W}x${HALF_H}`);
   check('she entered the chase (STATE_PLAYING)', sawPlaying);
   check('she batted it at least twice', bats >= 2, `bats=${bats}`);
   check('ball ran out and cleared', ball() === 0, `bounces=${ball()}`);

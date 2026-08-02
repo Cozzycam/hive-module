@@ -586,6 +586,11 @@ EMSCRIPTEN_KEEPALIVE uint32_t host_founded_unix() { return g_sim.coordinator.reg
 EMSCRIPTEN_KEEPALIVE int host_pr_state() { Chamber& ch = chamber(); return ch.conker_count ? (int)ch.conkers[0].state : -1; }
 EMSCRIPTEN_KEEPALIVE int host_pr_foodpiles() { return chamber().food_pile_count; }
 EMSCRIPTEN_KEEPALIVE int host_pr_ball() { return chamber().has_ball() ? chamber().ball_bounces : 0; }
+// Ball position in display pixels, -1 when nothing's in play. Exists so a test can
+// assert the ball stays inside the Nest's window — the first version threw it out
+// of view every time and looked, to a keeper, like the button did nothing.
+EMSCRIPTEN_KEEPALIVE int host_pr_ball_x() { Chamber& ch = chamber(); return ch.has_ball() ? ch.ball_x * Cfg::CELL_SIZE : -1; }
+EMSCRIPTEN_KEEPALIVE int host_pr_ball_y() { Chamber& ch = chamber(); return ch.has_ball() ? ch.ball_y * Cfg::CELL_SIZE : -1; }
 EMSCRIPTEN_KEEPALIVE int host_pr_sleeping() { Chamber& ch = chamber(); return ch.conker_count ? (ch.conkers[0].sleeping?1:0) : 0; }
 // Live needs (0..100), all active per NEEDS_ACTIVE_MASK — the app shows them as bars.
 EMSCRIPTEN_KEEPALIVE int host_pr_boredom() { Chamber& ch = chamber(); return ch.conker_count ? (int)(ch.conkers[0].needs[NEED_BOREDOM]*100.0f) : 0; }

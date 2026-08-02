@@ -512,20 +512,28 @@ class LocalModule {
     } catch { return null; }
   }
 
-  // Throw the ball somewhere she isn't, so there's a chase worth watching.
-  // Aiming is deliberately ours, not the keeper's — one tap should just work.
+  // Throw the ball a short hop from her — far enough to be a chase, close enough
+  // to STAY ON SCREEN. The Nest shows only a 174x232 window of the 480x320
+  // chamber, following her; throwing "as far from her as possible" (the first
+  // version) put the ball outside that window essentially every time, so the
+  // keeper saw no ball and only a vague wander. Anything within ~80px of her is
+  // inside the window on every phone.
   throwBall() {
     if (!this.started || !this.fns.throwBall) return;
     try {
       const px = this.fns.prPx() ?? this.W / 2;
       const py = this.fns.prPy() ?? this.H / 2;
-      const margin = 40;
-      let bx = 0, by = 0, best = -1;
-      for (let i = 0; i < 8; i++) {          // pick the furthest of a few darts
-        const cx = margin + Math.random() * (this.W - 2 * margin);
-        const cy = margin + Math.random() * (this.H - 2 * margin);
-        const d = (cx - px) ** 2 + (cy - py) ** 2;
-        if (d > best) { best = d; bx = cx; by = cy; }
+      const margin = 24;
+      const clamp = (v: number, hi: number) => (v < margin ? margin : v > hi - margin ? hi - margin : v);
+      // A random direction at a readable distance; retry a couple of times so a
+      // throw near a wall still lands somewhere she has to travel to.
+      let bx = px, by = py;
+      for (let i = 0; i < 6; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        const dist = 50 + Math.random() * 30;          // ~3-5 cells
+        bx = clamp(px + Math.cos(ang) * dist, this.W);
+        by = clamp(py + Math.sin(ang) * dist, this.H);
+        if ((bx - px) ** 2 + (by - py) ** 2 > 30 * 30) break;
       }
       this.fns.throwBall(Math.round(bx), Math.round(by));
     } catch { /* stale wasm */ }
