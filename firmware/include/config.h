@@ -29,7 +29,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 227;
+constexpr uint32_t FW_VERSION = 228;
 
 namespace Cfg {
 
@@ -185,6 +185,24 @@ constexpr float    PRINCESS_SOCIAL_BOOP_RELIEF = 0.35f;                // a boop
 constexpr float    KEEPER_BOND_PER_PLAY        = 0.01f;                // per BAT, so a full 5-bat throw ≈ 0.05 — play bonds as well as feeding without becoming a click-farm (feeding + a couple of throws a day ≈ close in under a week)
 constexpr float    PRINCESS_SOCIAL_RISE_SCALE  = 0.5f;                 // a lone princess's loneliness climbs at half a colony conker's rate: she's ALWAYS alone, so the colony curve pegged her at 100 permanently (brain: "is a desperately-lonely pet the right feel?" — no)
 constexpr float    PRINCESS_SOCIAL_PLATEAU     = 0.80f;                // ...and it tops out at "missing you", never full despair. Being alone is her NORMAL state (there is no colony to be lonely for), and real abandonment is already modelled by dormancy. A bar pegged at 100 every time you open the app carries no information and reads as cruelty. NOTE: sits below SOCIAL_URGENT_AT (0.85), so she reads RESTLESS, never the full lonely gloom-cloud
+
+// ---- Keeper interactions: cooldowns ----
+// The interaction ALWAYS works — you can throw the ball as often as you like and
+// she'll always chase it. What's on cooldown is the PAYOFF, and per interaction
+// TYPE, so spamming one thing stops paying while rotating between them always
+// does. Loneliness relief is gated outright (otherwise one button held down
+// keeps her permanently un-lonely); bond still trickles in, just smaller, so
+// playing is never pointless — it just isn't a farm.
+constexpr uint32_t INTERACT_COOLDOWN_S   = 1800;   // 30 min per interaction type
+constexpr float    INTERACT_TIRED_BOND   = 0.25f;  // bond multiplier inside the cooldown
+enum InteractKind : uint8_t { INTERACT_BOOP = 0, INTERACT_BALL = 1,
+                              INTERACT_WATER = 2, INTERACT_COUNT = 3 };
+
+// Watering: her bud opens into a flower for a few hours. A treat, not a need —
+// deliberately NOT a thirst meter (Campbell: "im happy with hunger").
+constexpr uint32_t FLOWER_DURATION_S     = 4 * 3600;
+constexpr float    WATER_SOCIAL_RELIEF   = 0.40f;
+constexpr float    WATER_BOND            = 0.02f;
 
 // ---- The decor shop (bugs she catches buy things for her room) ----
 // Income is DELIBERATELY small. v201 cut critter spawns ~90x because the economy

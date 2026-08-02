@@ -11,6 +11,11 @@ struct ColonyState {
     uint16_t brood_seed          = 0;
     uint16_t brood_larva         = 0;   // legacy alias, kept for API (same as brood_seed)
     uint16_t brood_pupa          = 0;   // always 0 (pupa stage removed)
+    // Wall-clock unix of the last PAID interaction of each kind. On the colony
+    // (not the conker) so it persists with the manifest — the PWA reloads
+    // constantly, and a RAM-only cooldown would reset on every reload, which is
+    // an exploit rather than a cooldown.
+    uint32_t last_interact[3]    = {0, 0, 0};
     uint32_t owned_items         = 0;   // bitmask of shop items already bought. You pay ONCE:
                                         // re-selecting something you own is free, or buying a
                                         // second keepsake would silently cost you the first.

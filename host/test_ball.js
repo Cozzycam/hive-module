@@ -30,6 +30,9 @@ createHiveModule().then((M) => {
   const shopJson = f('host_shop_json', 'string', []);
   const ownedMask = f('host_owned', 'number', []);
   const unequip = f('host_unequip', 'number', []);
+  const water = f('host_water', 'number', []);
+  const flowering = f('host_flowering', 'number', []);
+  const interactReady = f('host_interact_ready', 'number', ['number']);
   const ball = f('host_pr_ball', 'number', []);
   const ballX = f('host_pr_ball_x', 'number', []);
   const ballY = f('host_pr_ball_y', 'number', []);
@@ -157,6 +160,33 @@ createHiveModule().then((M) => {
   } else {
     console.log('      (no lilguys in snapshot — skipping tint check)');
   }
+
+  // ---- interaction cooldowns: the act always works, the PAYOFF is gated ----
+  seed(808);
+  bootInc();
+  warp(3600, 1);
+  warp(4 * 3600, 0);                          // let loneliness build up
+  const lonelyBefore = social();
+  const bondBefore = bond();
+  water();
+  const afterFirst = social();
+  check('watering lifts her spirits', afterFirst < lonelyBefore, `${lonelyBefore} -> ${afterFirst}`);
+  check('watering flowers her', flowering() > 0, `${flowering()}s left`);
+  check('water is now resting', interactReady(2) > 0, `${interactReady(2)}s`);
+
+  warp(600, 0);                               // 10 min — still INSIDE the 30-min cooldown
+  const lonelyAgain = social();
+  const bondMid = bond();
+  water();
+  check('a second watering does NOT lift her spirits again', social() === lonelyAgain,
+        `${lonelyAgain} -> ${social()}`);
+  check('...but it still builds the bond a little', bond() >= bondMid, `${bondMid} -> ${bond()}`);
+  check('...and it still works (she flowers again)', flowering() > 0, `${flowering()}s`);
+  check('bond grew overall across both', bond() > bondBefore, `${bondBefore} -> ${bond()}`);
+
+  seed(4242);
+  bootInc();
+  warp(3600, 1);
 
   // ---- her room: she must never leave it, and it must not starve ----
   // The whole point of the static view is that everything is on screen. If she

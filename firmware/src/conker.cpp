@@ -1136,12 +1136,13 @@ void Conker::_do_play_ball(Chamber& ch) {
     // can't bat one that's still flying past her.
     if (abs(bx - cell_x()) + abs(by - cell_y()) <= 1
             && ch.ball_resting() && ch.ball_bat_cooldown == 0) {
-        needs[NEED_BOREDOM] -= Cfg::BALL_BOREDOM_RELIEF;
-        if (needs[NEED_BOREDOM] < 0.0f) needs[NEED_BOREDOM] = 0.0f;
-        needs[NEED_SOCIAL]  -= Cfg::BALL_SOCIAL_RELIEF;
-        if (needs[NEED_SOCIAL] < 0.0f) needs[NEED_SOCIAL] = 0.0f;
-        keeper_bond += Cfg::KEEPER_BOND_PER_PLAY;
-        if (keeper_bond > 1.0f) keeper_bond = 1.0f;
+        needs[NEED_BOREDOM] -= Cfg::BALL_BOREDOM_RELIEF;   // boredom is never gated —
+        if (needs[NEED_BOREDOM] < 0.0f) needs[NEED_BOREDOM] = 0.0f;  // chasing IS stimulating
+        // Loneliness relief + bond go through the shared cooldown: the chase
+        // always happens, but spamming it stops paying company (see
+        // Chamber::reward_interaction).
+        ch.reward_interaction(*this, Cfg::INTERACT_BALL,
+                              Cfg::BALL_SOCIAL_RELIEF, Cfg::KEEPER_BOND_PER_PLAY);
         afterglow_ticks = Cfg::AFTERGLOW_TICKS;    // she's pleased with herself
         anim_type = LG_ANIM_NOTICE;                // the startle hop reads as a pounce
         anim_remaining_ticks = Cfg::BALL_PLAY_DURATION_TICKS;

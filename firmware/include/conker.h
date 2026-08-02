@@ -129,6 +129,7 @@ struct Conker {
     // Gateway incubation / princess (tamagotchi) — only meaningful when the
     // chamber has incubation_mode = true. She never dies; neglect suspends her.
     bool     dormant        = false;       // tardigrade sleep (neglected) — suspended, not dead
+    uint32_t flowering_until = 0;          // unix: her bud is open into a flower until then
     float    keeper_bond    = 0.0f;        // closeness to the keeper (0..1); grows w/ care, cools while dormant
 
     Role     role           = ROLE_CONKER;

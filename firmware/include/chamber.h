@@ -162,6 +162,9 @@ public:
     uint8_t      ball_bounces = 0;           // bats left before it rolls to a stop for good
     uint8_t      ball_bat_cooldown = 0;      // ticks before she can bat it again
     bool has_ball() const { return ball_active && ball_bounces > 0; }
+    // Every keeper interaction routes its payoff through here (see chamber.cpp).
+    float reward_interaction(Conker& c, uint8_t kind, float social_relief, float bond);
+    bool  water_princess();          // bud opens into a flower for a few hours
     bool ball_resting() const;               // slow enough to pounce on
     void throw_ball(int x, int y);           // keeper throws (resets the bounce count)
     void bat_ball(float from_x, float from_y);  // she reaches it: knock it on, away from her

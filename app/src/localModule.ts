@@ -185,6 +185,9 @@ class LocalModule {
         bugs: cw('host_bugs', 'number', []),
         shopJson: cw('host_shop_json', 'string', []),
         owned: cw('host_owned', 'number', []),
+        water: cw('host_water', 'number', []),
+        flowering: cw('host_flowering', 'number', []),
+        interactReady: cw('host_interact_ready', 'number', ['number']),
         unequip: cw('host_unequip', 'number', []),
         worn: cw('host_worn', 'number', []),
         roomX: cw('host_room_x', 'number', []),
@@ -521,6 +524,31 @@ class LocalModule {
         ball:     (this.fns.prBall ? this.fns.prBall() : 0) ?? 0,
       };
     } catch { return null; }
+  }
+
+  // Water her — the bud on her head opens into a flower for a few hours.
+  water(): boolean {
+    if (!this.started || !this.fns.water) return false;
+    try { return this.fns.water() === 1; } catch { return false; }
+  }
+
+  // Seconds of flowering left (0 = not flowering).
+  flowering(): number {
+    if (!this.started || !this.fns.flowering) return 0;
+    try { return this.fns.flowering() ?? 0; } catch { return 0; }
+  }
+
+  // Seconds until this interaction pays full company again (0 = ready).
+  // The interaction always WORKS — this is only about the payoff.
+  interactReady(kind: number): number {
+    if (!this.started || !this.fns.interactReady) return 0;
+    try { return this.fns.interactReady(kind) ?? 0; } catch { return 0; }
+  }
+
+  // Throw the ball at a spot the keeper picked, rather than one we chose.
+  throwBallAt(fx: number, fy: number) {
+    if (!this.started || !this.fns.throwBall) return;
+    try { this.fns.throwBall(Math.round(fx), Math.round(fy)); } catch { /**/ }
   }
 
   // Throw the ball a short hop from her — far enough to be a chase, close enough

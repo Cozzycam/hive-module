@@ -722,6 +722,48 @@ void Chamber::add_food(int x, int y, float amount) {
 
 // ---- the ball ----
 
+// What a keeper interaction pays. The interaction itself is never blocked —
+// this only decides the reward, and it's per KIND, so spamming one thing stops
+// paying while rotating between them always does. Returns the bond actually
+// granted (for callers that want to report it).
+float Chamber::reward_interaction(Conker& c, uint8_t kind,
+                                  float social_relief, float bond) {
+    if (!colony || kind >= Cfg::INTERACT_COUNT) return 0.0f;
+    const uint32_t now = g_tod.unix_time;
+    const uint32_t last = colony->last_interact[kind];
+    // now < last guards a clock that jumped backwards (NTP correction) — treat
+    // it as fresh rather than locking the keeper out until the clock catches up.
+    const bool fresh = (last == 0) || (now < last) || (now - last >= Cfg::INTERACT_COOLDOWN_S);
+
+    if (fresh) {
+        colony->last_interact[kind] = now;
+        if (social_relief > 0.0f && (Cfg::NEEDS_ACTIVE_MASK & (1 << NEED_SOCIAL))) {
+            c.needs[NEED_SOCIAL] -= social_relief;
+            if (c.needs[NEED_SOCIAL] < 0.0f) c.needs[NEED_SOCIAL] = 0.0f;
+        }
+    } else {
+        bond *= Cfg::INTERACT_TIRED_BOND;   // still worth doing, just not a farm
+    }
+    if (bond > 0.0f) {
+        c.keeper_bond += bond;
+        if (c.keeper_bond > 1.0f) c.keeper_bond = 1.0f;
+    }
+    return bond;
+}
+
+// Water her: the bud on her head opens into a flower for a few hours. A treat,
+// not a need — there is deliberately no thirst meter.
+bool Chamber::water_princess() {
+    if (!incubation_mode || conker_count == 0) return false;
+    Conker& her = conkers[0];
+    her.flowering_until = g_tod.unix_time + Cfg::FLOWER_DURATION_S;
+    her.dormant = false;                        // being tended rouses her
+    if (her.sleeping) { her.sleeping = false; her.stack_on = -1; }
+    her.afterglow_ticks = Cfg::AFTERGLOW_TICKS;
+    reward_interaction(her, Cfg::INTERACT_WATER, Cfg::WATER_SOCIAL_RELIEF, Cfg::WATER_BOND);
+    return true;
+}
+
 bool Chamber::ball_resting() const {
     return fabsf(ball_vx) + fabsf(ball_vy) < Cfg::BALL_REST_SPEED;
 }

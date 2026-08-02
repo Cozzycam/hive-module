@@ -1523,6 +1523,28 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
                 }
             }
 
+            // Watered: the bud on her head opens into a flower for a few hours.
+            // Drawn under any carried keepsake and above the sprite, so it reads
+            // whatever else she has. Petals fade over the last stretch so it
+            // closes gently rather than blinking out.
+            if (w.flowering_until > g_tod.unix_time) {
+                float rs = w.render_scale();
+                uint32_t left = w.flowering_until - g_tod.unix_time;
+                float fade = (left < 600) ? (float)left / 600.0f : 1.0f;   // last 10 min
+                int fr = (int)(255 * fade), fg2 = (int)(190 * fade), fb = (int)(210 * fade);
+                uint16_t petal = _rgb565(fr, fg2, fb);
+                uint16_t heart = _rgb565((int)(255 * fade), (int)(225 * fade), (int)(120 * fade));
+                int bx = sd.render_x;
+                int by = sd.render_y - (int)(rs * 4.6f);      // just above the bud
+                int pr = (int)(rs * 0.9f); if (pr < 1) pr = 1;
+                _gfx->fillCircle(bx - pr - 1, by, pr, petal);
+                _gfx->fillCircle(bx + pr + 1, by, pr, petal);
+                _gfx->fillCircle(bx, by - pr - 1, pr, petal);
+                _gfx->fillCircle(bx, by + pr + 1, pr, petal);
+                _gfx->fillCircle(bx, by, pr, heart);
+                _mark_dirty(bx - pr * 3 - 2, by - pr * 3 - 2, pr * 6 + 5, pr * 6 + 5);
+            }
+
             // Floating Zs above sleeping ants
             if (w.anim_type == LG_ANIM_SNOOZE) {
                 unsigned long ms = millis();

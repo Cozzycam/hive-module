@@ -17,6 +17,17 @@ const FBW = 480, FBH = 320;
 // that has no room exports. Otherwise the view IS her room, reported by the sim.
 const CROP_W = 174, CROP_H = 232;
 
+// A phone really only offers a tap and a tap-and-hold. So the tap is a TOOL:
+// pick one here, then tap the glass. `cool` indexes Cfg::InteractKind
+// (boop 0, ball 1, water 2) — -1 means the tool has no cooldown of its own.
+type Tool = 'food' | 'boop' | 'ball' | 'water';
+const TOOLS: { id: Tool; icon: string; label: string; cool: number }[] = [
+  { id: 'food',  icon: '🍎', label: 'Food',  cool: -1 },
+  { id: 'boop',  icon: '👆', label: 'Boop',  cool: 0 },
+  { id: 'ball',  icon: '🎾', label: 'Ball',  cool: 1 },
+  { id: 'water', icon: '💧', label: 'Water', cool: 2 },
+];
+
 export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [status, setStatus] = useState<'loading' | 'running' | 'error'>('loading');
@@ -25,6 +36,11 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
   // width/height are JSX props here, so every re-render (the stats poll, 4x a
   // second) resets them and silently undoes an imperative resize.
   const [canvasSize, setCanvasSize] = useState({ w: CROP_W, h: CROP_H });
+  // A phone gives you a tap and a tap-and-hold, so the tap has to be switchable:
+  // pick a tool, then tap the glass to use it (hold still gathers).
+  const [tool, setTool] = useState<Tool>('food');
+  const [cool, setCool] = useState<number[]>([0, 0, 0]);
+  const [flowering, setFlowering] = useState(0);
   // The view rect. Static: her room is fenced to exactly this, so everything is
   // on screen at once and nothing chases her about. Only falls back to a
   // follow-camera when the wasm predates the room.
@@ -74,7 +90,11 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
     raf = requestAnimationFrame(loop);
 
     const poll = window.setInterval(() => {
-      if (!cancelled) setStats(localModule.princessStats());
+      if (!cancelled) {
+        setStats(localModule.princessStats());
+        setCool([0, 1, 2].map((k) => localModule.interactReady(k)));
+        setFlowering(localModule.flowering());
+      }
     }, 250);
 
     return () => { cancelled = true; cancelAnimationFrame(raf); clearInterval(poll); };
@@ -91,7 +111,9 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
     const v = viewRef.current;
     const fx = v.x + ((e.clientX - r.left) / r.width) * v.w;
     const fy = v.y + ((e.clientY - r.top) / r.height) * v.h;
-    localModule.tapFb(fx, fy);
+    if (tool === 'ball')       localModule.throwBallAt(fx, fy);
+    else if (tool === 'water') localModule.water();
+    else                       localModule.tapFb(fx, fy);   // food where you tap / boop if you hit her
   };
 
   const hatched = stats?.hatched ?? false;
@@ -106,6 +128,7 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
 
   const statusText =
     !hatched ? '🥚 An egg. Keep it warm — she’ll hatch soon.'
+    : flowering > 0 && !dormant ? '🌸 She’s flowering — watered and pleased with herself.'
     : dormant ? '😴 She’s curled up asleep. Drop some food to wake her.'
     : playing ? '🎾 She’s off after the ball!'
     : hungry  ? '🍎 She’s hungry — drop some food and she’ll toddle over.'
@@ -161,32 +184,41 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
         <Bar label="Tiredness"  value={Math.round(stats?.rest ?? 0)}    color="#9a86c0" />
       </div>
 
-      {/* care */}
-      <div style={{ width: '100%', maxWidth: 320, display: 'flex', gap: 8 }}>
-        <button
-          onClick={() => localModule.feedPrincess()}
-          disabled={status !== 'running'}
-          style={{ flex: 1, padding: '12px', borderRadius: 12, border: 'none',
-                   background: HIVE.green, color: HIVE.white, fontSize: SIZES.base, fontWeight: 600,
-                   cursor: 'pointer' }}
-        >
-          🍎 Drop food
-        </button>
-        <button
-          onClick={() => localModule.throwBall()}
-          disabled={status !== 'running' || !hatched}
-          style={{ flex: 1, padding: '12px', borderRadius: 12, border: 'none',
-                   background: playing ? HIVE.sand : '#c0568f', color: playing ? HIVE.soil : HIVE.white,
-                   fontSize: SIZES.base, fontWeight: 600,
-                   cursor: status === 'running' && hatched ? 'pointer' : 'default' }}
-        >
-          {playing ? '🎾 Chasing…' : '🎾 Throw a ball'}
-        </button>
+      {/* tools — the tap is whichever of these is selected */}
+      <div style={{ width: '100%', maxWidth: 320, display: 'flex', gap: 6 }}>
+        {TOOLS.map((t) => {
+          const active = tool === t.id;
+          const resting = t.cool >= 0 && (cool[t.cool] ?? 0) > 0;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTool(t.id)}
+              disabled={status !== 'running'}
+              title={resting ? 'Still works — just won’t lift her spirits again yet' : t.label}
+              style={{
+                flex: 1, padding: '9px 0', borderRadius: 12, cursor: 'pointer',
+                border: `1px solid ${active ? HIVE.green : HIVE.sand}`,
+                background: active ? HIVE.green : HIVE.cream,
+                color: active ? HIVE.white : HIVE.soil,
+                fontSize: SIZES.xs, fontWeight: 600, lineHeight: 1.5,
+                opacity: resting && !active ? 0.65 : 1,
+              }}
+            >
+              <div style={{ fontSize: 18 }}>{t.icon}</div>
+              {t.label}{resting ? ' ·' : ''}
+            </button>
+          );
+        })}
       </div>
+
       <div style={{ fontSize: SIZES.xs, color: HIVE.dimText, textAlign: 'center', maxWidth: 300 }}>
-        Tap the glass to drop food where you tap — she toddles over and eats it, and being hand-fed is what
-        deepens her bond. Tap her directly to give her a boop. Throw the ball and she’ll chase it down and
-        knock it on a few times — playing together is the fastest way to grow close.
+        {tool === 'food'  && 'Tap the glass to drop food — she toddles over and eats it. Tap her directly for a boop.'}
+        {tool === 'boop'  && 'Tap her to say hello.'}
+        {tool === 'ball'  && 'Tap anywhere to throw the ball there — she’ll run it down and knock it on.'}
+        {tool === 'water' && 'Tap to water her. The bud on her head opens into a flower for a few hours.'}
+        {' '}
+        A dot means she’s had her fill of that one for now — it still works, and still
+        builds your bond, it just won’t lift her spirits again until she’s missed it.
       </div>
 
       {/* Dev-only fast-forward — never shown in production */}

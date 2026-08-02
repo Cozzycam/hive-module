@@ -314,11 +314,13 @@ void host_tap(int tx, int ty) {
         c.needs[NEED_BOREDOM] -= Cfg::BOREDOM_BOOP_RELIEF;
         if (c.needs[NEED_BOREDOM] < 0.0f) c.needs[NEED_BOREDOM] = 0.0f;
         c.afterglow_ticks = Cfg::AFTERGLOW_TICKS;
-        if (Cfg::NEEDS_ACTIVE_MASK & (1 << NEED_SOCIAL)) {
-            // A lone princess's boop gives less company than a colony boop (she's
-            // always alone, so loneliness should stay a live, tendable need).
-            c.needs[NEED_SOCIAL] -= ch.incubation_mode ? Cfg::PRINCESS_SOCIAL_BOOP_RELIEF
-                                                        : Cfg::SOCIAL_BOOP_RELIEF;
+        if (ch.incubation_mode) {
+            // Through the shared cooldown, so tapping her forever stops buying
+            // company — the boop still lands, it just stops paying.
+            ch.reward_interaction(c, Cfg::INTERACT_BOOP,
+                                  Cfg::PRINCESS_SOCIAL_BOOP_RELIEF, 0.0f);
+        } else if (Cfg::NEEDS_ACTIVE_MASK & (1 << NEED_SOCIAL)) {
+            c.needs[NEED_SOCIAL] -= Cfg::SOCIAL_BOOP_RELIEF;
             if (c.needs[NEED_SOCIAL] < 0.0f) c.needs[NEED_SOCIAL] = 0.0f;
         }
         if (c.sleeping) {
@@ -462,6 +464,22 @@ EMSCRIPTEN_KEEPALIVE const char* host_shop_json() {
 // The decor shop: spend caught bugs on something for her room.
 EMSCRIPTEN_KEEPALIVE int host_buy_decor(int item) {
     return g_sim.coordinator.cmd_buy_decor((uint8_t)item) ? 1 : 0;
+}
+EMSCRIPTEN_KEEPALIVE int host_water() { return chamber().water_princess() ? 1 : 0; }
+EMSCRIPTEN_KEEPALIVE int host_flowering() {
+    Chamber& ch = chamber();
+    if (!ch.conker_count) return 0;
+    uint32_t until = ch.conkers[0].flowering_until;
+    return (until > g_tod.unix_time) ? (int)(until - g_tod.unix_time) : 0;   // seconds left
+}
+// Seconds until each interaction pays full company again (0 = ready now).
+EMSCRIPTEN_KEEPALIVE int host_interact_ready(int kind) {
+    if (kind < 0 || kind >= Cfg::INTERACT_COUNT) return 0;
+    uint32_t last = g_sim.coordinator.colony.last_interact[kind];
+    uint32_t now = g_tod.unix_time;
+    if (last == 0 || now < last) return 0;
+    uint32_t age = now - last;
+    return (age >= Cfg::INTERACT_COOLDOWN_S) ? 0 : (int)(Cfg::INTERACT_COOLDOWN_S - age);
 }
 EMSCRIPTEN_KEEPALIVE int host_bugs() { return g_sim.coordinator.colony.bugs; }
 // Bitmask of shop items already paid for — the app shows these as owned so a
