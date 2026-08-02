@@ -16,6 +16,7 @@ struct ColonyState {
     // constantly, and a RAM-only cooldown would reset on every reload, which is
     // an exploit rather than a cooldown.
     uint32_t last_interact[3]    = {0, 0, 0};
+    bool     bond_peak_seen      = false;  // the 100%-bond celebration has already played
     uint32_t owned_items         = 0;   // bitmask of shop items already bought. You pay ONCE:
                                         // re-selecting something you own is free, or buying a
                                         // second keepsake would silently cost you the first.

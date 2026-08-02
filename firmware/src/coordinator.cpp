@@ -2302,6 +2302,7 @@ void Coordinator::_persist_sync_colony_state(uint32_t tick_num) {
     m.food_total = colony.food_total;
     m.bugs = colony.bugs;                      // shop purse survives a power cut
     m.owned_items = colony.owned_items;
+    m.bond_peak_seen = colony.bond_peak_seen;
     for (int i = 0; i < 3; i++) m.last_interact[i] = colony.last_interact[i];
     m.total_workers_born = colony.total_workers_born;
     m.worker_census = colony.worker_census;
@@ -2427,6 +2428,7 @@ void Coordinator::_persist_migrate_live_colony() {
     m.food_total = colony.food_total;
     m.bugs = colony.bugs;                      // shop purse survives a power cut
     m.owned_items = colony.owned_items;
+    m.bond_peak_seen = colony.bond_peak_seen;
     for (int i = 0; i < 3; i++) m.last_interact[i] = colony.last_interact[i];
     m.total_workers_born = colony.total_workers_born;
     m.worker_census = colony.worker_census;
@@ -2518,6 +2520,7 @@ void Coordinator::_persist_restore_from_disk() {
     colony.food_total = m.food_total;
     colony.bugs = m.bugs;
     colony.owned_items = m.owned_items;
+    colony.bond_peak_seen = m.bond_peak_seen;
     for (int i = 0; i < 3; i++) colony.last_interact[i] = m.last_interact[i];
     colony.total_workers_born = m.total_workers_born;
     colony.worker_census = m.worker_census;

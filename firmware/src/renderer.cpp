@@ -1523,6 +1523,27 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
                 }
             }
 
+            // Number 1 fan: at full keeper-bond a heart drifts up from her every
+            // so often. Ambient rather than constant so it stays a moment, and
+            // placed to the SIDE of her head so the flower and anything she's
+            // carrying both still read.
+            if (w.keeper_bond >= Cfg::BOND_FULL) {
+                unsigned long ms = millis();
+                uint32_t phase = ms % Cfg::BOND_HEART_PERIOD_MS;
+                if (phase < Cfg::BOND_HEART_RISE_MS) {
+                    float t = (float)phase / (float)Cfg::BOND_HEART_RISE_MS;   // 0..1
+                    float rs2 = w.render_scale();
+                    int hx = sd.render_x - (int)(rs2 * 3.4f);
+                    int hy = sd.render_y - (int)(rs2 * 4.0f) - (int)(t * 14.0f);
+                    uint8_t a = (uint8_t)(255 * (t < 0.7f ? 1.0f : (1.0f - t) / 0.3f));
+                    _gfx->setTextSize(1);
+                    _gfx->setTextColor(_rgb565(255 * a / 255, 130 * a / 255, 150 * a / 255));
+                    _gfx->setCursor(hx, hy);
+                    _gfx->print("");                 // CP437 heart
+                    _mark_dirty(hx - 1, hy - 1, 10, 10);
+                }
+            }
+
             // Watered: the bud on her head opens into a flower for a few hours.
             // Drawn under any carried keepsake and above the sprite, so it reads
             // whatever else she has. Petals fade over the last stretch so it

@@ -486,6 +486,21 @@ EMSCRIPTEN_KEEPALIVE int host_move_decor(int fx, int fy, int tx, int ty) {
 EMSCRIPTEN_KEEPALIVE int host_decor_at(int px, int py) {
     return chamber().artwork_at(px / Cfg::CELL_SIZE, py / Cfg::CELL_SIZE) >= 0 ? 1 : 0;
 }
+// Has she JUST reached full bond? Returns 1 exactly once, then latches — so the
+// celebration plays on the keeper's screen and never again, even across reloads
+// (the flag persists with the manifest).
+EMSCRIPTEN_KEEPALIVE int host_bond_peak_new() {
+    Chamber& ch = chamber();
+    if (!ch.conker_count || !ch.colony) return 0;
+    if (ch.conkers[0].keeper_bond < Cfg::BOND_FULL) return 0;
+    if (ch.colony->bond_peak_seen) return 0;
+    ch.colony->bond_peak_seen = true;
+    // Persist NOW, not at the next routine save: the PWA can reload seconds
+    // later, and a celebration that replays on every reload is worse than none.
+    g_sim.coordinator.registry.manifest().bond_peak_seen = true;
+    g_sim.coordinator.registry.flush_manifest();
+    return 1;
+}
 EMSCRIPTEN_KEEPALIVE int host_water() { return chamber().water_princess() ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE int host_flowering() {
     Chamber& ch = chamber();

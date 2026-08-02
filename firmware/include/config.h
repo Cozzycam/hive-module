@@ -29,7 +29,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 230;
+constexpr uint32_t FW_VERSION = 231;
 
 namespace Cfg {
 
@@ -203,6 +203,16 @@ enum InteractKind : uint8_t { INTERACT_BOOP = 0, INTERACT_BALL = 1,
 constexpr uint32_t FLOWER_DURATION_S     = 4 * 3600;
 constexpr float    WATER_SOCIAL_RELIEF   = 0.40f;
 constexpr float    WATER_BOND            = 0.02f;
+
+// ---- Full bond ----
+// She's your number 1 fan. The permanent mark is a heart that drifts up from her
+// every so often — deliberately NOT a permanent flower, which would have left the
+// watering can with nothing to do (Campbell caught that). Ambient, not constant,
+// so it stays special; and it never uses her head slot, so the flower and
+// whatever she's carrying both still read.
+constexpr float    BOND_FULL            = 0.999f;
+constexpr uint32_t BOND_HEART_PERIOD_MS = 45000;   // one heart about every 45s
+constexpr uint32_t BOND_HEART_RISE_MS   = 2200;    // how long it drifts before fading
 
 // ---- The decor shop (bugs she catches buy things for her room) ----
 // Income is DELIBERATELY small. v201 cut critter spawns ~90x because the economy

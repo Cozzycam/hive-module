@@ -44,6 +44,8 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
   const [flowering, setFlowering] = useState(0);
   // Move tool: remember what we picked up so pointerup knows where it came from.
   const dragRef = useRef<{ x: number; y: number } | null>(null);
+  // Fires once, ever: she's reached full bond.
+  const [peak, setPeak] = useState<string | null>(null);   // her name when it fires
   // The view rect. Static: her room is fenced to exactly this, so everything is
   // on screen at once and nothing chases her about. Only falls back to a
   // follow-camera when the wasm predates the room.
@@ -97,6 +99,10 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
         setStats(localModule.princessStats());
         setCool([0, 1, 2].map((k) => localModule.interactReady(k)));
         setFlowering(localModule.flowering());
+        if (localModule.bondPeakNew()) {
+          const snap = localModule.colonySnapshot() as { lilguys?: { name?: string }[] } | null;
+          setPeak(snap?.lilguys?.[0]?.name || 'She');
+        }
       }
     }, 250);
 
@@ -184,7 +190,29 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
 
       {/* the glass */}
       <div style={{ width: '100%', maxWidth: 320, borderRadius: 18, overflow: 'hidden',
-                    background: '#12100e', boxShadow: '0 8px 28px rgba(0,0,0,0.25)' }}>
+                    background: '#12100e', boxShadow: '0 8px 28px rgba(0,0,0,0.25)',
+                    position: 'relative' }}>
+        {peak !== null && (
+          <div
+            onClick={() => setPeak(null)}
+            style={{
+              position: 'absolute', inset: 0, zIndex: 2, cursor: 'pointer',
+              display: 'flex', flexDirection: 'column', alignItems: 'center',
+              justifyContent: 'center', gap: 6, textAlign: 'center',
+              background: 'rgba(24,18,14,0.55)', color: '#FFF4E2', padding: '0 18px',
+            }}
+          >
+            <div style={{ fontSize: 34 }}>🌸</div>
+            <div style={{ fontSize: SIZES.lg, fontWeight: 700 }}>
+              {peak === 'She' ? 'She’s a big fan of you' : `${peak} is a big fan of you`}
+            </div>
+            <div style={{ fontSize: SIZES.sm, opacity: 0.9 }}>
+              Number one fan. She’ll carry that with her — if she’s ever crowned,
+              her colony will remember she was loved.
+            </div>
+            <div style={{ fontSize: SIZES.xs, opacity: 0.7, marginTop: 4 }}>tap to close</div>
+          </div>
+        )}
         <canvas
           ref={canvasRef}
           width={canvasSize.w}

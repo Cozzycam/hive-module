@@ -184,6 +184,7 @@ bool ConkerRegistry::_load_manifest() {
     _manifest.food_total         = stats["food_total"] | 0.0f;
     _manifest.bugs               = stats["bugs"] | 0;
     _manifest.owned_items        = stats["owned"] | 0;
+    _manifest.bond_peak_seen     = stats["bondpeak"] | false;
     for (int i = 0; i < 3; i++) _manifest.last_interact[i] = stats["lastint"][i] | 0;
     _manifest.total_workers_born = stats["total_workers_born"] | 0;
     _manifest.total_workers_died = stats["total_workers_died"] | 0;
@@ -248,6 +249,7 @@ bool ConkerRegistry::_save_manifest() {
     stats["food_total"]         = _manifest.food_total;
     stats["bugs"]               = _manifest.bugs;
     stats["owned"]              = _manifest.owned_items;
+    stats["bondpeak"]           = _manifest.bond_peak_seen;
     {   // interaction cooldown clocks — RAM-only would reset on every PWA reload
         JsonArray li = stats["lastint"].to<JsonArray>();
         for (int i = 0; i < 3; i++) li.add(_manifest.last_interact[i]);

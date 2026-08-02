@@ -186,6 +186,7 @@ class LocalModule {
         shopJson: cw('host_shop_json', 'string', []),
         owned: cw('host_owned', 'number', []),
         water: cw('host_water', 'number', []),
+        bondPeakNew: cw('host_bond_peak_new', 'number', []),
         boop: cw('host_boop', null, ['number', 'number']),
         moveDecor: cw('host_move_decor', 'number', ['number','number','number','number']),
         decorAt: cw('host_decor_at', 'number', ['number', 'number']),
@@ -547,6 +548,13 @@ class LocalModule {
       return this.fns.moveDecor(Math.round(fx), Math.round(fy),
                                 Math.round(tx), Math.round(ty)) === 1;
     } catch { return false; }
+  }
+
+  // True EXACTLY once, the moment she reaches full bond. Latches in the sim and
+  // persists, so the celebration can't replay on the next reload.
+  bondPeakNew(): boolean {
+    if (!this.started || !this.fns.bondPeakNew) return false;
+    try { return this.fns.bondPeakNew() === 1; } catch { return false; }
   }
 
   // Water her — the bud on her head opens into a flower for a few hours.

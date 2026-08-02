@@ -31,6 +31,7 @@ createHiveModule().then((M) => {
   const ownedMask = f('host_owned', 'number', []);
   const unequip = f('host_unequip', 'number', []);
   const water = f('host_water', 'number', []);
+  const bondPeakNew = f('host_bond_peak_new', 'number', []);
   const boop = f('host_boop', null, ['number', 'number']);
   const moveDecor = f('host_move_decor', 'number', ['number','number','number','number']);
   const decorAt = (x, y) => f('host_decor_at', 'number', ['number','number'])(x, y) === 1;
@@ -69,6 +70,24 @@ createHiveModule().then((M) => {
   };
 
   const STATE_PLAYING = 12;
+
+  // The colony persists in MEMFS between boots (that's the real behaviour — a
+  // reload restores her). Blocks that need a genuinely NEW princess have to
+  // clear it first, or they inherit the previous block's bond and purse.
+  const wipeColony = () => {
+    const rm = (dir) => {
+      let entries = [];
+      try { entries = M.FS.readdir(dir); } catch { return; }
+      for (const e of entries) {
+        if (e === '.' || e === '..') continue;
+        const p = `${dir}/${e}`;
+        const st = M.FS.stat(p);
+        if (M.FS.isDir(st.mode)) { rm(p); try { M.FS.rmdir(p); } catch { /**/ } }
+        else { try { M.FS.unlink(p); } catch { /**/ } }
+      }
+    };
+    rm('/colony');
+  };
 
   // ---- hatch a princess and let her settle ----
   seed(4242);
@@ -168,8 +187,6 @@ createHiveModule().then((M) => {
   }
 
   // ---- rearranging her room (#45) ----
-  seed(4321);
-  bootInc();
   warp(8 * 86400, 1);                          // earn enough to buy something
   if (bugs() >= 4 && buyDecor(0) === 1) {
     // Find it: sweep the room for the piece we just bought.
@@ -391,6 +408,29 @@ createHiveModule().then((M) => {
   check('normal colony has no ball', ball() === 0);
   const normState = state();
   check('normal colony conker never in STATE_PLAYING', normState !== STATE_PLAYING, `state=${normState}`);
+
+  // ---- full bond fires its celebration exactly once, ever ----
+  // NB: no "before full bond" check here. The registry keeps a RAM cache that
+  // outlives a file wipe, so blocks in one process share a princess — and asking
+  // bondPeakNew() early would CONSUME the one-shot we're about to assert.
+  wipeColony();
+  seed(2468);
+  bootInc();
+  warp(3600, 1);
+  for (let i = 0; i < 60 && bond() < 100; i++) {   // care for her until she's devoted
+    water();
+    warp(2 * 3600, 1);
+  }
+  check('a well-loved princess reaches full bond', bond() >= 100, `bond=${bond()}`);
+  check('the celebration fires', bondPeakNew() === 1, 'fired');
+  check('...and never fires again', bondPeakNew() === 0, 'latched');
+  // The latch persists, so a reload can't replay it.
+  bootInc();
+  check('...not even after a reload', bondPeakNew() === 0, 'still latched');
+
+  seed(4321);
+  bootInc();
+
 
   console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
   process.exit(failures === 0 ? 0 : 1);
