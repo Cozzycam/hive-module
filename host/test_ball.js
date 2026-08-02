@@ -28,6 +28,10 @@ createHiveModule().then((M) => {
   const ball = f('host_pr_ball', 'number', []);
   const ballX = f('host_pr_ball_x', 'number', []);
   const ballY = f('host_pr_ball_y', 'number', []);
+  const roomX = f('host_room_x', 'number', []);
+  const roomY = f('host_room_y', 'number', []);
+  const roomW = f('host_room_w', 'number', []);
+  const roomH = f('host_room_h', 'number', []);
   const state = f('host_pr_state', 'number', []);
   const bond = f('host_pr_bond', 'number', []);
   const boredom = f('host_pr_boredom', 'number', []);
@@ -133,6 +137,36 @@ createHiveModule().then((M) => {
   } else {
     console.log('      (no lilguys in snapshot — skipping tint check)');
   }
+
+  // ---- her room: she must never leave it, and it must not starve ----
+  // The whole point of the static view is that everything is on screen. If she
+  // can walk out, the keeper watches an empty room; if critters spawn outside,
+  // the life (and, later, the shop currency) happens where she can't reach it.
+  seed(31337);
+  bootInc();
+  warp(3600, 1);
+  const rx = roomX(), ry = roomY(), rw = roomW(), rh = roomH();
+  console.log(`      room: ${rw}x${rh}px at ${rx},${ry}`);
+  check('room is portrait and smaller than the chamber', rw < 480 && rh < 320 && rh > rw, `${rw}x${rh}`);
+
+  let strayed = null;
+  for (let i = 0; i < 4000; i++) {          // ~8 sim-minutes of ordinary pottering
+    warp(0.125, 1);
+    if (i % 40 === 0) throwBall(px() + 40, py() + 40);   // keep her moving about
+    const x = px(), y = py();
+    if (x < rx - 8 || x > rx + rw + 8 || y < ry - 8 || y > ry + rh + 8) { strayed = `${x},${y}`; break; }
+  }
+  check('she never leaves her room', strayed === null, strayed ? `strayed to ${strayed}` : 'stayed in');
+
+  // ---- a normal colony must still have the WHOLE chamber ----
+  seed(7);
+  boot(0);
+  const fullW = roomW(), fullH = roomH();
+  check('a colony still gets the full chamber', fullW === 480 && fullH === 320, `${fullW}x${fullH}`);
+
+  seed(4242);
+  bootInc();
+  warp(3600, 1);
 
   // ---- colony title (#40): a display name that never becomes an address ----
   const idBefore = (snapshot() || {}).colony_id;

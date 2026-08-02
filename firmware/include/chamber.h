@@ -229,6 +229,23 @@ public:
         return x >= 0 && x < Cfg::GRID_WIDTH && y >= 0 && y < Cfg::GRID_HEIGHT;
     }
 
+    // The liveable area. The whole grid normally; in incubation, her room — the
+    // ONE definition of "where things can be", so conkers, food, the ball,
+    // critters and fireflies all agree. Get this wrong in one place and life
+    // happens off-screen where she can't reach it.
+    int room_x0() const { return incubation_mode ? Cfg::ROOM_X0 : 0; }
+    int room_y0() const { return incubation_mode ? Cfg::ROOM_Y0 : 0; }
+    int room_x1() const { return incubation_mode ? Cfg::ROOM_X0 + Cfg::ROOM_W_CELLS - 1 : Cfg::GRID_WIDTH  - 1; }
+    int room_y1() const { return incubation_mode ? Cfg::ROOM_Y0 + Cfg::ROOM_H_CELLS - 1 : Cfg::GRID_HEIGHT - 1; }
+    float clamp_room_x(float v) const {
+        float lo = (float)room_x0() + 0.5f, hi = (float)room_x1() + 0.5f;
+        return v < lo ? lo : (v > hi ? hi : v);
+    }
+    float clamp_room_y(float v) const {
+        float lo = (float)room_y0() + 0.5f, hi = (float)room_y1() + 0.5f;
+        return v < lo ? lo : (v > hi ? hi : v);
+    }
+
     // ---- events ----
     void emit(const Event& ev) {
         if (event_bus) event_bus->emit(ev);

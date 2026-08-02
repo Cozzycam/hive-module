@@ -13,13 +13,21 @@ import { HIVE } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 
 const FBW = 480, FBH = 320;
-const CROP_W = 174, CROP_H = 232;   // portrait window into the framebuffer (zoom)
+// Fallback window, used only on an install still running a cached pre-v223 wasm
+// that has no room exports. Otherwise the view IS her room, reported by the sim.
+const CROP_W = 174, CROP_H = 232;
 
 export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [status, setStatus] = useState<'loading' | 'running' | 'error'>('loading');
   const [stats, setStats] = useState<PrincessStats | null>(null);
-  const camRef = useRef({ x: FBW / 2 - CROP_W / 2, y: FBH / 2 - CROP_H / 2 });
+  // Drives the canvas CSS aspect so the room is never stretched to the old
+  // window's shape. Set once, when the sim reports its room.
+  const [aspect, setAspect] = useState(`${CROP_W} / ${CROP_H}`);
+  // The view rect. Static: her room is fenced to exactly this, so everything is
+  // on screen at once and nothing chases her about. Only falls back to a
+  // follow-camera when the wasm predates the room.
+  const viewRef = useRef({ x: (FBW - CROP_W) / 2, y: (FBH - CROP_H) / 2, w: CROP_W, h: CROP_H, fixed: false });
 
   // Boot the module + drive the portrait render loop.
   useEffect(() => {
@@ -40,15 +48,28 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
         const ctx = canvas.getContext('2d', { alpha: false })!;
         ctx.imageSmoothingEnabled = false;
         offCtx.putImageData(img, 0, 0);
-        const s = localModule.princessStats();
-        const cam = camRef.current;
-        if (s) {
-          const tx = clampC(s.px - CROP_W / 2, FBW - CROP_W);
-          const ty = clampC(s.py - CROP_H / 2, FBH - CROP_H);
-          if (Math.abs(tx - cam.x) > 50 || Math.abs(ty - cam.y) > 50) { cam.x = tx; cam.y = ty; }
-          else { cam.x += (tx - cam.x) * 0.12; cam.y += (ty - cam.y) * 0.12; }
+        const view = viewRef.current;
+        if (!view.fixed) {
+          const room = localModule.room();
+          if (room) {
+            view.x = room.x; view.y = room.y; view.w = room.w; view.h = room.h;
+            view.fixed = true;
+            if (canvas.width !== room.w || canvas.height !== room.h) {
+              canvas.width = room.w; canvas.height = room.h;
+              setAspect(`${room.w} / ${room.h}`);
+            }
+          } else {
+            // Legacy wasm: keep the old follow-camera so the Nest still works.
+            const s = localModule.princessStats();
+            if (s) {
+              const tx = clampC(s.px - view.w / 2, FBW - view.w);
+              const ty = clampC(s.py - view.h / 2, FBH - view.h);
+              if (Math.abs(tx - view.x) > 50 || Math.abs(ty - view.y) > 50) { view.x = tx; view.y = ty; }
+              else { view.x += (tx - view.x) * 0.12; view.y += (ty - view.y) * 0.12; }
+            }
+          }
         }
-        ctx.drawImage(off, cam.x, cam.y, CROP_W, CROP_H, 0, 0, CROP_W, CROP_H);
+        ctx.drawImage(off, view.x, view.y, view.w, view.h, 0, 0, canvas.width, canvas.height);
       }
       raf = requestAnimationFrame(loop);
     };
@@ -67,8 +88,11 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
     if (status !== 'running') return;
     const c = canvasRef.current; if (!c) return;
     const r = c.getBoundingClientRect();
-    const fx = camRef.current.x + ((e.clientX - r.left) / r.width) * CROP_W;
-    const fy = camRef.current.y + ((e.clientY - r.top) / r.height) * CROP_H;
+    // Exact now the view is static — with the old lerping camera a tap mapped
+    // through a window that was still gliding, so it landed slightly off.
+    const v = viewRef.current;
+    const fx = v.x + ((e.clientX - r.left) / r.width) * v.w;
+    const fy = v.y + ((e.clientY - r.top) / r.height) * v.h;
     localModule.tapFb(fx, fy);
   };
 
@@ -120,7 +144,7 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
           width={CROP_W}
           height={CROP_H}
           onPointerDown={onTap}
-          style={{ width: '100%', aspectRatio: `${CROP_W} / ${CROP_H}`, display: 'block',
+          style={{ width: '100%', aspectRatio: aspect, display: 'block',
                    imageRendering: 'pixelated', touchAction: 'none', cursor: 'pointer', background: '#12100e' }}
         />
       </div>

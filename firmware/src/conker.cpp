@@ -132,10 +132,8 @@ void Conker::tick(Chamber& ch, float dt) {
             float angle = (id * 2654435761u) / 4294967296.0f * 6.2832f;
             target_x = ch.gather_x + ring_radius * cosf(angle);
             target_y = ch.gather_y + ring_radius * sinf(angle);
-            if (target_x < 0.5f) target_x = 0.5f;
-            if (target_y < 0.5f) target_y = 0.5f;
-            if (target_x > Cfg::GRID_WIDTH - 0.5f) target_x = Cfg::GRID_WIDTH - 0.5f;
-            if (target_y > Cfg::GRID_HEIGHT - 0.5f) target_y = Cfg::GRID_HEIGHT - 0.5f;
+            target_x = ch.clamp_room_x(target_x);   // whole grid on a colony
+            target_y = ch.clamp_room_y(target_y);
         }
 
         float dx = target_x - x;
@@ -162,10 +160,8 @@ void Conker::tick(Chamber& ch, float dt) {
         }
         // Exit gathers: don't clamp — let edge crossing detect the boundary position
         if (!ch.gather_is_exit) {
-            if (x < 0.5f) x = 0.5f;
-            if (y < 0.5f) y = 0.5f;
-            if (x > Cfg::GRID_WIDTH - 0.5f) x = Cfg::GRID_WIDTH - 0.5f;
-            if (y > Cfg::GRID_HEIGHT - 0.5f) y = Cfg::GRID_HEIGHT - 0.5f;
+            x = ch.clamp_room_x(x);
+            y = ch.clamp_room_y(y);
         }
         return;
     }
@@ -456,6 +452,12 @@ void Conker::tick(Chamber& ch, float dt) {
 
 bool Conker::_set_target_cell(int cx, int cy, Chamber& ch) {
     if (!ch.in_bounds(cx, cy)) return false;
+    // Her room's walls. Every step routes through here, so this is the one place
+    // that has to hold — and reusing the existing "blocked cell" return means she
+    // slides along a wall exactly as she does around the queen's body, rather than
+    // stopping dead. No-op on a normal colony (room_* spans the whole grid).
+    if (cx < ch.room_x0() || cx > ch.room_x1() || cy < ch.room_y0() || cy > ch.room_y1())
+        return false;
     // Idle ants can't enter the queen's body cells (but can move out if already inside)
     if (state == STATE_IDLE && ch.has_queen && ch.queen_obj.alive) {
         bool dest_inside = abs(cx - ch.queen_obj.x) <= Cfg::QUEEN_BODY_HALF_W
@@ -1450,8 +1452,10 @@ void Conker::_do_zoomies(Chamber& ch) {
         int cx = cell_x(), cy = cell_y();
         if (!has_target || (cx == target_x && cy == target_y)) {
             // Pick a new random waypoint within the grid
-            target_x = g_rng.rand_int(1, Cfg::GRID_WIDTH - 2);
-            target_y = g_rng.rand_int(1, Cfg::GRID_HEIGHT - 2);
+            // Inset by one ring, as before — for a normal colony room_* spans the
+            // whole grid so this is still exactly rand_int(1, GRID_WIDTH-2).
+            target_x = g_rng.rand_int(ch.room_x0() + 1, ch.room_x1() - 1);
+            target_y = g_rng.rand_int(ch.room_y0() + 1, ch.room_y1() - 1);
             has_target = true;
         }
         _step_toward_cell(target_x, target_y, ch);

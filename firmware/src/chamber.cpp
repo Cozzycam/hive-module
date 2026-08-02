@@ -703,6 +703,12 @@ void Chamber::_detect_proximity_interactions() {
 
 void Chamber::add_food(int x, int y, float amount) {
     if (!in_bounds(x, y)) return;
+    // Food must land where she can actually reach it — a pile outside her room
+    // would sit there forever while she starved next to the wall.
+    if (x < room_x0()) x = room_x0();
+    if (x > room_x1()) x = room_x1();
+    if (y < room_y0()) y = room_y0();
+    if (y > room_y1()) y = room_y1();
     int idx = _food_pile_index(x, y);
     if (idx >= 0) {
         food_piles[idx].amount += amount;
@@ -717,6 +723,10 @@ void Chamber::add_food(int x, int y, float amount) {
 
 void Chamber::throw_ball(int x, int y) {
     if (!in_bounds(x, y)) return;
+    if (x < room_x0()) x = room_x0();
+    if (x > room_x1()) x = room_x1();
+    if (y < room_y0()) y = room_y0();
+    if (y > room_y1()) y = room_y1();
     ball_x = static_cast<int8_t>(x);
     ball_y = static_cast<int8_t>(y);
     ball_bounces = Cfg::BALL_BOUNCES;   // a fresh throw always restarts the game
@@ -732,10 +742,10 @@ void Chamber::bat_ball() {
     // chamber (a ball she can't reach would strand her mid-chase).
     int nx = ball_x + g_rng.rand_int(-Cfg::BALL_BAT_SCATTER, Cfg::BALL_BAT_SCATTER);
     int ny = ball_y + g_rng.rand_int(-Cfg::BALL_BAT_SCATTER, Cfg::BALL_BAT_SCATTER);
-    if (nx < 0) nx = 0;
-    if (ny < 0) ny = 0;
-    if (nx >= Cfg::GRID_WIDTH)  nx = Cfg::GRID_WIDTH  - 1;
-    if (ny >= Cfg::GRID_HEIGHT) ny = Cfg::GRID_HEIGHT - 1;
+    if (nx < room_x0()) nx = room_x0();
+    if (ny < room_y0()) ny = room_y0();
+    if (nx > room_x1()) nx = room_x1();
+    if (ny > room_y1()) ny = room_y1();
     ball_x = static_cast<int8_t>(nx);
     ball_y = static_cast<int8_t>(ny);
 }
@@ -889,8 +899,10 @@ void Chamber::_tick_fireflies() {
         if (!f.active) {
             if (night && g_rng.rand_float() < Cfg::FIREFLY_SPAWN_CHANCE) {
                 f.active = true;
-                f.x = f.prev_x = static_cast<float>(g_rng.rand_int(2, Cfg::GRID_WIDTH - 3));
-                f.y = f.prev_y = static_cast<float>(g_rng.rand_int(2, Cfg::GRID_HEIGHT - 3));
+                // Spawn inside the liveable area — in her room, a firefly drifting
+                // about the wider chamber is one she can never see or chase.
+                f.x = f.prev_x = static_cast<float>(g_rng.rand_int(room_x0() + 2, room_x1() - 2));
+                f.y = f.prev_y = static_cast<float>(g_rng.rand_int(room_y0() + 2, room_y1() - 2));
                 f.vx = f.vy = 0.0f;
                 f.glow_phase = static_cast<uint8_t>(g_rng.rand_int(0, 255));
             }
@@ -935,10 +947,13 @@ void Chamber::_tick_fireflies() {
 
         f.x += f.vx;
         f.y += f.vy;
-        if (f.x < 1.0f) { f.x = 1.0f; f.vx = fabsf(f.vx); }
-        if (f.x > Cfg::GRID_WIDTH - 2.0f)  { f.x = Cfg::GRID_WIDTH - 2.0f;  f.vx = -fabsf(f.vx); }
-        if (f.y < 1.0f) { f.y = 1.0f; f.vy = fabsf(f.vy); }
-        if (f.y > Cfg::GRID_HEIGHT - 2.0f) { f.y = Cfg::GRID_HEIGHT - 2.0f; f.vy = -fabsf(f.vy); }
+        // Bounce off the room's walls (the whole grid on a normal colony).
+        const float fx_lo = room_x0() + 1.0f, fx_hi = room_x1() - 1.0f;
+        const float fy_lo = room_y0() + 1.0f, fy_hi = room_y1() - 1.0f;
+        if (f.x < fx_lo) { f.x = fx_lo; f.vx = fabsf(f.vx); }
+        if (f.x > fx_hi) { f.x = fx_hi; f.vx = -fabsf(f.vx); }
+        if (f.y < fy_lo) { f.y = fy_lo; f.vy = fabsf(f.vy); }
+        if (f.y > fy_hi) { f.y = fy_hi; f.vy = -fabsf(f.vy); }
 
         f.glow_phase += 3;  // wraps — ~10s blink cycle at 8tps
     }
@@ -1013,13 +1028,15 @@ void Chamber::_tick_critters() {
                     g_rng.rand_int(Cfg::CRITTER_TTL_MIN, Cfg::CRITTER_TTL_MAX));
                 if (kind == CRITTER_SNAIL) cr.ttl *= 2;  // slow — needs the time
                 cr.kind = kind;
-                // Enter from a random edge
+                // Enter from a random edge — of HER ROOM in incubation, so a
+                // visiting bug is one she can actually meet and catch (and, once
+                // the shop lands, actually earn from). Unchanged on a colony.
                 if (g_rng.rand_int(0, 1) == 0) {
-                    cr.x = (g_rng.rand_int(0, 1) == 0) ? 1.0f : Cfg::GRID_WIDTH - 2.0f;
-                    cr.y = static_cast<float>(g_rng.rand_int(2, Cfg::GRID_HEIGHT - 3));
+                    cr.x = (g_rng.rand_int(0, 1) == 0) ? room_x0() + 1.0f : room_x1() - 1.0f;
+                    cr.y = static_cast<float>(g_rng.rand_int(room_y0() + 2, room_y1() - 2));
                 } else {
-                    cr.x = static_cast<float>(g_rng.rand_int(2, Cfg::GRID_WIDTH - 3));
-                    cr.y = (g_rng.rand_int(0, 1) == 0) ? 1.0f : Cfg::GRID_HEIGHT - 2.0f;
+                    cr.x = static_cast<float>(g_rng.rand_int(room_x0() + 2, room_x1() - 2));
+                    cr.y = (g_rng.rand_int(0, 1) == 0) ? room_y0() + 1.0f : room_y1() - 1.0f;
                 }
                 cr.prev_x = cr.x; cr.prev_y = cr.y;
                 cr.vx = cr.vy = 0.0f;
@@ -1076,10 +1093,12 @@ void Chamber::_tick_critters() {
         if (sp > max_speed) { cr.vx *= max_speed / sp; cr.vy *= max_speed / sp; }
 
         cr.x += cr.vx; cr.y += cr.vy;
-        if (cr.x < 1.0f) { cr.x = 1.0f; cr.vx = fabsf(cr.vx); }
-        if (cr.x > Cfg::GRID_WIDTH - 2.0f)  { cr.x = Cfg::GRID_WIDTH - 2.0f;  cr.vx = -fabsf(cr.vx); }
-        if (cr.y < 1.0f) { cr.y = 1.0f; cr.vy = fabsf(cr.vy); }
-        if (cr.y > Cfg::GRID_HEIGHT - 2.0f) { cr.y = Cfg::GRID_HEIGHT - 2.0f; cr.vy = -fabsf(cr.vy); }
+        const float cx_lo = room_x0() + 1.0f, cx_hi = room_x1() - 1.0f;
+        const float cy_lo = room_y0() + 1.0f, cy_hi = room_y1() - 1.0f;
+        if (cr.x < cx_lo) { cr.x = cx_lo; cr.vx = fabsf(cr.vx); }
+        if (cr.x > cx_hi) { cr.x = cx_hi; cr.vx = -fabsf(cr.vx); }
+        if (cr.y < cy_lo) { cr.y = cy_lo; cr.vy = fabsf(cr.vy); }
+        if (cr.y > cy_hi) { cr.y = cy_hi; cr.vy = -fabsf(cr.vy); }
     }
 }
 

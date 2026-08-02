@@ -29,7 +29,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 222;
+constexpr uint32_t FW_VERSION = 223;
 
 namespace Cfg {
 
@@ -185,6 +185,18 @@ constexpr float    PRINCESS_SOCIAL_BOOP_RELIEF = 0.35f;                // a boop
 constexpr float    KEEPER_BOND_PER_PLAY        = 0.01f;                // per BAT, so a full 5-bat throw ≈ 0.05 — play bonds as well as feeding without becoming a click-farm (feeding + a couple of throws a day ≈ close in under a week)
 constexpr float    PRINCESS_SOCIAL_RISE_SCALE  = 0.5f;                 // a lone princess's loneliness climbs at half a colony conker's rate: she's ALWAYS alone, so the colony curve pegged her at 100 permanently (brain: "is a desperately-lonely pet the right feel?" — no)
 constexpr float    PRINCESS_SOCIAL_PLATEAU     = 0.80f;                // ...and it tops out at "missing you", never full despair. Being alone is her NORMAL state (there is no colony to be lonely for), and real abandonment is already modelled by dormancy. A bar pegged at 100 every time you open the app carries no information and reads as cruelty. NOTE: sits below SOCIAL_URGENT_AT (0.85), so she reads RESTLESS, never the full lonely gloom-cloud
+
+// ---- Her room (incubation only) ----
+// A princess lives in a room you can see ALL of, not a colony chamber viewed
+// through a keyhole that chases her about. The app crops EXACTLY this rect, so
+// the room edge and the screen edge are the same line — she never walks into an
+// invisible wall, and nothing she can interact with is ever off-screen. Centred
+// in the 30x20 grid so the surrounding chamber machinery is untouched (the grid
+// itself sizes arrays at compile time; shrinking it would be a rewrite).
+constexpr int ROOM_W_CELLS = 11;                              // 176px
+constexpr int ROOM_H_CELLS = 14;                              // 224px — portrait, phone-shaped
+constexpr int ROOM_X0      = (GRID_WIDTH  - ROOM_W_CELLS) / 2;   // 9
+constexpr int ROOM_Y0      = (GRID_HEIGHT - ROOM_H_CELLS) / 2;   // 3
 
 // ---- The ball (keeper throws, she chases) ----
 // One ball at a time — a one-creature pet doesn't need a toy entity system.

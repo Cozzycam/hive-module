@@ -181,6 +181,10 @@ class LocalModule {
         setColonyTitle: cw('host_set_colony_title', null, ['string']),
         throwBall: cw('host_throw_ball', null, ['number', 'number']),
         prBall: cw('host_pr_ball', 'number', []),
+        roomX: cw('host_room_x', 'number', []),
+        roomY: cw('host_room_y', 'number', []),
+        roomW: cw('host_room_w', 'number', []),
+        roomH: cw('host_room_h', 'number', []),
       };
       // Unique colony per install — must precede boot. Guarded so a stale cached
       // hive.wasm without host_seed (mid-PWA-update skew) degrades to a default
@@ -541,6 +545,18 @@ class LocalModule {
 
   tintConker(id: number, tint: number) {
     try { this.fns.tintConker?.(id >>> 0, tint & 0xff); } catch { /**/ }
+  }
+
+  // Her room, in framebuffer pixels — the Nest crops exactly this, so there is no
+  // camera. Returns null on an install still running a cached pre-v223 wasm with
+  // no room exports, so the Nest can fall back to the old follow-cam.
+  room(): { x: number; y: number; w: number; h: number } | null {
+    if (!this.started || !this.fns.roomW) return null;
+    try {
+      const w = this.fns.roomW(), h = this.fns.roomH();
+      if (!w || !h) return null;
+      return { x: this.fns.roomX(), y: this.fns.roomY(), w, h };
+    } catch { return null; }
   }
 }
 

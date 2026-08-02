@@ -212,6 +212,11 @@ void host_boot(int ffMinutes) {
 
     g_host_millis = 0;
     g_sim.init();            // fresh colony (no SD): lone queen, founding ladder armed
+    // host_boot means "a normal colony". incubation_mode is a Chamber member that
+    // Sim::init doesn't touch, so without this a boot AFTER host_boot_incubation in
+    // the same instance would silently stay a fenced princess room — a colony
+    // confined to 11x14 cells. host_boot_incubation sets the flag after calling us.
+    chamber().incubation_mode = false;
 
     // Give the colony a queen name (a fresh no-SD manifest leaves it blank).
     auto& man = g_sim.coordinator.registry.manifest();
@@ -505,9 +510,33 @@ void host_boot_incubation() {
             if (ch.brood[i].id != 0) g_sim.coordinator.registry.remove_brood(ch.brood[i].id);
         ch.brood_count = 1;
     } else {
-        // Fresh install — found her single egg.
-        ch.add_brood_with_duration(Cfg::GRID_WIDTH / 2, Cfg::GRID_HEIGHT / 2, Cfg::INCUBATION_EGG_MS);
+        // Fresh install — found her single egg, in the middle of her room.
+        ch.add_brood_with_duration((ch.room_x0() + ch.room_x1()) / 2,
+                                   (ch.room_y0() + ch.room_y1()) / 2,
+                                   Cfg::INCUBATION_EGG_MS);
     }
+
+    // Pull her inside the room. An install from before the room existed restores
+    // her wherever she last stood in the old 30x20 chamber — and _set_target_cell
+    // now refuses every step that leaves the room, so a princess restored OUTSIDE
+    // it would be walled out and frozen for good, with no way to walk back in.
+    for (int i = 0; i < ch.conker_count; i++) {
+        Conker& c = ch.conkers[i];
+        c.x = ch.clamp_room_x(c.x);
+        c.y = ch.clamp_room_y(c.y);
+        c.has_target = false;
+        c.has_target_cell = false;
+    }
+    for (int i = 0; i < ch.brood_count; i++) {
+        int bx = ch.brood[i].x, by = ch.brood[i].y;
+        if (bx < ch.room_x0()) bx = ch.room_x0();
+        if (bx > ch.room_x1()) bx = ch.room_x1();
+        if (by < ch.room_y0()) by = ch.room_y0();
+        if (by > ch.room_y1()) by = ch.room_y1();
+        ch.brood[i].x = static_cast<int8_t>(bx);
+        ch.brood[i].y = static_cast<int8_t>(by);
+    }
+
     g_events_len = 0;
     accumulate_events();
 }
@@ -586,6 +615,12 @@ EMSCRIPTEN_KEEPALIVE uint32_t host_founded_unix() { return g_sim.coordinator.reg
 EMSCRIPTEN_KEEPALIVE int host_pr_state() { Chamber& ch = chamber(); return ch.conker_count ? (int)ch.conkers[0].state : -1; }
 EMSCRIPTEN_KEEPALIVE int host_pr_foodpiles() { return chamber().food_pile_count; }
 EMSCRIPTEN_KEEPALIVE int host_pr_ball() { return chamber().has_ball() ? chamber().ball_bounces : 0; }
+// Her room in display pixels. The app crops EXACTLY this, so the room's wall and
+// the edge of the pane are the same line and there's no camera to chase her with.
+EMSCRIPTEN_KEEPALIVE int host_room_x() { return chamber().room_x0() * Cfg::CELL_SIZE; }
+EMSCRIPTEN_KEEPALIVE int host_room_y() { return chamber().room_y0() * Cfg::CELL_SIZE; }
+EMSCRIPTEN_KEEPALIVE int host_room_w() { Chamber& ch = chamber(); return (ch.room_x1() - ch.room_x0() + 1) * Cfg::CELL_SIZE; }
+EMSCRIPTEN_KEEPALIVE int host_room_h() { Chamber& ch = chamber(); return (ch.room_y1() - ch.room_y0() + 1) * Cfg::CELL_SIZE; }
 // Ball position in display pixels, -1 when nothing's in play. Exists so a test can
 // assert the ball stays inside the Nest's window — the first version threw it out
 // of view every time and looked, to a keeper, like the button did nothing.
