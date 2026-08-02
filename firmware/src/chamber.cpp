@@ -1495,6 +1495,36 @@ int Chamber::nearest_artwork(int cx, int cy, int radius) const {
     return best;
 }
 
+// Pick up a piece and set it down somewhere else (keeper feedback #45: "be able
+// to move things in the module like art work"). Snapped to a cell, because
+// free-form placement would let a piece sit half-inside her or another work.
+// Identified by where it currently STANDS rather than by array index — indices
+// shuffle when a work weathers away, so a stale one would move the wrong piece.
+bool Chamber::move_artwork(int from_x, int from_y, int to_x, int to_y) {
+    if (!in_bounds(to_x, to_y)) return false;
+    if (to_x < room_x0() || to_x > room_x1() || to_y < room_y0() || to_y > room_y1())
+        return false;
+    int found = -1;
+    for (int i = 0; i < Cfg::MAX_ARTWORKS; i++) {
+        if (!artworks[i].active) continue;
+        if (artworks[i].x == from_x && artworks[i].y == from_y) { found = i; break; }
+    }
+    if (found < 0) return false;
+    if (artworks[found].x == to_x && artworks[found].y == to_y) return true;   // no move
+    if (!artwork_spot_free(to_x, to_y)) return false;
+    artworks[found].x = static_cast<int8_t>(to_x);
+    artworks[found].y = static_cast<int8_t>(to_y);
+    return true;
+}
+
+// Which piece is standing at a cell (-1 = nothing) — lets the app tell whether
+// the keeper's finger actually landed on something before starting a drag.
+int Chamber::artwork_at(int cx, int cy) const {
+    for (int i = 0; i < Cfg::MAX_ARTWORKS; i++)
+        if (artworks[i].active && artworks[i].x == cx && artworks[i].y == cy) return i;
+    return -1;
+}
+
 int Chamber::place_artwork(const Artwork& piece, Artwork* weathered_out) {
     if (weathered_out) weathered_out->active = false;
     int slot = -1;

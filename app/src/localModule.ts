@@ -187,6 +187,8 @@ class LocalModule {
         owned: cw('host_owned', 'number', []),
         water: cw('host_water', 'number', []),
         boop: cw('host_boop', null, ['number', 'number']),
+        moveDecor: cw('host_move_decor', 'number', ['number','number','number','number']),
+        decorAt: cw('host_decor_at', 'number', ['number', 'number']),
         flowering: cw('host_flowering', 'number', []),
         interactReady: cw('host_interact_ready', 'number', ['number']),
         unequip: cw('host_unequip', 'number', []),
@@ -530,6 +532,21 @@ class LocalModule {
   // Boop ONLY — never drops food on a miss (that's the Food tool's job).
   boopFb(fx: number, fy: number) {
     try { this.fns.boop?.(Math.round(fx), Math.round(fy)); } catch { /**/ }
+  }
+
+  // Is a piece of decor standing under this point? (cell-snapped)
+  decorAt(fx: number, fy: number): boolean {
+    if (!this.started || !this.fns.decorAt) return false;
+    try { return this.fns.decorAt(Math.round(fx), Math.round(fy)) === 1; } catch { return false; }
+  }
+
+  // Rearrange her room (#45) — snapped to a cell by the sim.
+  moveDecor(fx: number, fy: number, tx: number, ty: number): boolean {
+    if (!this.started || !this.fns.moveDecor) return false;
+    try {
+      return this.fns.moveDecor(Math.round(fx), Math.round(fy),
+                                Math.round(tx), Math.round(ty)) === 1;
+    } catch { return false; }
   }
 
   // Water her — the bud on her head opens into a flower for a few hours.

@@ -32,6 +32,8 @@ createHiveModule().then((M) => {
   const unequip = f('host_unequip', 'number', []);
   const water = f('host_water', 'number', []);
   const boop = f('host_boop', null, ['number', 'number']);
+  const moveDecor = f('host_move_decor', 'number', ['number','number','number','number']);
+  const decorAt = (x, y) => f('host_decor_at', 'number', ['number','number'])(x, y) === 1;
   const tapFb = f('host_tap', null, ['number', 'number']);
   const foodPiles = f('host_pr_foodpiles', 'number', []);
   const setTintOk = f('host_set_tint', 'number', ['number', 'number', 'number']);
@@ -164,6 +166,41 @@ createHiveModule().then((M) => {
   } else {
     console.log('      (no lilguys in snapshot — skipping tint check)');
   }
+
+  // ---- rearranging her room (#45) ----
+  seed(4321);
+  bootInc();
+  warp(8 * 86400, 1);                          // earn enough to buy something
+  if (bugs() >= 4 && buyDecor(0) === 1) {
+    // Find it: sweep the room for the piece we just bought.
+    const rx2 = roomX(), ry2 = roomY(), rw2 = roomW(), rh2 = roomH();
+    let at = null;
+    for (let y = ry2; y < ry2 + rh2 && !at; y += 16)
+      for (let x = rx2; x < rx2 + rw2 && !at; x += 16)
+        if (decorAt(x, y)) at = { x, y };
+    check('a bought piece is findable in her room', !!at, at ? `at ${at.x},${at.y}` : 'not found');
+    if (at) {
+      // Somewhere clear, well away from where it stands.
+      let dest = null;
+      for (let y = ry2 + 16; y < ry2 + rh2 - 16 && !dest; y += 16)
+        for (let x = rx2 + 16; x < rx2 + rw2 - 16 && !dest; x += 16)
+          if (!decorAt(x, y) && Math.abs(x - at.x) + Math.abs(y - at.y) > 40) dest = { x, y };
+      check('moving it to a clear cell works', moveDecor(at.x, at.y, dest.x, dest.y) === 1,
+            `${at.x},${at.y} -> ${dest.x},${dest.y}`);
+      check('it is actually there now', decorAt(dest.x, dest.y), 'moved');
+      check('and gone from where it was', !decorAt(at.x, at.y), 'vacated');
+      check('moving from bare floor moves nothing', moveDecor(at.x, at.y, rx2 + 32, ry2 + 32) === 0, 'refused');
+      // Outside the room would put it where she can't reach or see it.
+      check('cannot be dragged outside her room',
+            moveDecor(dest.x, dest.y, rx2 - 48, ry2 + 32) === 0, 'refused');
+    }
+  } else {
+    console.log('      (could not afford a piece to move this run)');
+  }
+
+  seed(4242);
+  bootInc();
+  warp(3600, 1);
 
   // ---- the Boop tool must NOT litter her room with food ----
   seed(1234);

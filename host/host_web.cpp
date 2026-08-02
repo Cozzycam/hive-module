@@ -476,6 +476,16 @@ EMSCRIPTEN_KEEPALIVE const char* host_shop_json() {
 EMSCRIPTEN_KEEPALIVE int host_buy_decor(int item) {
     return g_sim.coordinator.cmd_buy_decor((uint8_t)item) ? 1 : 0;
 }
+// Rearranging her room (#45). Pixels in, snapped to cells here so the app never
+// has to know the grid. Returns 1 if the piece actually moved.
+EMSCRIPTEN_KEEPALIVE int host_move_decor(int fx, int fy, int tx, int ty) {
+    return chamber().move_artwork(fx / Cfg::CELL_SIZE, fy / Cfg::CELL_SIZE,
+                                  tx / Cfg::CELL_SIZE, ty / Cfg::CELL_SIZE) ? 1 : 0;
+}
+// Is there a piece under this pixel? (cell-snapped, so a fat finger still lands)
+EMSCRIPTEN_KEEPALIVE int host_decor_at(int px, int py) {
+    return chamber().artwork_at(px / Cfg::CELL_SIZE, py / Cfg::CELL_SIZE) >= 0 ? 1 : 0;
+}
 EMSCRIPTEN_KEEPALIVE int host_water() { return chamber().water_princess() ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE int host_flowering() {
     Chamber& ch = chamber();

@@ -214,6 +214,8 @@ public:
     // Places a work (evicting the oldest if full — the eviction is the
     // caller's story to tell via the returned index). Returns slot or -1.
     int  place_artwork(const Artwork& piece, Artwork* weathered_out);
+    bool move_artwork(int from_x, int from_y, int to_x, int to_y);   // keeper rearranges (#45)
+    int  artwork_at(int cx, int cy) const;                            // -1 = nothing there
     bool artwork_spot_free(int cx, int cy) const;   // clear of plots/food/queen/art
     int  nearest_artwork(int cx, int cy, int radius) const;  // -1 if none
     void artwork_admired(int idx);                  // count + occasional persist

@@ -20,12 +20,13 @@ const CROP_W = 174, CROP_H = 232;
 // A phone really only offers a tap and a tap-and-hold. So the tap is a TOOL:
 // pick one here, then tap the glass. `cool` indexes Cfg::InteractKind
 // (boop 0, ball 1, water 2) — -1 means the tool has no cooldown of its own.
-type Tool = 'food' | 'boop' | 'ball' | 'water';
+type Tool = 'food' | 'boop' | 'ball' | 'water' | 'move';
 const TOOLS: { id: Tool; icon: string; label: string; cool: number }[] = [
   { id: 'food',  icon: '🍎', label: 'Food',  cool: -1 },
   { id: 'boop',  icon: '👆', label: 'Boop',  cool: 0 },
   { id: 'ball',  icon: '🎾', label: 'Ball',  cool: 1 },
   { id: 'water', icon: '💧', label: 'Water', cool: 2 },
+  { id: 'move',  icon: '✋', label: 'Move',  cool: -1 },
 ];
 
 export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
@@ -41,6 +42,8 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
   const [tool, setTool] = useState<Tool>('food');
   const [cool, setCool] = useState<number[]>([0, 0, 0]);
   const [flowering, setFlowering] = useState(0);
+  // Move tool: remember what we picked up so pointerup knows where it came from.
+  const dragRef = useRef<{ x: number; y: number } | null>(null);
   // The view rect. Static: her room is fenced to exactly this, so everything is
   // on screen at once and nothing chases her about. Only falls back to a
   // follow-camera when the wasm predates the room.
@@ -102,19 +105,40 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
 
   // Tap the glass — map portrait-canvas coords through the crop to framebuffer
   // coords, then host_tap (drops food where you tap / boops her if you hit her).
-  const onTap = (e: React.PointerEvent) => {
-    if (status !== 'running') return;
-    const c = canvasRef.current; if (!c) return;
+  // Canvas point -> framebuffer coords. Exact now the view is static; with the
+  // old lerping camera a tap mapped through a window still gliding, so it
+  // landed slightly off.
+  const toFb = (e: React.PointerEvent) => {
+    const c = canvasRef.current; if (!c) return null;
     const r = c.getBoundingClientRect();
-    // Exact now the view is static — with the old lerping camera a tap mapped
-    // through a window that was still gliding, so it landed slightly off.
     const v = viewRef.current;
-    const fx = v.x + ((e.clientX - r.left) / r.width) * v.w;
-    const fy = v.y + ((e.clientY - r.top) / r.height) * v.h;
-    if (tool === 'ball')       localModule.throwBallAt(fx, fy);
+    return {
+      fx: v.x + ((e.clientX - r.left) / r.width) * v.w,
+      fy: v.y + ((e.clientY - r.top) / r.height) * v.h,
+    };
+  };
+
+  const onDown = (e: React.PointerEvent) => {
+    if (status !== 'running') return;
+    const p = toFb(e); if (!p) return;
+    if (tool === 'move') {
+      // Only start a drag if a piece is actually under the finger, so a stray
+      // tap on bare floor doesn't teleport something across the room.
+      dragRef.current = localModule.decorAt(p.fx, p.fy) ? { x: p.fx, y: p.fy } : null;
+      return;
+    }
+    if (tool === 'ball')       localModule.throwBallAt(p.fx, p.fy);
     else if (tool === 'water') localModule.water();
-    else if (tool === 'boop')  localModule.boopFb(fx, fy);  // boop only — a miss does nothing
-    else                       localModule.tapFb(fx, fy);   // food where you tap / boop if you hit her
+    else if (tool === 'boop')  localModule.boopFb(p.fx, p.fy);  // a miss does nothing
+    else                       localModule.tapFb(p.fx, p.fy);   // food, or boop if you hit her
+  };
+
+  const onUp = (e: React.PointerEvent) => {
+    const from = dragRef.current;
+    dragRef.current = null;
+    if (tool !== 'move' || !from) return;
+    const p = toFb(e); if (!p) return;
+    localModule.moveDecor(from.x, from.y, p.fx, p.fy);   // the sim snaps it to a cell
   };
 
   const hatched = stats?.hatched ?? false;
@@ -165,7 +189,9 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
           ref={canvasRef}
           width={canvasSize.w}
           height={canvasSize.h}
-          onPointerDown={onTap}
+          onPointerDown={onDown}
+          onPointerUp={onUp}
+          onPointerCancel={() => { dragRef.current = null; }}
           style={{ width: '100%', aspectRatio: `${canvasSize.w} / ${canvasSize.h}`, display: 'block',
                    imageRendering: 'pixelated', touchAction: 'none', cursor: 'pointer', background: '#12100e' }}
         />
@@ -217,6 +243,7 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
         {tool === 'boop'  && 'Tap her to say hello.'}
         {tool === 'ball'  && 'Tap anywhere to throw the ball there — she’ll run it down and knock it on.'}
         {tool === 'water' && 'Tap to water her. The bud on her head opens into a flower for a few hours.'}
+        {tool === 'move'  && 'Drag anything in her room to rearrange it — it snaps to the floor where you let go.'}
         {' '}
         A dot means she’s had her fill of that one for now — it still works, and still
         builds your bond, it just won’t lift her spirits again until she’s missed it.
