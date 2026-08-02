@@ -209,7 +209,7 @@ const stmts = {
 // tint_conker recolours ONE conker (keeper feedback #43/#49) — cosmetic only, so
 // it's safe on the unauth queue in a way a destructive command would not be
 // (cf. reset_to_satellite, removed in the 2026-07-05 security pass).
-const COMMAND_TYPES = new Set(['name_conker', 'feed_colony', 'set_module_role', 'set_floor_tint', 'tint_conker', 'set_colony_title', 'gift_care_package', 'ota_update', 'set_followed', 'grant_wish', 'summon_queen']);
+const COMMAND_TYPES = new Set(['name_conker', 'feed_colony', 'set_module_role', 'set_floor_tint', 'tint_conker', 'set_colony_title', 'buy_decor', 'gift_care_package', 'ota_update', 'set_followed', 'grant_wish', 'summon_queen']);
 
 // ---- HMAC verification ----
 function verifyHmac(body, signature) {

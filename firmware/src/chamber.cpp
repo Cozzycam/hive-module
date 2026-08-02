@@ -1173,6 +1173,13 @@ void Chamber::_detect_critter_discovery() {
         if (cr.kind != CRITTER_SNAIL && cr.kind != CRITTER_MOTH) {
             if (f.catches < 255) f.catches++;       // earns the Catcher trait
         }
+        // Shop purse. Every find pays (a snail you didn't chase is still a bug
+        // you found), valued by rarity. Kept separate from `catches` above so
+        // spending can never cost her the Bug Hunter title.
+        if (colony && cr.kind < 8) {
+            uint32_t next = colony->bugs + Cfg::BUG_VALUE[cr.kind];
+            colony->bugs = (next > 9999) ? 9999 : static_cast<uint16_t>(next);
+        }
         if (f.anim_remaining_ticks == 0 && f.state == STATE_IDLE && f.stack_on < 0) {
             f.anim_type = LG_ANIM_NOTICE;
             f.anim_remaining_ticks = 12;
@@ -1453,7 +1460,10 @@ int Chamber::place_artwork(const Artwork& piece, Artwork* weathered_out) {
     // Density rules (v214, keeper taste: the colony keeps what it loves).
     // Memorials are exempt on both sides — grief is not decor, it neither
     // counts against a maker nor gets evicted here.
-    if (piece.kind != ART_MEMORIAL) {
+    // Bought decor is exempt from both density rules, like memorials: the keeper
+    // spent days of bug-catching on it, so it must not quietly weather away to
+    // make room for a sculpture she made this afternoon.
+    if (piece.kind != ART_MEMORIAL && piece.context != CTX_BOUGHT) {
         // Rule 1: a maker holds at most ARTWORKS_PER_MAKER standing works —
         // their next piece replaces their own least-admired, so one prolific
         // sculptor can't fill the floor while their landmarks still stand.
@@ -1461,6 +1471,7 @@ int Chamber::place_artwork(const Artwork& piece, Artwork* weathered_out) {
         uint32_t least = 0xFFFFFFFF;
         for (int i = 0; i < Cfg::MAX_ARTWORKS; i++) {
             if (!artworks[i].active || artworks[i].kind == ART_MEMORIAL) continue;
+            if (artworks[i].context == CTX_BOUGHT) continue;   // never evict what was paid for
             if (artworks[i].maker_id != piece.maker_id) continue;
             mine++;
             if (artworks[i].admired < least) { least = artworks[i].admired; evict = i; }
@@ -1475,6 +1486,7 @@ int Chamber::place_artwork(const Artwork& piece, Artwork* weathered_out) {
                 if (!artworks[i].active) continue;
                 standing++;
                 if (artworks[i].kind == ART_MEMORIAL) continue;
+                if (artworks[i].context == CTX_BOUGHT) continue;   // never evict what was paid for
                 if (artworks[i].admired < least) { least = artworks[i].admired; evict = i; }
             }
             if (standing >= Cfg::ARTWORKS_STANDING_CAP && evict >= 0) slot = evict;

@@ -81,6 +81,12 @@ enum ArtContext : uint8_t {
     CTX_RAIN     = 3,   // on a rain-soaked day
     CTX_NIGHT    = 4,   // by firefly light
     CTX_GRIEF    = 5,   // in memory of someone
+    // Bought by the keeper from the shop with bugs she caught. Reusing the
+    // existing context byte rather than adding an Artwork field on purpose:
+    // MAX_ARTWORKS sizes the persisted NVS blob and the loader REJECTS a
+    // size-mismatched blob outright, so growing the struct would silently wipe
+    // every standing work on every existing colony.
+    CTX_BOUGHT   = 6,
 };
 
 struct Artwork {

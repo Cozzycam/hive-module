@@ -29,7 +29,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 224;
+constexpr uint32_t FW_VERSION = 225;
 
 namespace Cfg {
 
@@ -185,6 +185,42 @@ constexpr float    PRINCESS_SOCIAL_BOOP_RELIEF = 0.35f;                // a boop
 constexpr float    KEEPER_BOND_PER_PLAY        = 0.01f;                // per BAT, so a full 5-bat throw ≈ 0.05 — play bonds as well as feeding without becoming a click-farm (feeding + a couple of throws a day ≈ close in under a week)
 constexpr float    PRINCESS_SOCIAL_RISE_SCALE  = 0.5f;                 // a lone princess's loneliness climbs at half a colony conker's rate: she's ALWAYS alone, so the colony curve pegged her at 100 permanently (brain: "is a desperately-lonely pet the right feel?" — no)
 constexpr float    PRINCESS_SOCIAL_PLATEAU     = 0.80f;                // ...and it tops out at "missing you", never full despair. Being alone is her NORMAL state (there is no colony to be lonely for), and real abandonment is already modelled by dormancy. A bar pegged at 100 every time you open the app carries no information and reads as cruelty. NOTE: sits below SOCIAL_URGENT_AT (0.85), so she reads RESTLESS, never the full lonely gloom-cloud
+
+// ---- The decor shop (bugs she catches buy things for her room) ----
+// Income is DELIBERATELY small. v201 cut critter spawns ~90x because the economy
+// had run away (~3 finds/day plain), and that handful a day IS the shop's income.
+// Price in DAYS, and never re-inflate spawns to make the shop feel generous —
+// that's the exact bug that was fixed once already.
+// Value by rarity, so the spawn table's own weighting tiers the currency for free.
+constexpr uint8_t BUG_VALUE[8] = {
+    1,  // beetle
+    1,  // butterfly
+    1,  // worm
+    1,  // firefly
+    2,  // moth      — clear nights only
+    2,  // snail     — rain only
+    4,  // ladybird  — rare (5%)
+    4,  // dragonfly — garden-only prize
+};
+
+struct ShopItem {
+    uint8_t     kind;    // ArtKind
+    uint8_t     motif;   // procedural look variant
+    uint8_t     tint;    // its own hue, so the shop reads as a range of things
+    uint16_t    price;   // in bugs
+    const char* name;
+};
+// Every entry reuses an EXISTING artwork sprite — the shop needed no new art.
+// At ~2 bugs/day: the first piece in a couple of days, the priciest in a week.
+constexpr ShopItem SHOP_ITEMS[] = {
+    { /*ART_CAIRN*/     1, 0,  40,  4, "Pebble cairn"   },
+    { /*ART_SCULPTURE*/ 0, 0,  90,  6, "Round stone"    },
+    { /*ART_SCULPTURE*/ 0, 1, 150,  8, "Standing spire" },
+    { /*ART_SCULPTURE*/ 0, 2, 200, 10, "Little arch"    },
+    { /*ART_PAINTING*/  2, 0,  25, 12, "Wall painting"  },
+    { /*ART_PAINTING*/  2, 1, 175, 15, "Bright painting"},
+};
+constexpr int SHOP_ITEM_COUNT = sizeof(SHOP_ITEMS) / sizeof(SHOP_ITEMS[0]);
 
 // ---- Her room (incubation only) ----
 // A princess lives in a room you can see ALL of, not a colony chamber viewed

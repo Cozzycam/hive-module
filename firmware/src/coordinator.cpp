@@ -1582,6 +1582,53 @@ bool Coordinator::cmd_rename_conker(uint32_t id, const char* new_name) {
     return true;
 }
 
+// Buy a piece of decor with bugs she's caught. Cosmetic only — identity, not
+// power. Placed in her room (the whole grid on a colony), and marked CTX_BOUGHT
+// so the density rules never weather it away.
+bool Coordinator::cmd_buy_decor(uint8_t item_id) {
+    if (item_id >= Cfg::SHOP_ITEM_COUNT) return false;
+    const Cfg::ShopItem& it = Cfg::SHOP_ITEMS[item_id];
+    if (colony.bugs < it.price) {
+        Serial.printf("[shop] '%s' costs %u, purse has %u\r\n",
+                      it.name, (unsigned)it.price, (unsigned)colony.bugs);
+        return false;
+    }
+
+    // Somewhere clear to stand it. Try a few spots, then give up rather than
+    // drop it on top of her or on another piece.
+    int px = -1, py = -1;
+    for (int tries = 0; tries < 24; tries++) {
+        int cx = g_rng.rand_int(chamber.room_x0() + 1, chamber.room_x1() - 1);
+        int cy = g_rng.rand_int(chamber.room_y0() + 1, chamber.room_y1() - 1);
+        if (!chamber.artwork_spot_free(cx, cy)) continue;
+        px = cx; py = cy; break;
+    }
+    if (px < 0) {
+        Serial.println("[shop] nowhere clear to put it");
+        return false;
+    }
+
+    colony.bugs -= it.price;
+
+    Artwork piece;
+    piece.active       = true;
+    piece.kind         = it.kind;
+    piece.motif        = it.motif;
+    piece.x            = static_cast<int8_t>(px);
+    piece.y            = static_cast<int8_t>(py);
+    piece.maker_id     = 0;                 // the keeper, not a conker
+    strlcpy(piece.maker_name, "you", sizeof(piece.maker_name));
+    piece.maker_tint   = it.tint;
+    piece.created_unix = g_tod.unix_time;
+    piece.context      = CTX_BOUGHT;
+
+    Artwork weathered;
+    chamber.place_artwork(piece, &weathered);
+    Serial.printf("[shop] bought '%s' for %u — purse now %u\r\n",
+                  it.name, (unsigned)it.price, (unsigned)colony.bugs);
+    return true;
+}
+
 // Name the colony (keeper feedback #40: "the colony title should be chooseable
 // and show up when connected to other colonies"). This is a DISPLAY name only —
 // colony_id stays the immutable identity/API key, so renaming can never orphan
@@ -2203,6 +2250,7 @@ void Coordinator::_persist_sync_colony_state(uint32_t tick_num) {
     m.last_tick = tick_num;
     m.food_store = colony.food_store;
     m.food_total = colony.food_total;
+    m.bugs = colony.bugs;                      // shop purse survives a power cut
     m.total_workers_born = colony.total_workers_born;
     m.worker_census = colony.worker_census;
     m.module_role = role;
@@ -2325,6 +2373,7 @@ void Coordinator::_persist_migrate_live_colony() {
     m.module_role = role;
     m.food_store = colony.food_store;
     m.food_total = colony.food_total;
+    m.bugs = colony.bugs;                      // shop purse survives a power cut
     m.total_workers_born = colony.total_workers_born;
     m.worker_census = colony.worker_census;
 
@@ -2413,6 +2462,7 @@ void Coordinator::_persist_restore_from_disk() {
     // Restore colony state
     colony.food_store = m.food_store;
     colony.food_total = m.food_total;
+    colony.bugs = m.bugs;
     colony.total_workers_born = m.total_workers_born;
     colony.worker_census = m.worker_census;
 

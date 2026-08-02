@@ -13,6 +13,7 @@ import Module from './screens/Module';
 import { Her } from './screens/Her';
 import { Crown } from './screens/Crown';
 import { About } from './screens/About';
+import { Shop } from './screens/Shop';
 import { localModule, getIdentity } from './localModule';
 import { Empty } from './screens/Empty';
 import { Settings, notificationManager } from './screens/Settings';
@@ -25,12 +26,12 @@ import { HIVE } from './theme/palette';
 import { SIZES } from './theme/fonts';
 import type { ColonyEvent, DataSource } from './api/types';
 
-type Tab = 'home' | 'module' | 'characters' | 'chambers' | 'diary' | 'feedback' | 'her' | 'about' | 'guide';
+type Tab = 'home' | 'module' | 'characters' | 'chambers' | 'diary' | 'feedback' | 'her' | 'about' | 'guide' | 'shop';
 
 // Colony mode (a physical module, or a founded colony): the full app.
 const COLONY_TABS: Tab[] = ['home', 'module', 'characters', 'chambers', 'diary', 'feedback'];
 // Tamagotchi mode (raising a single princess, pre-coronation): a calm, slimmed shell.
-const TAMAGOTCHI_TABS: Tab[] = ['her', 'about', 'diary', 'guide', 'feedback'];
+const TAMAGOTCHI_TABS: Tab[] = ['her', 'shop', 'about', 'guide', 'diary', 'feedback'];
 
 const TAB_LABELS: Record<Tab, string> = {
   home: 'Home',
@@ -42,6 +43,7 @@ const TAB_LABELS: Record<Tab, string> = {
   her: 'Nest',
   about: 'About',
   guide: 'Guide',
+  shop: 'Shop',
 };
 
 const TAB_ICONS: Record<Tab, string> = {
@@ -54,6 +56,7 @@ const TAB_ICONS: Record<Tab, string> = {
   her: '\u{1FABA}',      // nest with egg — where she's raised
   about: '\u{1F338}',    // blossom — who she is
   guide: '\u{1F50D}',    // magnifier — field guide
+  shop: '\u{1FAD9}',     // jar - bugs she caught, spent on her room
 };
 
 // localStorage key: unix of the most recent neighbour gift the user has seen.
@@ -500,6 +503,7 @@ export function App() {
                     {/* Tamagotchi mode */}
                     {tab === 'her' && <Her onNavigate={handleNavigate} />}
                     {tab === 'about' && <About />}
+                    {tab === 'shop' && <Shop />}
                     {tab === 'guide' && <FieldGuide onBack={() => setTab('her')} />}
                   </>
                 )}

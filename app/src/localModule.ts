@@ -181,6 +181,9 @@ class LocalModule {
         setColonyTitle: cw('host_set_colony_title', null, ['string']),
         throwBall: cw('host_throw_ball', null, ['number', 'number']),
         prBall: cw('host_pr_ball', 'number', []),
+        buyDecor: cw('host_buy_decor', 'number', ['number']),
+        bugs: cw('host_bugs', 'number', []),
+        shopJson: cw('host_shop_json', 'string', []),
         roomX: cw('host_room_x', 'number', []),
         roomY: cw('host_room_y', 'number', []),
         roomW: cw('host_room_w', 'number', []),
@@ -403,6 +406,7 @@ class LocalModule {
       case 'gift_care_package': this.fns.carePackage(); return true;
       case 'name_conker':      this.fns.rename(payload?.id >>> 0, String(payload?.name ?? '')); return true;
       case 'tint_conker':      this.tintConker(Number(payload?.id ?? 0), Number(payload?.tint ?? 0)); return true;
+      case 'buy_decor':        this.buyDecor(Number(payload?.item ?? 0)); return true;
       case 'set_colony_title': try { this.fns.setColonyTitle?.(String(payload?.title ?? '')); } catch { /* stale wasm */ } return true;
       case 'set_floor_tint': {
         const rgb = payload?.rgb ?? 0;
@@ -545,6 +549,25 @@ class LocalModule {
 
   tintConker(id: number, tint: number) {
     try { this.fns.tintConker?.(id >>> 0, tint & 0xff); } catch { /**/ }
+  }
+
+  // ---- the decor shop ----
+  // Catalogue comes from the SIM, never a copy here: a price that drifted
+  // between the two would only show up as a keeper being charged the wrong
+  // amount. Returns [] on a wasm too old to have a shop.
+  shopItems(): { id: number; name: string; price: number; tint: number }[] {
+    if (!this.started || !this.fns.shopJson) return [];
+    try { return JSON.parse(this.fns.shopJson() || '[]'); } catch { return []; }
+  }
+
+  bugs(): number {
+    if (!this.started || !this.fns.bugs) return 0;
+    try { return this.fns.bugs() ?? 0; } catch { return 0; }
+  }
+
+  buyDecor(item: number): boolean {
+    if (!this.started || !this.fns.buyDecor) return false;
+    try { return this.fns.buyDecor(item | 0) === 1; } catch { return false; }
   }
 
   // Her room, in framebuffer pixels — the Nest crops exactly this, so there is no

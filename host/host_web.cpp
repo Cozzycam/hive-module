@@ -437,6 +437,30 @@ EMSCRIPTEN_KEEPALIVE void host_set_tint(int r, int g, int b) {
 EMSCRIPTEN_KEEPALIVE void host_tint_conker(uint32_t id, int tint) {
     g_sim.coordinator.cmd_set_conker_tint(id, (uint8_t)(tint & 0xFF));
 }
+// The shop catalogue, straight from the sim — the app renders whatever this
+// says. Deliberately NOT duplicated app-side: prices and names drifting between
+// the two would be invisible until a keeper was charged the wrong amount.
+static char g_shop_buf[512];
+EMSCRIPTEN_KEEPALIVE const char* host_shop_json() {
+    JsonDocument doc;
+    JsonArray arr = doc.to<JsonArray>();
+    for (int i = 0; i < Cfg::SHOP_ITEM_COUNT; i++) {
+        JsonObject o = arr.add<JsonObject>();
+        o["id"]    = i;
+        o["name"]  = Cfg::SHOP_ITEMS[i].name;
+        o["price"] = Cfg::SHOP_ITEMS[i].price;
+        o["tint"]  = Cfg::SHOP_ITEMS[i].tint;
+    }
+    serializeJson(doc, g_shop_buf, sizeof(g_shop_buf));
+    return g_shop_buf;
+}
+
+// The decor shop: spend caught bugs on something for her room.
+EMSCRIPTEN_KEEPALIVE int host_buy_decor(int item) {
+    return g_sim.coordinator.cmd_buy_decor((uint8_t)item) ? 1 : 0;
+}
+EMSCRIPTEN_KEEPALIVE int host_bugs() { return g_sim.coordinator.colony.bugs; }
+
 // Name the colony (feedback #40) — display name only; colony_id is untouched.
 EMSCRIPTEN_KEEPALIVE void host_set_colony_title(const char* title) {
     g_sim.coordinator.cmd_set_colony_title(title ? title : "");

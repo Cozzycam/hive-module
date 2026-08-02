@@ -11,6 +11,10 @@ struct ColonyState {
     uint16_t brood_seed          = 0;
     uint16_t brood_larva         = 0;   // legacy alias, kept for API (same as brood_seed)
     uint16_t brood_pupa          = 0;   // always 0 (pupa stage removed)
+    uint16_t bugs                = 0;   // shop purse: critters caught, spendable on decor.
+                                        // SEPARATE from Conker::catches, which is the
+                                        // LIFETIME tally the Bug Hunter title reads — spending
+                                        // must never be able to demote her.
     uint16_t total_workers_born  = 0;
     uint16_t worker_census       = 0;   // authoritative headcount (births - deaths)
     uint16_t pop_cap             = Cfg::POP_CAP_PER_MODULE;  // 10 × connected modules; hatch gate

@@ -25,6 +25,8 @@ createHiveModule().then((M) => {
   const throwBall = f('host_throw_ball', null, ['number', 'number']);
   const tintConker = f('host_tint_conker', null, ['number', 'number']);
   const setTitle = f('host_set_colony_title', null, ['string']);
+  const buyDecor = f('host_buy_decor', 'number', ['number']);
+  const bugs = f('host_bugs', 'number', []);
   const ball = f('host_pr_ball', 'number', []);
   const ballX = f('host_pr_ball_x', 'number', []);
   const ballY = f('host_pr_ball_y', 'number', []);
@@ -176,6 +178,48 @@ createHiveModule().then((M) => {
   boot(0);
   const fullW = roomW(), fullH = roomH();
   check('a colony still gets the full chamber', fullW === 480 && fullH === 320, `${fullW}x${fullH}`);
+
+  seed(4242);
+  bootInc();
+  warp(3600, 1);
+
+  // ---- the decor shop ----
+  // The two rules that matter: you can't buy what you can't afford, and
+  // spending must never touch the LIFETIME catch tally the Bug Hunter title
+  // reads from (that would make decorating demote her).
+  seed(555);
+  bootInc();
+  const bugsAtBoot = bugs();
+  console.log(`      purse restored at boot: ${bugsAtBoot}`);
+  // Affordability is the rule that matters, and it has to hold either way round.
+  const DEAREST = 5, DEAREST_PRICE = 15;
+  const r = buyDecor(DEAREST);
+  if (bugsAtBoot < DEAREST_PRICE) check('a purchase beyond the purse is refused', r === 0, `purse ${bugsAtBoot} < ${DEAREST_PRICE}`);
+  else check('a purchase within the purse is allowed', r === 1, `purse ${bugsAtBoot}`);
+  check('a refused purchase costs nothing', bugs() === (r === 1 ? bugsAtBoot - DEAREST_PRICE : bugsAtBoot));
+  warp(3600, 1);
+
+  warp(7 * 86400, 1);                       // a week of care — she catches things
+  const earned = bugs();
+  console.log(`      bugs after a week of care: ${earned}`);
+  check('a week of catching earns something', earned > 0, `bugs=${earned}`);
+  check('but not a runaway pile (v201 economy stays cut)', earned < 120, `bugs=${earned}`);
+
+  const snapBefore = snapshot();
+  const catchesBefore = (snapBefore.lilguys?.[0]?.catches) ?? 0;
+  if (earned >= 4) {
+    const ok = buyDecor(0);
+    check('bought the cheapest item', ok === 1, `returned ${ok}`);
+    check('purse was debited', bugs() === earned - 4, `${earned} -> ${bugs()}`);
+    const snapAfter = snapshot();
+    const catchesAfter = (snapAfter.lilguys?.[0]?.catches) ?? 0;
+    check('spending did NOT touch her lifetime catch tally (Bug Hunter safe)',
+          catchesAfter === catchesBefore, `${catchesBefore} -> ${catchesAfter}`);
+    check('snapshot reports the purse', typeof snapAfter.bugs === 'number', `bugs=${snapAfter.bugs}`);
+  } else {
+    console.log('      (not enough bugs earned to test a purchase this run)');
+  }
+  check('unknown item id is refused', buyDecor(99) === 0, 'refused');
 
   seed(4242);
   bootInc();
