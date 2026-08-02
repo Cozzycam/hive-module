@@ -112,7 +112,8 @@ void Conker::tick(Chamber& ch, float dt) {
         lived_ms = (lived_ms > erode) ? lived_ms - erode : 0;
         // A keeper dropping food nearby rouses her — she stirs, then toddles over
         // to eat it (she can't forage while suspended, so food presence is the wake).
-        if (ch.food_pile_count > 0) { dormant = false; if (hunger > Cfg::DORMANT_WAKE_HUNGER) hunger = Cfg::DORMANT_WAKE_HUNGER; }
+        // A thrown ball rouses her the same way: it's the same thing, someone came back.
+        if (ch.food_pile_count > 0 || ch.has_ball()) { dormant = false; if (hunger > Cfg::DORMANT_WAKE_HUNGER) hunger = Cfg::DORMANT_WAKE_HUNGER; }
         return;
     }
 
@@ -435,6 +436,7 @@ void Conker::tick(Chamber& ch, float dt) {
             case STATE_FARMING:     _do_farming(ch);     break;
             case STATE_CRAFTING:    _do_crafting(ch);    break;
             case STATE_TO_GARDEN:   _do_to_garden(ch);   break;
+            case STATE_PLAYING:     _do_play_ball(ch);   break;
             default:                _do_idle(ch);        break;
         }
     }
@@ -554,6 +556,14 @@ void Conker::_pick_task(Chamber& ch) {
     if (ch.incubation_mode) {
         if (hunger > Cfg::PRINCESS_EAT_FLOOR && ch.food_pile_count > 0) {
             state = STATE_EATING;
+            has_target = false;
+            has_target_cell = false;
+            return;
+        }
+        // A ball in play beats pottering — it's the keeper asking to play, and
+        // it's the one interaction that isn't tapping her.
+        if (ch.has_ball()) {
+            state = STATE_PLAYING;
             has_target = false;
             has_target_cell = false;
             return;
@@ -1099,6 +1109,37 @@ void Conker::_do_tend_queen(Chamber& ch) {
         return;
     }
     _step_toward_cell(target_x, target_y, ch);
+}
+
+// The ball the keeper threw (incubation only). She runs it down, pounces, knocks
+// it on, and chases again until it rolls to a stop. This exists because tapping
+// was the ONLY way to reach her, so bonding degenerated into spam-tapping the
+// loneliness bar — a chase is company you give her rather than a button you hold.
+void Conker::_do_play_ball(Chamber& ch) {
+    if (!ch.has_ball()) {                 // rolled to a stop while she closed in
+        state = STATE_IDLE;
+        has_target = false; has_target_cell = false;
+        return;
+    }
+    int8_t bx = ch.ball_x, by = ch.ball_y;
+    if (abs(bx - cell_x()) + abs(by - cell_y()) <= 1) {
+        needs[NEED_BOREDOM] -= Cfg::BALL_BOREDOM_RELIEF;
+        if (needs[NEED_BOREDOM] < 0.0f) needs[NEED_BOREDOM] = 0.0f;
+        needs[NEED_SOCIAL]  -= Cfg::BALL_SOCIAL_RELIEF;
+        if (needs[NEED_SOCIAL] < 0.0f) needs[NEED_SOCIAL] = 0.0f;
+        keeper_bond += Cfg::KEEPER_BOND_PER_PLAY;
+        if (keeper_bond > 1.0f) keeper_bond = 1.0f;
+        afterglow_ticks = Cfg::AFTERGLOW_TICKS;    // she's pleased with herself
+        anim_type = LG_ANIM_NOTICE;                // the startle hop reads as a pounce
+        anim_remaining_ticks = Cfg::BALL_PLAY_DURATION_TICKS;
+        float qdx = bx - x, qdy = by - y;          // lean into it, as eating does
+        if (fabsf(qdx) >= fabsf(qdy)) { anim_lean_dx = (qdx > 0) ? 1 : -1; anim_lean_dy = 0; }
+        else                          { anim_lean_dx = 0; anim_lean_dy = (qdy > 0) ? 1 : -1; }
+        ch.bat_ball();
+        has_target = false; has_target_cell = false;
+        return;   // stay in STATE_PLAYING — next tick chases wherever it landed
+    }
+    _step_toward_cell(bx, by, ch);
 }
 
 void Conker::_do_eating(Chamber& ch) {
@@ -1950,10 +1991,17 @@ void Conker::_update_needs(Chamber& ch, float dt) {
             float drive = 0.5f + 1.0f * personality[PERS_SOCIAL_FREQUENCY];
             float rise = Cfg::SOCIAL_RISE_PER_SEC * drive * dt;
             if (sleeping) rise *= Cfg::SOCIAL_SLEEP_RISE_SCALE;  // climbs slower in sleep
+            // A princess has no colony to be lonely *for* — on the colony curve
+            // she pegs at 100 forever and reads as permanently miserable, which
+            // is neither true to "you are her friend" nor tendable.
+            if (ch.incubation_mode) rise *= Cfg::PRINCESS_SOCIAL_RISE_SCALE;
             lonely += rise;
         }
         if (lonely < 0.0f) lonely = 0.0f;
         if (lonely > 1.0f) lonely = 1.0f;
+        // She tops out at "missing you", not despair — see PRINCESS_SOCIAL_PLATEAU.
+        if (ch.incubation_mode && lonely > Cfg::PRINCESS_SOCIAL_PLATEAU)
+            lonely = Cfg::PRINCESS_SOCIAL_PLATEAU;
     }
 
     // ---- Afterglow: topped up while playing, then decays into a content beat ----
@@ -1972,7 +2020,7 @@ void Conker::_update_needs(Chamber& ch, float dt) {
     }
 
     ConkerMood m = MOOD_CONTENT;
-    if (state == STATE_ZOOMIES) {
+    if (state == STATE_ZOOMIES || state == STATE_PLAYING) {
         m = MOOD_PLAYING;
     } else if (sleeping || seeking_company) {
         m = MOOD_SLEEPY;   // v150: asleep, or groggily padding over to huddle up
@@ -2310,7 +2358,9 @@ bool Conker::_target_still_valid(Chamber& ch) {
             || state == STATE_TO_HOME || state == STATE_CANNIBALIZE
             || state == STATE_ZOOMIES || state == STATE_EATING
             || state == STATE_MOURNING || state == STATE_FARMING
-            || state == STATE_CRAFTING || state == STATE_TO_GARDEN)
+            || state == STATE_CRAFTING || state == STATE_TO_GARDEN
+            || state == STATE_PLAYING)   // omit and the chase is re-tasked away
+                                         // every tick — the v177 farming bug
         return true;
     if (!has_target) return false;
     if (state == STATE_TEND_QUEEN) {

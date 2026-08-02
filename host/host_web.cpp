@@ -427,6 +427,31 @@ EMSCRIPTEN_KEEPALIVE void host_rename(uint32_t id, const char* name) { g_sim.coo
 EMSCRIPTEN_KEEPALIVE void host_set_tint(int r, int g, int b) {
     g_sim.coordinator.cmd_set_floor_tint(0, (uint8_t)r, (uint8_t)g, (uint8_t)b);
 }
+// Recolour a conker herself (feedback #43/#49) — distinct from host_set_tint,
+// which colours the FLOOR. Cosmetic only: identity, not power.
+EMSCRIPTEN_KEEPALIVE void host_tint_conker(uint32_t id, int tint) {
+    g_sim.coordinator.cmd_set_conker_tint(id, (uint8_t)(tint & 0xFF));
+}
+
+// The keeper throws a ball to a spot on the floor (display pixels, like host_tap).
+// This is the interaction that ISN'T tapping her — see _do_play_ball. Throwing
+// wakes a sleeping princess: being invited to play is attention, and a ball she
+// slept through would just look broken. (Dormant waking lives in the shared sim.)
+EMSCRIPTEN_KEEPALIVE
+void host_throw_ball(int tx, int ty) {
+    int cx = tx / Cfg::CELL_SIZE, cy = ty / Cfg::CELL_SIZE;
+    if (cx < 0 || cx >= Cfg::GRID_WIDTH || cy < 0 || cy >= Cfg::GRID_HEIGHT) return;
+    Chamber& ch = chamber();
+    ch.throw_ball(cx, cy);
+    if (ch.conker_count > 0) {
+        Conker& c = ch.conkers[0];
+        if (c.sleeping) {
+            c.sleeping = false;
+            c.stack_on = -1;
+            if (c.needs[NEED_REST] > 0.6f) c.needs[NEED_REST] = 0.6f;
+        }
+    }
+}
 
 // ---- Gateway incubation / princess (tamagotchi) — the app's single raised conker ----
 // Boot the colony, then convert it to a single-princess incubation chamber: no
@@ -556,6 +581,7 @@ EMSCRIPTEN_KEEPALIVE int host_pr_py() { Chamber& ch = chamber(); return ch.conke
 EMSCRIPTEN_KEEPALIVE uint32_t host_founded_unix() { return g_sim.coordinator.registry.manifest().founded_unix; }
 EMSCRIPTEN_KEEPALIVE int host_pr_state() { Chamber& ch = chamber(); return ch.conker_count ? (int)ch.conkers[0].state : -1; }
 EMSCRIPTEN_KEEPALIVE int host_pr_foodpiles() { return chamber().food_pile_count; }
+EMSCRIPTEN_KEEPALIVE int host_pr_ball() { return chamber().has_ball() ? chamber().ball_bounces : 0; }
 EMSCRIPTEN_KEEPALIVE int host_pr_sleeping() { Chamber& ch = chamber(); return ch.conker_count ? (ch.conkers[0].sleeping?1:0) : 0; }
 // Live needs (0..100), all active per NEEDS_ACTIVE_MASK — the app shows them as bars.
 EMSCRIPTEN_KEEPALIVE int host_pr_boredom() { Chamber& ch = chamber(); return ch.conker_count ? (int)(ch.conkers[0].needs[NEED_BOREDOM]*100.0f) : 0; }

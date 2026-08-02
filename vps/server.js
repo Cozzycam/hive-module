@@ -200,7 +200,10 @@ const stmts = {
 // the firmware only honours it on a YOUNG (just-founded) colony, and the
 // payload is just a claim token that must resolve to a validly-parked
 // handoff (parking requires the sender colony's HMAC).
-const COMMAND_TYPES = new Set(['name_conker', 'feed_colony', 'set_module_role', 'set_floor_tint', 'gift_care_package', 'ota_update', 'set_followed', 'grant_wish', 'summon_queen']);
+// tint_conker recolours ONE conker (keeper feedback #43/#49) — cosmetic only, so
+// it's safe on the unauth queue in a way a destructive command would not be
+// (cf. reset_to_satellite, removed in the 2026-07-05 security pass).
+const COMMAND_TYPES = new Set(['name_conker', 'feed_colony', 'set_module_role', 'set_floor_tint', 'tint_conker', 'gift_care_package', 'ota_update', 'set_followed', 'grant_wish', 'summon_queen']);
 
 // ---- HMAC verification ----
 function verifyHmac(body, signature) {

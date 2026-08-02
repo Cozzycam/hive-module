@@ -756,14 +756,28 @@ static void process_serial_line(const char* line) {
     } else if (strcmp(line, "mem") == 0) {
         // Heap health at a glance. min_ever is the high-water mark that
         // matters: it captures the worst squeeze (TLS handshakes) since boot.
-        Serial.printf("[mem] internal free=%u min_ever=%u largest=%u\r\n",
+        //
+        // largest_free_block WALKS the pool, so on corrupt block metadata it
+        // FAULTS instead of reporting — observed on a v219 queen after ~4h up:
+        // LoadProhibited in tlsf_walk_pool took the module down (a diagnostic
+        // that kills the patient). Check integrity first and only walk if the
+        // pool is sound, so `mem` names the problem instead of becoming it.
+        bool heap_ok_int = heap_caps_check_integrity(MALLOC_CAP_INTERNAL, true);
+        bool heap_ok_ps  = heap_caps_check_integrity(MALLOC_CAP_SPIRAM,   true);
+        Serial.printf("[mem] integrity: internal=%s psram=%s\r\n",
+            heap_ok_int ? "OK" : "*** CORRUPT ***",
+            heap_ok_ps  ? "OK" : "*** CORRUPT ***");
+        Serial.printf("[mem] internal free=%u min_ever=%u",
             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-            (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
-            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
-        Serial.printf("[mem] psram    free=%u min_ever=%u largest=%u\r\n",
+            (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
+        if (heap_ok_int)
+            Serial.printf(" largest=%u", (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+        Serial.printf("\r\n[mem] psram    free=%u min_ever=%u",
             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
-            (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM),
-            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+            (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM));
+        if (heap_ok_ps)
+            Serial.printf(" largest=%u", (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+        Serial.println();
     } else if (strcmp(line, "sd") == 0) {
         Serial.printf("[sd] state: %s\r\n",
             sd_card_state() == SD_OK ? "OK" :

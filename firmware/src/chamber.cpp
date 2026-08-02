@@ -713,6 +713,33 @@ void Chamber::add_food(int x, int y, float amount) {
                                      static_cast<int8_t>(y), amount};
 }
 
+// ---- the ball ----
+
+void Chamber::throw_ball(int x, int y) {
+    if (!in_bounds(x, y)) return;
+    ball_x = static_cast<int8_t>(x);
+    ball_y = static_cast<int8_t>(y);
+    ball_bounces = Cfg::BALL_BOUNCES;   // a fresh throw always restarts the game
+}
+
+void Chamber::bat_ball() {
+    if (ball_bounces == 0) return;
+    if (--ball_bounces == 0) {          // last bat — it rolls to a stop
+        ball_x = ball_y = -1;
+        return;
+    }
+    // Knock it somewhere new nearby, clamped in-bounds so it never leaves the
+    // chamber (a ball she can't reach would strand her mid-chase).
+    int nx = ball_x + g_rng.rand_int(-Cfg::BALL_BAT_SCATTER, Cfg::BALL_BAT_SCATTER);
+    int ny = ball_y + g_rng.rand_int(-Cfg::BALL_BAT_SCATTER, Cfg::BALL_BAT_SCATTER);
+    if (nx < 0) nx = 0;
+    if (ny < 0) ny = 0;
+    if (nx >= Cfg::GRID_WIDTH)  nx = Cfg::GRID_WIDTH  - 1;
+    if (ny >= Cfg::GRID_HEIGHT) ny = Cfg::GRID_HEIGHT - 1;
+    ball_x = static_cast<int8_t>(nx);
+    ball_y = static_cast<int8_t>(ny);
+}
+
 float Chamber::take_food(int x, int y, float amount) {
     int idx = _food_pile_index(x, y);
     if (idx < 0) return 0.0f;

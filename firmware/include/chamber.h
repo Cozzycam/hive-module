@@ -141,6 +141,15 @@ public:
     bool         gather_is_exit = false; // true = heading to edge to cross modules
     float        gather_x = 0, gather_y = 0; // cell coords
 
+    // The keeper's ball (incubation only). One at a time: she chases it, bats it
+    // somewhere new, chases again, until it rolls to a stop and you throw again.
+    // Deliberately not an entity system — a one-creature pet needs one toy.
+    int8_t       ball_x = -1, ball_y = -1;   // -1 = nothing in play
+    uint8_t      ball_bounces = 0;           // bats left before it stops
+    bool has_ball() const { return ball_bounces > 0 && ball_x >= 0; }
+    void throw_ball(int x, int y);           // keeper throws (resets the bounce count)
+    void bat_ball();                         // she reaches it: knock it on, or it stops
+
     Queen  queen_obj;
     bool   has_queen = false;
 

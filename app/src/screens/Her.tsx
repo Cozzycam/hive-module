@@ -79,11 +79,15 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
   const dayN = stats?.founded ? Math.floor((Date.now() / 1000 - stats.founded) / 86400) + 1 : 1;
 
   const hungry = (stats?.hunger ?? 0) > 60;
+  const playing = (stats?.ball ?? 0) > 0;
+  const lonely = (stats?.social ?? 0) > 55;
 
   const statusText =
     !hatched ? '🥚 An egg. Keep it warm — she’ll hatch soon.'
     : dormant ? '😴 She’s curled up asleep. Drop some food to wake her.'
+    : playing ? '🎾 She’s off after the ball!'
     : hungry  ? '🍎 She’s hungry — drop some food and she’ll toddle over.'
+    : lonely  ? '🎾 She’s missing you — throw her the ball for a game.'
     : ready   ? '👑 Fully grown, and ready to bloom into a queen.'
     :           '🌱 Growing up. Keep her fed and she’ll thrive.';
 
@@ -136,18 +140,31 @@ export function Her({ onNavigate }: { onNavigate?: (target: string) => void }) {
       </div>
 
       {/* care */}
-      <button
-        onClick={() => localModule.feedPrincess()}
-        disabled={status !== 'running'}
-        style={{ width: '100%', maxWidth: 320, padding: '12px', borderRadius: 12, border: 'none',
-                 background: HIVE.green, color: HIVE.white, fontSize: SIZES.base, fontWeight: 600,
-                 cursor: 'pointer' }}
-      >
-        🍎 Drop food
-      </button>
+      <div style={{ width: '100%', maxWidth: 320, display: 'flex', gap: 8 }}>
+        <button
+          onClick={() => localModule.feedPrincess()}
+          disabled={status !== 'running'}
+          style={{ flex: 1, padding: '12px', borderRadius: 12, border: 'none',
+                   background: HIVE.green, color: HIVE.white, fontSize: SIZES.base, fontWeight: 600,
+                   cursor: 'pointer' }}
+        >
+          🍎 Drop food
+        </button>
+        <button
+          onClick={() => localModule.throwBall()}
+          disabled={status !== 'running' || !hatched}
+          style={{ flex: 1, padding: '12px', borderRadius: 12, border: 'none',
+                   background: playing ? HIVE.sand : '#c0568f', color: playing ? HIVE.soil : HIVE.white,
+                   fontSize: SIZES.base, fontWeight: 600,
+                   cursor: status === 'running' && hatched ? 'pointer' : 'default' }}
+        >
+          {playing ? '🎾 Chasing…' : '🎾 Throw a ball'}
+        </button>
+      </div>
       <div style={{ fontSize: SIZES.xs, color: HIVE.dimText, textAlign: 'center', maxWidth: 300 }}>
         Tap the glass to drop food where you tap — she toddles over and eats it, and being hand-fed is what
-        deepens her bond. Tap her directly to give her a boop.
+        deepens her bond. Tap her directly to give her a boop. Throw the ball and she’ll chase it down and
+        knock it on a few times — playing together is the fastest way to grow close.
       </div>
 
       {/* Dev-only fast-forward — never shown in production */}

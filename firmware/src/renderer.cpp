@@ -714,6 +714,7 @@ void Renderer::draw(const Chamber& ch, float lerp_t) {
     _draw_sorted_sprites(_floor_sprites, _floor_sprite_count, ch);
     _draw_plants(ch);     // garden crops sit on the floor layer too
     _draw_artworks(ch);   // conker-made works, in their makers' colours
+    _draw_ball(ch);       // the keeper's ball, under her so a pounce reads right
 
     // Layer 3: living agents (workers, queen) — Y-sorted, queen +2 cell bias
     _build_agent_sprites(ch, lerp_t);
@@ -2161,6 +2162,17 @@ void Renderer::_maker_colors(uint8_t tint_seed, uint16_t* main_out, uint16_t* da
 // Artifacts — placeholder sprites (v183). Neutral-ramp works go through
 // the same luma remap as conker bodies, so one sprite renders in every
 // maker's colours. Memorials keep their fixed stone palette (tint 0).
+// The keeper's ball. Drawn procedurally rather than as a new sprite kind —
+// there's no ball in the artist commission and two circles beat a sprite slot.
+void Renderer::_draw_ball(const Chamber& ch) {
+    if (!ch.has_ball()) return;
+    int px = ch.ball_x * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
+    int py = ch.ball_y * Cfg::CELL_SIZE + Cfg::CELL_SIZE / 2;
+    _gfx->fillCircle(px, py, 4, _rgb565(232, 92, 88));            // body
+    _gfx->fillCircle(px - 1, py - 2, 1, _rgb565(255, 226, 214));  // highlight
+    _mark_dirty(px - 5, py - 6, 11, 12);
+}
+
 void Renderer::_draw_artworks(const Chamber& ch) {
     for (int i = 0; i < Cfg::MAX_ARTWORKS; i++) {
         const Artwork& a = ch.artworks[i];

@@ -177,6 +177,9 @@ class LocalModule {
         carePackage: cw('host_care_package', null, []),
         rename: cw('host_rename', null, ['number', 'string']),
         setTint: cw('host_set_tint', null, ['number', 'number', 'number']),
+        tintConker: cw('host_tint_conker', null, ['number', 'number']),
+        throwBall: cw('host_throw_ball', null, ['number', 'number']),
+        prBall: cw('host_pr_ball', 'number', []),
       };
       // Unique colony per install — must precede boot. Guarded so a stale cached
       // hive.wasm without host_seed (mid-PWA-update skew) degrades to a default
@@ -394,6 +397,7 @@ class LocalModule {
       case 'feed_colony':      this.fns.feedColony(payload?.amount ?? 25); return true;
       case 'gift_care_package': this.fns.carePackage(); return true;
       case 'name_conker':      this.fns.rename(payload?.id >>> 0, String(payload?.name ?? '')); return true;
+      case 'tint_conker':      this.tintConker(Number(payload?.id ?? 0), Number(payload?.tint ?? 0)); return true;
       case 'set_floor_tint': {
         const rgb = payload?.rgb ?? 0;
         this.fns.setTint((rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff); return true;
@@ -499,14 +503,41 @@ class LocalModule {
         founded:  this.fns.foundedUnix() ?? 0,
         px:       this.fns.prPx() ?? (this.W / 2),
         py:       this.fns.prPy() ?? (this.H / 2),
+        // Guarded: an install running a cached pre-v220 wasm has no host_pr_ball,
+        // and a dead throw button beats a crashed Nest.
+        ball:     (this.fns.prBall ? this.fns.prBall() : 0) ?? 0,
       };
     } catch { return null; }
+  }
+
+  // Throw the ball somewhere she isn't, so there's a chase worth watching.
+  // Aiming is deliberately ours, not the keeper's — one tap should just work.
+  throwBall() {
+    if (!this.started || !this.fns.throwBall) return;
+    try {
+      const px = this.fns.prPx() ?? this.W / 2;
+      const py = this.fns.prPy() ?? this.H / 2;
+      const margin = 40;
+      let bx = 0, by = 0, best = -1;
+      for (let i = 0; i < 8; i++) {          // pick the furthest of a few darts
+        const cx = margin + Math.random() * (this.W - 2 * margin);
+        const cy = margin + Math.random() * (this.H - 2 * margin);
+        const d = (cx - px) ** 2 + (cy - py) ** 2;
+        if (d > best) { best = d; bx = cx; by = cy; }
+      }
+      this.fns.throwBall(Math.round(bx), Math.round(by));
+    } catch { /* stale wasm */ }
+  }
+
+  tintConker(id: number, tint: number) {
+    try { this.fns.tintConker?.(id >>> 0, tint & 0xff); } catch { /**/ }
   }
 }
 
 export interface PrincessStats {
   maturity: number; bond: number; hunger: number; dormant: boolean; hatched: boolean;
   boredom: number; social: number; rest: number; founded: number; px: number; py: number;
+  ball: number;
 }
 
 export const localModule = new LocalModule();

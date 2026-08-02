@@ -9,14 +9,31 @@ import { useEffect, useState } from 'react';
 import { localModule, resetColonyIdentity, AUTOSTART_KEY, WIPE_KEY, LAST_ACTIVE_KEY, type PrincessStats } from '../localModule';
 import { clearConnection } from '../api/client';
 import { PersonalityPetals } from '../components/PersonalityPetals';
+import { tintParams } from '../components/ConkerSprite';
 import type { Personality } from '../api/types';
 import { HIVE } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 
 interface Lilguy {
   id: number; name: string; age_days?: number; activity?: string; mood?: number;
-  personality?: Record<string, number>;
+  personality?: Record<string, number>; tint_seed?: number;
 }
+
+// A spread of colours to choose from (feedback #43/#49). Rather than hardcode
+// magic seeds, walk the seed space and keep the ones whose resulting hues are
+// furthest apart — so the swatches are always as distinct as the sim allows,
+// and they show her ACTUAL colour because they use the firmware's derivation.
+const PALETTE_SEEDS: number[] = (() => {
+  const picked: { seed: number; hue: number }[] = [];
+  for (let seed = 1; seed <= 255; seed++) {
+    const { hue } = tintParams(seed);
+    if (picked.every((p) => Math.abs(((p.hue - hue + 540) % 360) - 180) > 32)) {
+      picked.push({ seed, hue });
+    }
+    if (picked.length >= 8) break;
+  }
+  return picked.map((p) => p.seed);
+})();
 
 const ACTIVITY_TEXT: Record<string, string> = {
   idling: 'pottering about', sleeping: 'fast asleep', napping: 'having a nap',
@@ -96,14 +113,56 @@ export function About() {
 
   return (
     <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* name + rename */}
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-        <h1 style={{ margin: 0, fontSize: SIZES.xl, color: HIVE.ink }}>{guy.name}</h1>
+      {/* name + rename — the whole name is the button (feedback #15: the edit
+          affordance was a faint outline nobody found) */}
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+        <button
+          onClick={rename}
+          title="Tap to rename her"
+          style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left',
+                   cursor: 'pointer', display: 'flex', alignItems: 'baseline', gap: 8 }}
+        >
+          <h1 style={{ margin: 0, fontSize: SIZES.xl, color: HIVE.ink,
+                       textDecoration: 'underline', textDecorationStyle: 'dotted',
+                       textDecorationColor: HIVE.sand, textUnderlineOffset: 5 }}>
+            {guy.name}
+          </h1>
+          <span style={{ fontSize: SIZES.sm, color: HIVE.dimText }}>✎</span>
+        </button>
         <button onClick={rename} style={{ background: 'none', border: `1px solid ${HIVE.sand}`, borderRadius: 8,
-          padding: '5px 10px', color: HIVE.soil, fontSize: SIZES.xs, cursor: 'pointer' }}>✎ Rename</button>
+          padding: '5px 10px', color: HIVE.soil, fontSize: SIZES.xs, cursor: 'pointer', flexShrink: 0 }}>Rename</button>
       </div>
       <div style={{ marginTop: -8, color: HIVE.dimText, fontSize: SIZES.sm }}>
         {ageStr} · right now she’s {activity}.
+      </div>
+
+      {/* her colour (feedback #43/#49) — cosmetic only: identity, not power */}
+      <div>
+        <div style={{ fontSize: SIZES.sm, fontWeight: 600, color: HIVE.soil, marginBottom: 6 }}>
+          Her colour
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {PALETTE_SEEDS.map((seed) => {
+            const { hue, saturate, bright } = tintParams(seed);
+            const chosen = (guy.tint_seed ?? 0) === seed;
+            return (
+              <button
+                key={seed}
+                onClick={() => localModule.tintConker(guy.id, seed)}
+                aria-label={`Colour ${seed}`}
+                style={{
+                  width: 34, height: 34, borderRadius: '50%', cursor: 'pointer',
+                  background: `hsl(${Math.round(hue)}, ${Math.round(Math.min(85, saturate * 45))}%, ${Math.round(Math.min(68, 42 * bright))}%)`,
+                  border: chosen ? `3px solid ${HIVE.ink}` : `2px solid ${HIVE.parchment}`,
+                  boxShadow: chosen ? '0 0 0 2px rgba(0,0,0,0.06)' : 'none',
+                }}
+              />
+            );
+          })}
+        </div>
+        <div style={{ fontSize: SIZES.xs, color: HIVE.dimText, marginTop: 6 }}>
+          Pick her colour — it changes how she looks, and nothing else about her.
+        </div>
       </div>
 
       {/* growing up + your bond */}

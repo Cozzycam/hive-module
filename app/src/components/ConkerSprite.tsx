@@ -17,29 +17,38 @@ const SPRITE_BASE_HUE = 32;
 // SVG filter ID prefix (unique per seed to avoid collisions)
 let _filterCounter = 0;
 
+// seed → the colour it produces. Single source of truth for the derivation so the
+// swatch picker (About) and the rendered sprite can never drift apart.
+export function tintParams(seed: number): { hue: number; rotateDeg: number; saturate: number; bright: number } {
+  // Same hash + derivation as the firmware (Knuth multiplicative).
+  const hs = (seed * 2654435761) >>> 0;
+  const ur = (hs & 0xffff) / 65535;
+  const uh = ((hs >>> 16) & 0xffff) / 65535;
+  // Decorrelated third roll for per-conker lightness (matches firmware h2/ul).
+  const h2 = (hs ^ (hs >>> 13)) >>> 0;
+  const ul = ((h2 >>> 5) & 0xff) / 255;
+
+  const rare = ur ** 6; // straying far is rare
+  // Keep in lockstep with firmware renderer.cpp: ±85° common band so any
+  // two conkers read as distinct at a glance; rares still roam the wheel
+  const spread = 85 + 155 * rare;
+  let hue = 28 + (uh * 2 - 1) * spread; // anchor on orange (28°)
+  hue = ((hue % 360) + 360) % 360;
+
+  return {
+    hue,
+    rotateDeg: ((hue - SPRITE_BASE_HUE + 540) % 360) - 180,
+    saturate: 1.5 + 0.6 * rare,
+    // Per-conker brightness; rare conkers that also roll bright get an extra lift to pop.
+    bright: 1.0 + 0.35 * ul + 0.55 * rare * ul,
+  };
+}
+
 export function useTintFilter(seed: number): { filterId: string; filterSvg: JSX.Element | null } {
   return useMemo(() => {
     if (seed === 0) return { filterId: '', filterSvg: null };
 
-    // Same hash + derivation as the firmware (Knuth multiplicative).
-    const hs = (seed * 2654435761) >>> 0;
-    const ur = (hs & 0xffff) / 65535;
-    const uh = ((hs >>> 16) & 0xffff) / 65535;
-    // Decorrelated third roll for per-conker lightness (matches firmware h2/ul).
-    const h2 = (hs ^ (hs >>> 13)) >>> 0;
-    const ul = ((h2 >>> 5) & 0xff) / 255;
-
-    const rare = ur ** 6; // straying far is rare
-    // Keep in lockstep with firmware renderer.cpp: ±85° common band so any
-    // two conkers read as distinct at a glance; rares still roam the wheel
-    const spread = 85 + 155 * rare;
-    let hue = 28 + (uh * 2 - 1) * spread; // anchor on orange (28°)
-    hue = ((hue % 360) + 360) % 360;
-
-    const rotateDeg = ((hue - SPRITE_BASE_HUE + 540) % 360) - 180;
-    const saturate = 1.5 + 0.6 * rare;
-    // Per-conker brightness; rare conkers that also roll bright get an extra lift to pop.
-    const bright = 1.0 + 0.35 * ul + 0.55 * rare * ul;
+    const { rotateDeg, saturate, bright } = tintParams(seed);
 
     const id = `tint-${seed}-${++_filterCounter}`;
     const svg = (

@@ -1582,6 +1582,30 @@ bool Coordinator::cmd_rename_conker(uint32_t id, const char* new_name) {
     return true;
 }
 
+// Recolour a conker (keeper feedback #43/#49: "customise the first baby",
+// "being able to change the colour"). tint_seed is the hue the renderer's
+// luma-key remap keys off, so this is purely cosmetic — identity, not power.
+// 0 is reserved for "unset" (init would reroll it), so it's clamped to 1-255.
+bool Coordinator::cmd_set_conker_tint(uint32_t id, uint8_t tint_seed) {
+    if (tint_seed == 0) tint_seed = 1;
+
+    IdentityRecord* rec = registry.get(id);
+    if (!rec) return false;
+
+    rec->tint_seed = tint_seed;
+    rec->dirty = true;
+
+    for (int i = 0; i < chamber.conker_count; i++) {
+        if (chamber.conkers[i].id == id) {
+            chamber.conkers[i].tint_seed = tint_seed;
+            break;
+        }
+    }
+    Serial.printf("[cmd] conker %lu recoloured (tint %u)\r\n",
+                  (unsigned long)id, (unsigned)tint_seed);
+    return true;
+}
+
 bool Coordinator::cmd_feed_colony(float amount) {
     // A care package is a day's table for the whole colony — sized here,
     // not by the client, so it scales with the family. (Client amount is

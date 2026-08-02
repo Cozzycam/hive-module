@@ -23,12 +23,13 @@ enum AntState : uint8_t {
     STATE_MOURNING = 8,  // bonded partner died — pay respects at the husk
     STATE_FARMING = 9,   // green thumb at work — off to sow a garden plot
     STATE_CRAFTING = 10, // the muse struck — making something that lasts
-    STATE_TO_GARDEN = 11 // summoned to fill the vacant garden post next door
+    STATE_TO_GARDEN = 11, // summoned to fill the vacant garden post next door
+    STATE_PLAYING = 12   // chasing the ball the keeper threw (incubation only)
 };
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 219;
+constexpr uint32_t FW_VERSION = 220;
 
 namespace Cfg {
 
@@ -179,8 +180,21 @@ constexpr float HUNGER_SLOWDOWN       = 80.0f;     // speed penalty starts
 constexpr uint32_t INCUBATION_EGG_MS           = 15u * 60u * 1000u;    // ~15 min timed egg → hatch (a near-term "care for it and hatch it" beat)
 constexpr float    PRINCESS_EAT_FLOOR          = 15.0f;                // hunger past which she'll go to a keeper-dropped pile (lower = more eager to be fed; 0-100 over a day)
 constexpr uint32_t PRINCESS_READY_MS           = 3u * 86400u * 1000u;  // ~3 sim-days attended → queen-ready (maturation cap; no age-out)
-constexpr float    KEEPER_BOND_PER_FEED        = 0.01f;                // each hand-feeding deepens closeness a little — bond builds over ~2 weeks of continued care (cap 1.0)
-constexpr float    PRINCESS_SOCIAL_BOOP_RELIEF = 0.15f;                // a boop is a bit of company, but less than a colony boop (spammable; loneliness climbs back)
+constexpr float    KEEPER_BOND_PER_FEED        = 0.03f;                // each hand-feeding deepens closeness (cap 1.0). v220: 0.01 was ~100 feeds to full ("really hard to make bond", feedback #51) — now a fortnight of ordinary care, not a grind
+constexpr float    PRINCESS_SOCIAL_BOOP_RELIEF = 0.35f;                // a boop is real company for a pet whose only companion IS you (v220: was 0.15 ≈ 6 min bought per tap, which made spam-tapping the only bonding move — keeper feedback)
+constexpr float    KEEPER_BOND_PER_PLAY        = 0.01f;                // per BAT, so a full 5-bat throw ≈ 0.05 — play bonds as well as feeding without becoming a click-farm (feeding + a couple of throws a day ≈ close in under a week)
+constexpr float    PRINCESS_SOCIAL_RISE_SCALE  = 0.5f;                 // a lone princess's loneliness climbs at half a colony conker's rate: she's ALWAYS alone, so the colony curve pegged her at 100 permanently (brain: "is a desperately-lonely pet the right feel?" — no)
+constexpr float    PRINCESS_SOCIAL_PLATEAU     = 0.80f;                // ...and it tops out at "missing you", never full despair. Being alone is her NORMAL state (there is no colony to be lonely for), and real abandonment is already modelled by dormancy. A bar pegged at 100 every time you open the app carries no information and reads as cruelty. NOTE: sits below SOCIAL_URGENT_AT (0.85), so she reads RESTLESS, never the full lonely gloom-cloud
+
+// ---- The ball (keeper throws, she chases) ----
+// One ball at a time — a one-creature pet doesn't need a toy entity system.
+// Each arrival is a "bat": she knocks it somewhere new and chases again, until
+// it rolls to a stop. Throwing again is the interaction.
+constexpr uint8_t  BALL_BOUNCES            = 5;      // bats per throw before it rolls to a stop
+constexpr int      BALL_BAT_SCATTER        = 6;      // cells the ball skips when batted
+constexpr float    BALL_BOREDOM_RELIEF     = 0.45f;  // per bat — play is what boredom is FOR
+constexpr float    BALL_SOCIAL_RELIEF      = 0.30f;  // per bat — playing WITH you is company
+constexpr int      BALL_PLAY_DURATION_TICKS = 10;    // the pounce animation on arrival
 constexpr float    KEEPER_BOND_DECAY_DORMANT   = 0.08f / SECS_PER_DAY; // full bond cools over ~2 weeks dormant (per sim-sec)
 constexpr float    MATURATION_DECAY_MS_PER_SEC = 150.0f;               // maturation slips at ~0.15x realtime while dormant — a weekend away costs ~5%, not half her growth (v217 soften; was 500 = 0.5x, a 5-day gap wiped a near-ready princess to zero)
 constexpr float    DORMANT_HUNGER_PARK         = 95.0f;                // hunger parked just below STARVE while dormant
