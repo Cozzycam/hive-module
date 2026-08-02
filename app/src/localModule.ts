@@ -555,7 +555,7 @@ class LocalModule {
   // Catalogue comes from the SIM, never a copy here: a price that drifted
   // between the two would only show up as a keeper being charged the wrong
   // amount. Returns [] on a wasm too old to have a shop.
-  shopItems(): { id: number; name: string; price: number; tint: number }[] {
+  shopItems(): { id: number; name: string; price: number; tint: number; wear: number }[] {
     if (!this.started || !this.fns.shopJson) return [];
     try { return JSON.parse(this.fns.shopJson() || '[]'); } catch { return []; }
   }

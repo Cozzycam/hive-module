@@ -440,7 +440,10 @@ EMSCRIPTEN_KEEPALIVE void host_tint_conker(uint32_t id, int tint) {
 // The shop catalogue, straight from the sim — the app renders whatever this
 // says. Deliberately NOT duplicated app-side: prices and names drifting between
 // the two would be invisible until a keeper was charged the wrong amount.
-static char g_shop_buf[512];
+// Sized with headroom for the whole catalogue: serializeJson TRUNCATES silently,
+// and a truncated catalogue parses as nothing, so the app would just show an
+// empty shop with no error anywhere. ~60 bytes an item; grow this when adding.
+static char g_shop_buf[2048];
 EMSCRIPTEN_KEEPALIVE const char* host_shop_json() {
     JsonDocument doc;
     JsonArray arr = doc.to<JsonArray>();
@@ -450,6 +453,7 @@ EMSCRIPTEN_KEEPALIVE const char* host_shop_json() {
         o["name"]  = Cfg::SHOP_ITEMS[i].name;
         o["price"] = Cfg::SHOP_ITEMS[i].price;
         o["tint"]  = Cfg::SHOP_ITEMS[i].tint;
+        o["wear"]  = Cfg::SHOP_ITEMS[i].wear;   // 0 = stands in the room, else carried
     }
     serializeJson(doc, g_shop_buf, sizeof(g_shop_buf));
     return g_shop_buf;

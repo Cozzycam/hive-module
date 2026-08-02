@@ -1594,6 +1594,29 @@ bool Coordinator::cmd_buy_decor(uint8_t item_id) {
         return false;
     }
 
+    // Something she carries rather than something that stands in the room.
+    // She holds one at a time, so this swaps whatever she had — a keeper who
+    // paid for it should be able to change her mind freely (unlike the crafted
+    // gifts, which are deliberately one-per-conker and stay put).
+    if (it.wear != 0) {
+        if (chamber.conker_count == 0) return false;
+        Conker& her = chamber.conkers[0];
+        colony.bugs -= it.price;
+        her.accessory       = it.wear;
+        her.accessory_tint  = it.tint;
+        her.accessory_from  = 0;          // from you, not a maker
+        her.accessory_memorial = false;
+        IdentityRecord* rec = registry.get(her.id);
+        if (rec) {
+            rec->accessory      = it.wear;
+            rec->accessory_tint = it.tint;
+            rec->dirty = true;            // survives a reload
+        }
+        Serial.printf("[shop] bought '%s' for %u — purse now %u\r\n",
+                      it.name, (unsigned)it.price, (unsigned)colony.bugs);
+        return true;
+    }
+
     // Somewhere clear to stand it. Try a few spots, then give up rather than
     // drop it on top of her or on another piece.
     int px = -1, py = -1;

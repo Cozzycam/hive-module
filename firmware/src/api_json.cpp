@@ -222,10 +222,12 @@ size_t api_colony_json(Coordinator& coord, char* buf, size_t buflen) {
         // Appearance
         lg["scale_factor"] = r.scale_factor;
         lg["tint_seed"] = r.tint_seed;
-        if (r.accessory >= 1 && r.accessory <= 3) {
+        if (r.accessory >= 1 && r.accessory <= 7) {
             // Same vocabulary as the crafted events, so the app can match
-            // the worn keepsake to its gallery entry (and giver)
-            static const char* ACC_KIND[] = {"petal_hat", "seed_cap", "grass_hat"};
+            // the worn keepsake to its gallery entry (and giver). 4-7 are
+            // shop keepsakes she carries rather than crafted gifts.
+            static const char* ACC_KIND[] = {"petal_hat", "seed_cap", "grass_hat",
+                                             "lute", "drum", "axe", "bug_net"};
             lg["accessory"] = ACC_KIND[r.accessory - 1];
             if (r.accessory_memorial) lg["accessory_memorial"] = true;
         }

@@ -15,7 +15,10 @@ import { tintParams } from '../components/ConkerSprite';
 import { HIVE } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 
-interface ShopItem { id: number; name: string; price: number; tint: number }
+interface ShopItem { id: number; name: string; price: number; tint: number; wear: number }
+
+// She carries one keepsake at a time, so buying another simply swaps it.
+const SECTIONS: [string, boolean][] = [['For her room', false], ['For her to carry', true]];
 
 export function Shop() {
   const [items, setItems] = useState<ShopItem[]>([]);
@@ -33,7 +36,7 @@ export function Shop() {
 
   const buy = (it: ShopItem) => {
     if (localModule.buyDecor(it.id)) {
-      setFlash(`${it.name} is in her room ✨`);
+      setFlash(it.wear ? `She's carrying the ${it.name.toLowerCase()} ✨` : `${it.name} is in her room ✨`);
       setBugs(localModule.bugs());
     } else {
       setFlash(`Not enough bugs for the ${it.name.toLowerCase()} yet.`);
@@ -46,7 +49,8 @@ export function Shop() {
       <div>
         <h1 style={{ margin: 0, fontSize: SIZES.xl, color: HIVE.ink }}>Shop</h1>
         <div style={{ color: HIVE.dimText, fontSize: SIZES.sm, marginTop: 2 }}>
-          Every critter she catches goes in the jar. Spend them on her room.
+          Every critter she catches goes in the jar. Spend them on her room, or on
+          something for her to carry.
         </div>
       </div>
 
@@ -70,7 +74,16 @@ export function Shop() {
         </div>
       ) : (
         <div style={{ display: 'grid', gap: 10 }}>
-          {items.map((it) => {
+          {SECTIONS.map(([label, wanted]) => {
+            const group = items.filter((i) => (i.wear !== 0) === wanted);
+            if (!group.length) return null;
+            return (
+              <div key={label} style={{ display: 'grid', gap: 10 }}>
+                <div style={{ fontSize: SIZES.xs, fontWeight: 600, color: HIVE.dimText,
+                              textTransform: 'uppercase', letterSpacing: 1, marginTop: 4 }}>
+                  {label}
+                </div>
+                {group.map((it) => {
             const afford = bugs >= it.price;
             const { hue, saturate, bright } = tintParams(it.tint);
             return (
@@ -102,6 +115,9 @@ export function Shop() {
                   {afford ? 'Buy' : `${it.price - bugs} more`}
                 </button>
               </div>
+                );
+                })}
+              </div>
             );
           })}
         </div>
@@ -109,7 +125,8 @@ export function Shop() {
 
       <div style={{ fontSize: SIZES.xs, color: HIVE.dimText, textAlign: 'center', marginTop: 4 }}>
         Rarer visitors are worth more — a ladybird counts for four beetles.
-        Anything you buy stays in her room for good, and goes with her if she's ever crowned.
+        Anything you buy stays for good, and goes with her if she's ever crowned.
+        She carries one keepsake at a time — buying another just swaps it.
       </div>
     </div>
   );

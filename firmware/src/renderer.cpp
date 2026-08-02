@@ -1474,6 +1474,41 @@ void Renderer::_draw_one_sprite(const SpriteDraw& sd, const Chamber& ch) {
                     _gfx->drawFastVLine(hcx, hy - dm - 2, 3, hat_dark);  // sprout stem
                     _gfx->drawPixel(hcx + 1, hy - dm - 2, hat_lite);     // leaf
                     _mark_dirty(hcx - hw - 1, hy - dm - 3, hw * 2 + 3, dm + 6);
+                } else if (w.accessory >= 4) {
+                    // Shop keepsakes (v226). CARRIED, not worn: drawn beside the
+                    // head in their own tint so they read against the body, which
+                    // is why pendants/sashes were dropped back in v212. Procedural
+                    // like the hats above — no sprite assets needed.
+                    int hx = hcx + (int)(rs * 3.2f);
+                    int hy = sd.render_y - (int)(rs * 3.4f);
+                    int u  = (int)(rs * 1.0f); if (u < 2) u = 2;    // unit, scales with her
+                    switch (w.accessory) {
+                    case 4: {   // lute — round body, neck up and out (#55 instruments)
+                        _gfx->fillCircle(hx, hy + u, u + 1, hat_base);
+                        _gfx->fillCircle(hx - 1, hy + u, 1, hat_dark);        // sound hole
+                        _gfx->drawFastVLine(hx + u, hy - u * 2, u * 3, hat_lite);  // neck
+                        _gfx->drawPixel(hx + u, hy - u * 2 - 1, hat_dark);    // peg
+                        _mark_dirty(hx - u - 3, hy - u * 2 - 3, u * 3 + 6, u * 5 + 5);
+                        break; }
+                    case 5: {   // drum — little cylinder with a taut skin
+                        _gfx->fillRect(hx - u, hy, u * 2 + 1, u * 2, hat_base);
+                        _gfx->drawFastHLine(hx - u, hy, u * 2 + 1, hat_lite);
+                        _gfx->drawFastHLine(hx - u, hy + u * 2 - 1, u * 2 + 1, hat_dark);
+                        _gfx->drawPixel(hx + u + 1, hy - 1, hat_lite);        // beater
+                        _mark_dirty(hx - u - 2, hy - 3, u * 2 + 6, u * 2 + 5);
+                        break; }
+                    case 6: {   // axe — Dav's. A woodcutter's tool, handle and wedge
+                        _gfx->drawFastVLine(hx, hy - u, u * 3, hat_dark);     // haft
+                        _gfx->fillRect(hx - u, hy - u - 1, u + 1, u, hat_lite);  // head
+                        _gfx->drawFastVLine(hx - u - 1, hy - u - 1, u, hat_base); // blade edge
+                        _mark_dirty(hx - u - 3, hy - u - 3, u * 3 + 4, u * 5);
+                        break; }
+                    default: {  // 7 — bug net, for catching her own shop money (#54)
+                        _gfx->drawFastVLine(hx, hy, u * 3, hat_dark);         // handle
+                        _gfx->drawCircle(hx, hy - u, u + 1, hat_lite);        // hoop
+                        _mark_dirty(hx - u - 3, hy - u * 2 - 2, u * 2 + 6, u * 5 + 4);
+                        break; }
+                    }
                 } else {                          // grass hat — wide woven sun brim
                     int hw = (int)(rs * 4.0f); if (hw < 5) hw = 5;    // brim half-width
                     int cn = (int)(rs * 1.1f); if (cn < 2) cn = 2;    // crown height

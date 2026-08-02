@@ -732,10 +732,11 @@ static void process_serial_line(const char* line) {
             if (cham.conkers[i].id == wid && cham.conkers[i].alive) {
                 w = &cham.conkers[i]; break;
             }
-        static const char* HAT_KIND[] = {"nothing", "petal hat", "seed cap", "grass hat"};
+        static const char* HAT_KIND[] = {"nothing", "petal hat", "seed cap", "grass hat",
+                                         "little lute", "small drum", "tiny axe", "bug net"};
         if (!w) {
             Serial.println("[hat] wearer not local (away or unknown) — try when they're home");
-        } else if (w->accessory == 0 || w->accessory > 3) {
+        } else if (w->accessory == 0 || w->accessory > 7) {   // 4-7 are shop keepsakes
             Serial.printf("[hat] %s wears nothing\r\n", w->name);
         } else if (n < 2) {
             Serial.printf("[hat] %s wears a %s: tint=%u from=%lu memorial=%d\r\n",

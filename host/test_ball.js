@@ -27,6 +27,7 @@ createHiveModule().then((M) => {
   const setTitle = f('host_set_colony_title', null, ['string']);
   const buyDecor = f('host_buy_decor', 'number', ['number']);
   const bugs = f('host_bugs', 'number', []);
+  const shopJson = f('host_shop_json', 'string', []);
   const ball = f('host_pr_ball', 'number', []);
   const ballX = f('host_pr_ball_x', 'number', []);
   const ballY = f('host_pr_ball_y', 'number', []);
@@ -220,6 +221,23 @@ createHiveModule().then((M) => {
     console.log('      (not enough bugs earned to test a purchase this run)');
   }
   check('unknown item id is refused', buyDecor(99) === 0, 'refused');
+
+  // Wearables: she carries ONE, so buying another swaps it rather than stacking.
+  const shop = JSON.parse(shopJson());
+  const wearables = shop.filter((i) => i.wear !== 0);
+  check('shop sells things to carry as well as place', wearables.length >= 4, `${wearables.length} wearables`);
+  warp(10 * 86400, 1);                      // enough purse for a couple of keepsakes
+  const w1 = wearables[0], w2 = wearables[wearables.length - 1];
+  if (bugs() >= w1.price + w2.price) {
+    buyDecor(w1.id);
+    const worn1 = (snapshot().lilguys?.[0]?.accessory) ?? null;
+    check('she carries what was bought', !!worn1, `accessory=${worn1}`);
+    buyDecor(w2.id);
+    const worn2 = (snapshot().lilguys?.[0]?.accessory) ?? null;
+    check('a second keepsake swaps, never stacks', !!worn2 && worn2 !== worn1, `${worn1} -> ${worn2}`);
+  } else {
+    console.log(`      (purse ${bugs()} too small to test swapping)`);
+  }
 
   seed(4242);
   bootInc();

@@ -29,7 +29,7 @@ enum AntState : uint8_t {
 
 // Firmware version — bump manually for OTA releases.
 // Do NOT use __DATE__/__TIME__ (triggers spurious OTA pushes on every recompile).
-constexpr uint32_t FW_VERSION = 225;
+constexpr uint32_t FW_VERSION = 226;
 
 namespace Cfg {
 
@@ -204,21 +204,33 @@ constexpr uint8_t BUG_VALUE[8] = {
 };
 
 struct ShopItem {
-    uint8_t     kind;    // ArtKind
+    uint8_t     kind;    // ArtKind — placed decor. Ignored when wear != 0.
     uint8_t     motif;   // procedural look variant
     uint8_t     tint;    // its own hue, so the shop reads as a range of things
+    uint8_t     wear;    // 0 = stands in the room; else the accessory id she CARRIES
     uint16_t    price;   // in bugs
     const char* name;
 };
-// Every entry reuses an EXISTING artwork sprite — the shop needed no new art.
-// At ~2 bugs/day: the first piece in a couple of days, the priciest in a week.
+// Everything reuses an EXISTING procedural draw — the shop needed no new art.
+// Accessory ids 1-3 are the crafted hats (see conker.cpp: craft_kind - ART_HAT + 1);
+// 4+ are shop keepsakes drawn in renderer.cpp. She carries ONE at a time, so
+// buying another simply swaps it.
 constexpr ShopItem SHOP_ITEMS[] = {
-    { /*ART_CAIRN*/     1, 0,  40,  4, "Pebble cairn"   },
-    { /*ART_SCULPTURE*/ 0, 0,  90,  6, "Round stone"    },
-    { /*ART_SCULPTURE*/ 0, 1, 150,  8, "Standing spire" },
-    { /*ART_SCULPTURE*/ 0, 2, 200, 10, "Little arch"    },
-    { /*ART_PAINTING*/  2, 0,  25, 12, "Wall painting"  },
-    { /*ART_PAINTING*/  2, 1, 175, 15, "Bright painting"},
+    // --- for her room ---
+    { /*ART_CAIRN*/     1, 0,  40, 0,  4, "Pebble cairn"    },
+    { /*ART_SCULPTURE*/ 0, 0,  90, 0,  6, "Round stone"     },
+    { /*ART_SCULPTURE*/ 0, 1, 150, 0,  8, "Standing spire"  },
+    { /*ART_SCULPTURE*/ 0, 2, 200, 0, 10, "Little arch"     },
+    { /*ART_PAINTING*/  2, 0,  25, 0, 12, "Wall painting"   },
+    { /*ART_PAINTING*/  2, 1, 175, 0, 15, "Bright painting" },
+    // --- for her to carry (keeper feedback #54, #55) ---
+    { 0, 0, 210, 1,  5, "Petal hat"  },
+    { 0, 0,  90, 2,  5, "Seed cap"   },
+    { 0, 0, 120, 3,  6, "Straw hat"  },
+    { 0, 0, 175, 4,  9, "Little lute"},
+    { 0, 0,  60, 5,  9, "Small drum" },
+    { 0, 0, 130, 6, 11, "Tiny axe"   },
+    { 0, 0, 100, 7,  7, "Bug net"    },
 };
 constexpr int SHOP_ITEM_COUNT = sizeof(SHOP_ITEMS) / sizeof(SHOP_ITEMS[0]);
 
