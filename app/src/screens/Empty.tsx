@@ -177,7 +177,13 @@ function ConnectModal({ onClose, onConnected }: {
 
   useEffect(() => {
     fetchColonies().then(r => {
-      const list = r?.colonies ? [...r.colonies] : [];
+      // Only physical modules are browsable. `app-*` ids are per-install personal
+      // colonies — someone else's phone pet, or a crowned princess's old nest that
+      // still exists because it's her prehistory (queen_from). Connecting to one
+      // shows a frozen stranger's snapshot you can't interact with, which is how
+      // Hellebore stayed "visible" after she'd already left for the module.
+      // Your OWN colony never needs the browser — it connects by identity.
+      const list = (r?.colonies ?? []).filter(c => !c.colony_id.startsWith('app-'));
       list.sort((a, b) => b.last_snapshot_unix - a.last_snapshot_unix);
       setColonies(list);
     });

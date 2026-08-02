@@ -116,8 +116,13 @@ export function Settings({ onBack, onDisconnect, onReconnect }: SettingsProps) {
   // then reload so a clean WASM instance founds it. Destructive — the current
   // colony is gone (there's no cross-reload persistence yet anyway).
   const handleFreshColony = () => {
-    if (!window.confirm(
-      'Start a completely new colony? This one — its characters, diary and history — will be gone for good.')) return;
+    // Only destructive when the colony you're looking at IS the one on this phone.
+    // Watching a module and hatching here destroys nothing — don't scare the keeper
+    // with a warning that doesn't apply to what they're about to do.
+    const msg = isOwnColony
+      ? 'Start a completely new colony? This one — its characters, diary and history — will be gone for good.'
+      : 'Hatch a new Conker on this phone? The module colony you’re watching is untouched — you can switch back any time from Settings.';
+    if (!window.confirm(msg)) return;
     resetColonyIdentity();
     localStorage.setItem(AUTOSTART_KEY, '1');  // Empty.tsx boots the new colony on load
     localStorage.setItem(WIPE_KEY, '1');       // clear persisted /colony so it founds fresh, not restores
@@ -306,30 +311,31 @@ export function Settings({ onBack, onDisconnect, onReconnect }: SettingsProps) {
         )}
       </Card>
 
-      {/* Fresh colony — only for a colony running on THIS phone */}
-      {isOwnColony && (
-        <>
-          <div style={{ fontSize: SIZES.xs, fontWeight: 600, color: HIVE.dimText, textTransform: 'uppercase', letterSpacing: 1, margin: '16px 0 8px' }}>
-            This colony
-          </div>
-          <Card style={{ background: '#F5ECDD' }}>
-            <div style={{ fontSize: SIZES.sm, color: HIVE.ink, marginBottom: 10 }}>
-              Running on this phone. Start over and a brand-new queen and colony
-              take its place — the current one won't come back.
-            </div>
-            <button
-              onClick={handleFreshColony}
-              style={{
-                width: '100%', padding: '10px 0', borderRadius: 10,
-                border: `1px solid ${HIVE.alert}`, background: 'transparent',
-                color: HIVE.alert, fontSize: SIZES.sm, fontWeight: 600, cursor: 'pointer',
-              }}
-            >
-              Start a fresh colony
-            </button>
-          </Card>
-        </>
-      )}
+      {/* On this phone. Shown even while you're watching someone else's module —
+          after a coronation your princess LEAVES for the module, so this gate
+          used to hide itself exactly when a keeper needed it and left no way
+          back to raising another (design decision 3: "raise one, send her off,
+          raise the next for a future module"). */}
+      <div style={{ fontSize: SIZES.xs, fontWeight: 600, color: HIVE.dimText, textTransform: 'uppercase', letterSpacing: 1, margin: '16px 0 8px' }}>
+        On this phone
+      </div>
+      <Card style={{ background: '#F5ECDD' }}>
+        <div style={{ fontSize: SIZES.sm, color: HIVE.ink, marginBottom: 10 }}>
+          {isOwnColony
+            ? 'Running on this phone. Start over and a brand-new Conker takes its place — the current one won’t come back.'
+            : 'You’re watching a module. Hatch a Conker here and you can raise the next one on your phone — the module colony carries on untouched.'}
+        </div>
+        <button
+          onClick={handleFreshColony}
+          style={{
+            width: '100%', padding: '10px 0', borderRadius: 10,
+            border: `1px solid ${isOwnColony ? HIVE.alert : HIVE.accent}`, background: 'transparent',
+            color: isOwnColony ? HIVE.alert : HIVE.accent, fontSize: SIZES.sm, fontWeight: 600, cursor: 'pointer',
+          }}
+        >
+          {isOwnColony ? 'Start a fresh colony' : '\u{1F95A} Hatch a Conker on this phone'}
+        </button>
+      </Card>
 
       {/* About this colony */}
       {snapshot && (
