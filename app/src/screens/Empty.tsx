@@ -3,7 +3,7 @@ import { HIVE } from '../theme/palette';
 import { SIZES } from '../theme/fonts';
 import { testLanConnection, setStoredLanIp, setStoredColonyId, fetchColonies } from '../api/client';
 import type { ColonySummary } from '../api/types';
-import { localModule, AUTOSTART_KEY } from '../localModule';
+import { localModule, AUTOSTART_KEY, getIdentity, LAST_ACTIVE_KEY } from '../localModule';
 
 function agoLabel(unix: number): string {
   if (!unix) return 'never seen';
@@ -189,6 +189,12 @@ function ConnectModal({ onClose, onConnected }: {
     });
   }, []);
 
+  // A Conker has actually been raised on this phone (LAST_ACTIVE_KEY is stamped
+  // once her module has run). getIdentity() alone proves nothing — it MINTS an
+  // identity on first call, so it's true even for someone who never hatched one.
+  const phoneColonyId = getIdentity().colony_id;
+  const hasPhoneColony = !!localStorage.getItem(LAST_ACTIVE_KEY);
+
   const pick = async (id: string) => {
     if (lanIp && await testLanConnection(lanIp)) setStoredLanIp(lanIp);
     setStoredColonyId(id);
@@ -220,8 +226,31 @@ function ConnectModal({ onClose, onConnected }: {
           Choose your colony
         </h2>
         <p style={{ fontSize: SIZES.sm, color: HIVE.dimText, margin: '0 0 16px' }}>
-          The name is shown on your module's screen, in the bar at the top.
+          Switch between the Conker you're raising here and any physical module.
+          A module's name is shown on its screen, in the bar at the top.
         </p>
+
+        {/* Your own phone Conker, pinned above the modules. She's deliberately
+            filtered out of the list below (app-* colonies aren't browsable), so
+            without this there would be no way BACK to her once you'd switched to
+            watching a module — you could leave your pet but never return. */}
+        {hasPhoneColony && (
+          <button
+            onClick={() => pick(phoneColonyId)}
+            style={{
+              display: 'block', width: '100%', textAlign: 'left',
+              background: '#F3EAD8', border: `1px solid ${HIVE.leafGreen}`,
+              borderRadius: 12, padding: '10px 14px', marginBottom: 14, cursor: 'pointer',
+            }}
+          >
+            <div style={{ fontSize: SIZES.base, fontWeight: 600, color: HIVE.ink }}>
+              {'\u{1FAB9}'} Your Conker on this phone
+            </div>
+            <div style={{ fontSize: SIZES.xs, color: HIVE.dimText }}>
+              the one you're raising yourself · tap to look after her
+            </div>
+          </button>
+        )}
 
         {colonies === null ? (
           <div style={{ fontSize: SIZES.sm, color: HIVE.dimText, padding: '12px 0' }}>
@@ -229,7 +258,9 @@ function ConnectModal({ onClose, onConnected }: {
           </div>
         ) : colonies.length === 0 ? (
           <div style={{ fontSize: SIZES.sm, color: HIVE.dimText, padding: '12px 0' }}>
-            No colonies found yet — give the module a minute after setup.
+            {hasPhoneColony
+              ? 'No physical modules found — give one a minute after setup.'
+              : 'No colonies found yet — give the module a minute after setup.'}
           </div>
         ) : (
           colonies.map(c => (
