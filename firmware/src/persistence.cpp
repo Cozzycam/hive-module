@@ -183,6 +183,7 @@ bool ConkerRegistry::_load_manifest() {
     _manifest.food_store         = stats["food_store"] | 0.0f;
     _manifest.food_total         = stats["food_total"] | 0.0f;
     _manifest.bugs               = stats["bugs"] | 0;
+    _manifest.owned_items        = stats["owned"] | 0;
     _manifest.total_workers_born = stats["total_workers_born"] | 0;
     _manifest.total_workers_died = stats["total_workers_died"] | 0;
     _manifest.worker_census      = stats["worker_census"] | 0;
@@ -245,6 +246,7 @@ bool ConkerRegistry::_save_manifest() {
     stats["food_store"]         = _manifest.food_store;
     stats["food_total"]         = _manifest.food_total;
     stats["bugs"]               = _manifest.bugs;
+    stats["owned"]              = _manifest.owned_items;
     stats["total_workers_born"] = _manifest.total_workers_born;
     stats["total_workers_died"] = _manifest.total_workers_died;
     stats["worker_census"]      = _manifest.worker_census;

@@ -184,6 +184,9 @@ class LocalModule {
         buyDecor: cw('host_buy_decor', 'number', ['number']),
         bugs: cw('host_bugs', 'number', []),
         shopJson: cw('host_shop_json', 'string', []),
+        owned: cw('host_owned', 'number', []),
+        unequip: cw('host_unequip', 'number', []),
+        worn: cw('host_worn', 'number', []),
         roomX: cw('host_room_x', 'number', []),
         roomY: cw('host_room_y', 'number', []),
         roomW: cw('host_room_w', 'number', []),
@@ -563,6 +566,29 @@ class LocalModule {
   bugs(): number {
     if (!this.started || !this.fns.bugs) return 0;
     try { return this.fns.bugs() ?? 0; } catch { return 0; }
+  }
+
+  // Bitmask of items already paid for — owned things can be swapped to for free.
+  ownedItems(): number {
+    if (!this.started || !this.fns.owned) return 0;
+    try { return this.fns.owned() ?? 0; } catch { return 0; }
+  }
+
+  // What she's carrying (0 = nothing).
+  wornItem(): number {
+    if (!this.started || !this.fns.worn) return 0;
+    try { return this.fns.worn() ?? 0; } catch { return 0; }
+  }
+
+  unequip(): boolean {
+    if (!this.started || !this.fns.unequip) return false;
+    try { return this.fns.unequip() === 1; } catch { return false; }
+  }
+
+  // The room's floor colour (feedback #59). cmd_set_floor_tint already existed
+  // for physical modules — this just points it at her room.
+  setRoomTint(r: number, g: number, b: number) {
+    try { this.fns.setTint?.(r | 0, g | 0, b | 0); } catch { /**/ }
   }
 
   buyDecor(item: number): boolean {

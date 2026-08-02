@@ -112,6 +112,7 @@ struct ColonyManifest {
     float    food_store      = 0;
     float    food_total      = 0;
     uint16_t bugs            = 0;     // shop purse (see ColonyState::bugs)
+    uint32_t owned_items     = 0;     // shop items already paid for
     uint16_t total_workers_born = 0;
     uint16_t total_workers_died = 0;
     uint16_t worker_census   = 0;

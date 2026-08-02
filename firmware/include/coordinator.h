@@ -93,6 +93,7 @@ public:
     bool cmd_set_conker_tint(uint32_t id, uint8_t tint_seed);
     bool cmd_set_colony_title(const char* title);
     bool cmd_buy_decor(uint8_t item_id);
+    bool cmd_unequip();
     bool cmd_feed_colony(float amount);
     bool cmd_set_module_role(uint16_t target_id, uint8_t new_role);
     bool cmd_set_floor_tint(uint16_t target_id, uint8_t r, uint8_t g, uint8_t b);

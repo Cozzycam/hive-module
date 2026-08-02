@@ -11,6 +11,9 @@ struct ColonyState {
     uint16_t brood_seed          = 0;
     uint16_t brood_larva         = 0;   // legacy alias, kept for API (same as brood_seed)
     uint16_t brood_pupa          = 0;   // always 0 (pupa stage removed)
+    uint32_t owned_items         = 0;   // bitmask of shop items already bought. You pay ONCE:
+                                        // re-selecting something you own is free, or buying a
+                                        // second keepsake would silently cost you the first.
     uint16_t bugs                = 0;   // shop purse: critters caught, spendable on decor.
                                         // SEPARATE from Conker::catches, which is the
                                         // LIFETIME tally the Bug Hunter title reads — spending

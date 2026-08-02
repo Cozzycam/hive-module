@@ -464,6 +464,15 @@ EMSCRIPTEN_KEEPALIVE int host_buy_decor(int item) {
     return g_sim.coordinator.cmd_buy_decor((uint8_t)item) ? 1 : 0;
 }
 EMSCRIPTEN_KEEPALIVE int host_bugs() { return g_sim.coordinator.colony.bugs; }
+// Bitmask of shop items already paid for — the app shows these as owned so a
+// keeper can swap back to one for free instead of being charged twice.
+EMSCRIPTEN_KEEPALIVE int host_owned() { return (int)g_sim.coordinator.colony.owned_items; }
+EMSCRIPTEN_KEEPALIVE int host_unequip() { return g_sim.coordinator.cmd_unequip() ? 1 : 0; }
+// What she's carrying right now (0 = nothing).
+EMSCRIPTEN_KEEPALIVE int host_worn() {
+    Chamber& ch = chamber();
+    return ch.conker_count ? ch.conkers[0].accessory : 0;
+}
 
 // Name the colony (feedback #40) — display name only; colony_id is untouched.
 EMSCRIPTEN_KEEPALIVE void host_set_colony_title(const char* title) {

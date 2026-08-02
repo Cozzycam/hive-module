@@ -28,6 +28,8 @@ createHiveModule().then((M) => {
   const buyDecor = f('host_buy_decor', 'number', ['number']);
   const bugs = f('host_bugs', 'number', []);
   const shopJson = f('host_shop_json', 'string', []);
+  const ownedMask = f('host_owned', 'number', []);
+  const unequip = f('host_unequip', 'number', []);
   const ball = f('host_pr_ball', 'number', []);
   const ballX = f('host_pr_ball_x', 'number', []);
   const ballY = f('host_pr_ball_y', 'number', []);
@@ -252,6 +254,16 @@ createHiveModule().then((M) => {
     buyDecor(w2.id);
     const worn2 = (snapshot().lilguys?.[0]?.accessory) ?? null;
     check('a second keepsake swaps, never stacks', !!worn2 && worn2 !== worn1, `${worn1} -> ${worn2}`);
+    // You pay once: swapping BACK to something you own must be free, or buying a
+    // second keepsake silently costs you the first.
+    const purseBefore = bugs();
+    buyDecor(w1.id);
+    const wornBack = (snapshot().lilguys?.[0]?.accessory) ?? null;
+    check('swapping back to an owned keepsake is free', bugs() === purseBefore, `${purseBefore} -> ${bugs()}`);
+    check('...and she is carrying it again', wornBack === worn1, `${wornBack}`);
+    check('owned bitmask records both', (ownedMask() & (1 << w1.id)) !== 0 && (ownedMask() & (1 << w2.id)) !== 0,
+          `mask=${ownedMask()}`);
+    check('putting it down leaves her carrying nothing', unequip() === 1 && !(snapshot().lilguys?.[0]?.accessory));
   } else {
     console.log(`      (purse ${bugs()} too small to test swapping)`);
   }

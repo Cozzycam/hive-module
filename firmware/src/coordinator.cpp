@@ -1588,7 +1588,13 @@ bool Coordinator::cmd_rename_conker(uint32_t id, const char* new_name) {
 bool Coordinator::cmd_buy_decor(uint8_t item_id) {
     if (item_id >= Cfg::SHOP_ITEM_COUNT) return false;
     const Cfg::ShopItem& it = Cfg::SHOP_ITEMS[item_id];
-    if (colony.bugs < it.price) {
+    const uint32_t bit = 1u << item_id;
+    const bool already_owned = (colony.owned_items & bit) != 0;
+
+    // You pay once. Without this, buying a second keepsake meant losing the
+    // first — she carries one at a time, so swapping back charged you again for
+    // something you'd already bought.
+    if (!already_owned && colony.bugs < it.price) {
         Serial.printf("[shop] '%s' costs %u, purse has %u\r\n",
                       it.name, (unsigned)it.price, (unsigned)colony.bugs);
         return false;
@@ -1601,7 +1607,8 @@ bool Coordinator::cmd_buy_decor(uint8_t item_id) {
     if (it.wear != 0) {
         if (chamber.conker_count == 0) return false;
         Conker& her = chamber.conkers[0];
-        colony.bugs -= it.price;
+        if (!already_owned) colony.bugs -= it.price;
+        colony.owned_items |= bit;
         her.accessory       = it.wear;
         her.accessory_tint  = it.tint;
         her.accessory_from  = 0;          // from you, not a maker
@@ -1612,9 +1619,15 @@ bool Coordinator::cmd_buy_decor(uint8_t item_id) {
             rec->accessory_tint = it.tint;
             rec->dirty = true;            // survives a reload
         }
-        Serial.printf("[shop] bought '%s' for %u — purse now %u\r\n",
-                      it.name, (unsigned)it.price, (unsigned)colony.bugs);
+        Serial.printf("[shop] %s '%s' — purse now %u\r\n",
+                      already_owned ? "carrying" : "bought", it.name, (unsigned)colony.bugs);
         return true;
+    }
+
+    // Already standing in her room — nothing to buy, nothing to charge.
+    if (already_owned) {
+        Serial.printf("[shop] '%s' is already in her room\r\n", it.name);
+        return false;
     }
 
     // Somewhere clear to stand it. Try a few spots, then give up rather than
@@ -1632,6 +1645,7 @@ bool Coordinator::cmd_buy_decor(uint8_t item_id) {
     }
 
     colony.bugs -= it.price;
+    colony.owned_items |= bit;
 
     Artwork piece;
     piece.active       = true;
@@ -1649,6 +1663,19 @@ bool Coordinator::cmd_buy_decor(uint8_t item_id) {
     chamber.place_artwork(piece, &weathered);
     Serial.printf("[shop] bought '%s' for %u — purse now %u\r\n",
                   it.name, (unsigned)it.price, (unsigned)colony.bugs);
+    return true;
+}
+
+// Put down whatever she's carrying (the shop lets you take it off again — you
+// keep the item, so it can be picked back up for nothing).
+bool Coordinator::cmd_unequip() {
+    if (chamber.conker_count == 0) return false;
+    Conker& her = chamber.conkers[0];
+    her.accessory = 0;
+    her.accessory_tint = 0;
+    her.accessory_from = 0;
+    IdentityRecord* rec = registry.get(her.id);
+    if (rec) { rec->accessory = 0; rec->accessory_tint = 0; rec->dirty = true; }
     return true;
 }
 
@@ -2274,6 +2301,7 @@ void Coordinator::_persist_sync_colony_state(uint32_t tick_num) {
     m.food_store = colony.food_store;
     m.food_total = colony.food_total;
     m.bugs = colony.bugs;                      // shop purse survives a power cut
+    m.owned_items = colony.owned_items;
     m.total_workers_born = colony.total_workers_born;
     m.worker_census = colony.worker_census;
     m.module_role = role;
@@ -2397,6 +2425,7 @@ void Coordinator::_persist_migrate_live_colony() {
     m.food_store = colony.food_store;
     m.food_total = colony.food_total;
     m.bugs = colony.bugs;                      // shop purse survives a power cut
+    m.owned_items = colony.owned_items;
     m.total_workers_born = colony.total_workers_born;
     m.worker_census = colony.worker_census;
 
@@ -2486,6 +2515,7 @@ void Coordinator::_persist_restore_from_disk() {
     colony.food_store = m.food_store;
     colony.food_total = m.food_total;
     colony.bugs = m.bugs;
+    colony.owned_items = m.owned_items;
     colony.total_workers_born = m.total_workers_born;
     colony.worker_census = m.worker_census;
 
